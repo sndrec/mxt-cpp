@@ -59,6 +59,7 @@ const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 @onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
+@onready var race_pause_game_speed_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/GameSpeedButton
 @onready var race_pause_retry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RetryButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
 @onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
@@ -148,6 +149,7 @@ var race_pause_open := false
 var race_pause_options_open := false
 var race_pause_nav_direction := 0
 var race_pause_nav_repeat_seconds := 0.0
+var last_process_ticks_usec := 0
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
 var leaderboard_replay_service
@@ -262,7 +264,7 @@ func _ready() -> void:
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
-	practice_controller.initialize(self)
+	practice_controller.initialize(self, race_pause_game_speed_button)
 	practice_setup.initialize(self)
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
@@ -578,7 +580,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	# Prepare a minimal settings array using the current local player settings.
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
 	var session_kind := String(options.get("session_kind", ""))
-	var is_practice := session_kind == PracticeController.SESSION_KIND
+	var is_practice := session_kind == PracticeControllerClass.SESSION_KIND
 	var uses_time_attack_ghosts := session_kind == "time_attack" or is_practice
 	if uses_time_attack_ghosts:
 		if time_attack_ghost_controller.prepared_track_index != track_selector.selected:
@@ -1016,10 +1018,14 @@ func _open_race_pause_menu() -> void:
 	race_pause_root.visible = true
 	var host := network_manager.is_server and !singleplayer_mode
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
+	var practice := session_kind == PracticeControllerClass.SESSION_KIND
 	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
-	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", PracticeController.SESSION_KIND]
+	race_pause_game_speed_button.visible = singleplayer_mode and practice
+	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", PracticeControllerClass.SESSION_KIND]
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
+	if practice:
+		practice_controller.set_pause_freeze(true)
 	replay_controller.refresh_pause_button()
 	_reset_race_pause_navigation()
 	race_pause_resume_button.grab_focus()
@@ -1033,14 +1039,16 @@ func _close_race_pause_menu() -> void:
 			options_menu.call("close_settings")
 	if race_pause_root != null:
 		race_pause_root.visible = false
+	if practice_controller != null and practice_controller.session_active:
+		practice_controller.set_pause_freeze(false)
 
 func _on_pause_retry_pressed() -> void:
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
-	if !singleplayer_mode or session_kind not in ["time_attack", PracticeController.SESSION_KIND]:
+	if !singleplayer_mode or session_kind not in ["time_attack", PracticeControllerClass.SESSION_KIND]:
 		return
 	var options := network_manager.race_options.duplicate(true)
 	_close_race_pause_menu()
-	_return_to_menu()
+	_return_to_menu(session_kind == PracticeControllerClass.SESSION_KIND)
 	call_deferred("_start_singleplayer_race", false, options)
 
 func _on_pause_disconnect_pressed() -> void:
@@ -1061,6 +1069,7 @@ func _race_pause_buttons() -> Array[Button]:
 	var buttons: Array[Button] = []
 	for button in [
 		race_pause_resume_button,
+		race_pause_game_speed_button,
 		race_pause_retry_button,
 		race_pause_options_button,
 		race_pause_save_replay_button,
@@ -1128,6 +1137,8 @@ func _update_race_pause_controller_navigation(delta: float) -> void:
 func _handle_race_pause_controller_input(event: InputEvent) -> bool:
 	if !race_pause_open or race_pause_root == null or !race_pause_root.visible:
 		return false
+	if practice_controller.handle_pause_input(event, get_viewport().gui_get_focus_owner()):
+		return true
 	if event.is_action_pressed("Accelerate"):
 		var focused := get_viewport().gui_get_focus_owner()
 		if focused is BaseButton and focused.visible and !focused.disabled:
@@ -1443,72 +1454,76 @@ func _physics_process(delta: float) -> void:
 		lobby_controller.process_lobby(delta)
 	else:
 		lobby_controller.clear()
-	if game_sim.sim_started:
-		var profile_enabled: bool = debug_runtime_controller.render_profile_enabled
-		var profile_physics_start := Time.get_ticks_usec() if profile_enabled else 0
-		var profile_input_start := Time.get_ticks_usec() if profile_enabled else 0
-		var local_pi := PlayerInputClass.new()
-		if !spectator_controller.should_suppress_local_race_input() and _window_accepts_input() and race_session_controller.players.size() > race_session_controller.local_player_index:
-			var controller = race_session_controller.players[race_session_controller.local_player_index]
-			if controller != null:
-				local_pi = controller.get_input()
-		var input_bytes := local_pi.serialize()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.INPUT, profile_input_start)
-		if singleplayer_mode and spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
-			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
-		if singleplayer_mode:
-			var profile_tick_start := Time.get_ticks_usec() if profile_enabled else 0
-			if replay_controller.replay_playback_active:
-				replay_controller.simulate_playback()
-			else:
-				_simulate_singleplayer_tick(input_bytes)
-			if profile_enabled:
-				debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.TICK, profile_tick_start)
-			if debug_runtime_controller.quit_after_frames >= 0 and _singleplayer_tick >= debug_runtime_controller.quit_after_frames:
-				debug_runtime_controller.print_profile_summary(singleplayer_cpu_count, launch_cpu_driver_count)
-				RenderingServer.force_sync()
-				get_tree().quit()
-				return
+	if game_sim.sim_started and !practice_controller.blocks_automatic_ticks():
+		_run_active_race_physics_frame(delta)
+
+
+func _run_active_race_physics_frame(delta: float) -> void:
+	var profile_enabled: bool = debug_runtime_controller.render_profile_enabled
+	var profile_physics_start := Time.get_ticks_usec() if profile_enabled else 0
+	var profile_input_start := Time.get_ticks_usec() if profile_enabled else 0
+	var local_pi := PlayerInputClass.new()
+	if !spectator_controller.should_suppress_local_race_input() and _window_accepts_input() and race_session_controller.players.size() > race_session_controller.local_player_index:
+		var controller = race_session_controller.players[race_session_controller.local_player_index]
+		if controller != null:
+			local_pi = controller.get_input()
+	var input_bytes := local_pi.serialize()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.INPUT, profile_input_start)
+	if singleplayer_mode and spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
+		input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
+	if singleplayer_mode:
+		var profile_tick_start := Time.get_ticks_usec() if profile_enabled else 0
+		if replay_controller.replay_playback_active:
+			replay_controller.simulate_playback()
 		else:
-			network_manager.input_transport.set_local_input(input_bytes)
-			if network_manager.is_server:
-				_simulate_host_frame(input_bytes)
-			else:
-				_simulate_single_tick()
-		var profile_events_start := Time.get_ticks_usec() if profile_enabled else 0
-		if !replay_controller.replay_playback_active:
-			_consume_authoritative_race_events()
+			_simulate_singleplayer_tick(input_bytes)
 		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.EVENTS, profile_events_start)
-		var profile_camera_start := Time.get_ticks_usec() if profile_enabled else 0
-		_update_native_render_camera()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.CAMERA, profile_camera_start)
-		var profile_render_start := Time.get_ticks_usec() if profile_enabled else 0
-		game_sim.render_gamesim()
-		_sync_gameplay_camera_settings()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.RENDER, profile_render_start)
-		var profile_audio_tick_start := Time.get_ticks_usec() if profile_enabled else 0
-		race_audio_controller.after_simulation_tick()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.AUDIO_TICK, profile_audio_tick_start)
-		var profile_nametag_start := Time.get_ticks_usec() if profile_enabled else 0
-		race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, debug_runtime_controller.disable_hud)
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.NAMETAG, profile_nametag_start)
-		var profile_local_visual_start := Time.get_ticks_usec() if profile_enabled else 0
-		if car_node_container.local_visual_car != null:
-			car_node_container.local_visual_car.just_rendered()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.LOCAL_VISUAL, profile_local_visual_start)
-		var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0
-		if !replay_controller.replay_playback_active:
-			_check_race_finished()
-		if profile_enabled:
-			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.FINISH_CHECK, profile_finish_check_start)
-			debug_runtime_controller.record_physics_frame(profile_physics_start)
+			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.TICK, profile_tick_start)
+		if debug_runtime_controller.quit_after_frames >= 0 and _singleplayer_tick >= debug_runtime_controller.quit_after_frames:
+			debug_runtime_controller.print_profile_summary(singleplayer_cpu_count, launch_cpu_driver_count)
+			RenderingServer.force_sync()
+			get_tree().quit()
+			return
+	else:
+		network_manager.input_transport.set_local_input(input_bytes)
+		if network_manager.is_server:
+			_simulate_host_frame(input_bytes)
+		else:
+			_simulate_single_tick()
+	var profile_events_start := Time.get_ticks_usec() if profile_enabled else 0
+	if !replay_controller.replay_playback_active:
+		_consume_authoritative_race_events()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.EVENTS, profile_events_start)
+	var profile_camera_start := Time.get_ticks_usec() if profile_enabled else 0
+	_update_native_render_camera()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.CAMERA, profile_camera_start)
+	var profile_render_start := Time.get_ticks_usec() if profile_enabled else 0
+	game_sim.render_gamesim()
+	_sync_gameplay_camera_settings()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.RENDER, profile_render_start)
+	var profile_audio_tick_start := Time.get_ticks_usec() if profile_enabled else 0
+	race_audio_controller.after_simulation_tick()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.AUDIO_TICK, profile_audio_tick_start)
+	var profile_nametag_start := Time.get_ticks_usec() if profile_enabled else 0
+	race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, debug_runtime_controller.disable_hud)
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.NAMETAG, profile_nametag_start)
+	var profile_local_visual_start := Time.get_ticks_usec() if profile_enabled else 0
+	if car_node_container.local_visual_car != null:
+		car_node_container.local_visual_car.just_rendered()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.LOCAL_VISUAL, profile_local_visual_start)
+	var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0
+	if !replay_controller.replay_playback_active:
+		_check_race_finished()
+	if profile_enabled:
+		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.FINISH_CHECK, profile_finish_check_start)
+		debug_runtime_controller.record_physics_frame(profile_physics_start)
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
 	var start_time := Time.get_ticks_usec()
@@ -1630,6 +1645,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _handle_race_pause_controller_input(event):
 		get_viewport().set_input_as_handled()
 		return
+	if practice_controller.handle_runtime_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if game_sim.sim_started and !race_pause_options_open \
 			and event is InputEventJoypadButton \
 			and event.pressed \
@@ -1657,10 +1675,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_race_pause_menu()
 		get_viewport().set_input_as_handled()
 
-func _return_to_menu() -> void:
+func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
 	record_memory_sample("return_to_menu_begin")
 	communication_controller.close_race_chat()
-	practice_controller.end_session()
+	practice_controller.end_session(preserve_practice_speed_for_retry)
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
@@ -2003,7 +2021,7 @@ func _check_race_finished() -> void:
 	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
 	var finish_sim := server_game_sim if network_manager.is_server and !singleplayer_mode and server_game_sim != null else game_sim
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
-	var infinite_practice := session_kind == PracticeController.SESSION_KIND \
+	var infinite_practice := session_kind == PracticeControllerClass.SESSION_KIND \
 		and int(network_manager.race_options.get("lap_count", 3)) == 0
 	var race_control_started := _race_control_has_started(finish_sim)
 	_update_force_end_dnf(finish_watch_ids)
@@ -2059,7 +2077,7 @@ func _check_race_finished() -> void:
 				race_presentation_controller.show_results()
 				if session_kind == "time_attack":
 					_finalize_time_attack()
-				elif session_kind == PracticeController.SESSION_KIND:
+				elif session_kind == PracticeControllerClass.SESSION_KIND:
 					_finalize_practice()
 
 func _finalize_time_attack() -> void:
@@ -2182,7 +2200,7 @@ func _on_time_attack_rank_entries_received(board_name: String, request_type: Str
 
 
 func _on_time_attack_race_again_requested() -> void:
-	var practice := String(network_manager.race_options.get("session_kind", "")) == PracticeController.SESSION_KIND
+	var practice := String(network_manager.race_options.get("session_kind", "")) == PracticeControllerClass.SESSION_KIND
 	var options := network_manager.race_options.duplicate(true) if practice else TimeAttackRulesClass.build_options()
 	_return_to_menu()
 	call_deferred("_start_singleplayer_race", false, options)
@@ -2298,8 +2316,14 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 			car.set_effect_tier(VisualCar.EffectTier.THRUSTER_ONLY)
 
 func _process(delta: float) -> void:
+	var now_ticks_usec := Time.get_ticks_usec()
+	var unscaled_delta := delta if last_process_ticks_usec == 0 else clampf(
+		float(now_ticks_usec - last_process_ticks_usec) / 1000000.0, 0.0, 0.1)
+	last_process_ticks_usec = now_ticks_usec
 	_update_playtest_lobby_probe()
-	_update_race_pause_controller_navigation(delta)
+	_update_race_pause_controller_navigation(unscaled_delta)
+	if practice_controller.consume_frame_advance() and game_sim.sim_started and singleplayer_mode:
+		_run_active_race_physics_frame(1.0 / 60.0)
 	var profile_enabled: bool = debug_runtime_controller.render_profile_enabled and game_sim.sim_started
 	var profile_process_start := debug_runtime_controller.begin_process_frame(_singleplayer_tick) if profile_enabled else 0
 	race_audio_controller.update(delta)

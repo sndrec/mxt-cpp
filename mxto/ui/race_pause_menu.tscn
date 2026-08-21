@@ -44,6 +44,11 @@ horizontal_alignment = 1
 layout_mode = 2
 text = "Resume"
 
+[node name="GameSpeedButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
+visible = false
+layout_mode = 2
+text = "Game Speed  ·  1.00x"
+
 [node name="RetryButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
 layout_mode = 2
 text = "Retry"

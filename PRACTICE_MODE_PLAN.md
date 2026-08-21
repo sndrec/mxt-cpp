@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation in progress. Phases A and B are implemented and smoke-verified; final focused automated validation remains deferred until the feature work is complete.
+Implementation in progress. Phases A through C are implemented and smoke-verified; final focused automated validation remains deferred until the feature work is complete.
 
 This document is the source of truth for implementing the first-class Practice mode, savestates, frame controls, telemetry, canonical replay authoring, and replay-to-Practice continuation described below. Execute it with a short goal such as:
 
@@ -691,7 +691,8 @@ The feature is complete when:
 ### Completed phases
 
 - 2026-08-20 — Phase A: added native configurable/infinite lap targets, widened racer and bumper lap-coupled state, made rollback loads reject stale modulo slots, carried the lap target in full-state snapshots, and exposed one compact native vehicle telemetry sample. `scons target=template_release -j4` passed and a newly spawned game process remained open through the launch smoke check. Focused state round-trip assertions remain scheduled for Phase H under the agreed test cadence.
-- 2026-08-20 — Phase B: added a dedicated static Practice setup and lifecycle controller, replaced the overloaded Time Attack practice identity with first-class Practice options, preserved Ranked option construction, configured finite/infinite recording and completion policy, made Retry and Race Again retain exact Practice options, and added finite/infinite lap HUD output. `scons target=template_release -j4` passed; because the editor had an embedded game holding its hot-reload DLL, a temporary isolated project/bin launched the current checkout successfully without stopping the editor or its game. Focused setup/lifecycle assertions remain scheduled for Phase H under the agreed test cadence.
+- 2026-08-20 — Phase B: added a dedicated static Practice setup and lifecycle controller, replaced the overloaded Time Attack practice identity with first-class Practice options, preserved Ranked option construction, configured finite/infinite recording and completion policy, made Retry and Race Again retain exact Practice options, and added finite/infinite lap HUD output. `scons target=template_release -j4` passed. Because the editor had an embedded game holding its hot-reload DLL, launch verification used a temporary isolated project/bin without stopping the editor or its game; Phase C's log-backed rerun also repaired the new scripts' initial uncached-global-class references. Focused setup/lifecycle assertions remain scheduled for Phase H under the agreed test cadence.
+- 2026-08-20 — Phase C: added the Practice-only pause-menu speed row, exact 0.05x steps from 0.00x through 2.00x, replay-style fixed-tick clock scheduling, temporary pause freezing, Retry speed preservation, unscaled pause navigation, and edge-latched right-stick frame advance through the same complete gameplay physics-frame path used by automatic ticks. Every Practice teardown restores the normal Engine clock. `scons target=template_release -j4` passed, and a log-backed isolated graphical launch loaded the current main scene and new Practice scripts without script or parser errors while leaving the existing editor/embedded game untouched. Focused clock and input assertions remain scheduled for Phase H under the agreed test cadence.
 
 ### Profiling results
 

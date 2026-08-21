@@ -6,6 +6,7 @@ signal back_requested
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const GhostSelectionClass = preload("res://time_attack/time_attack_ghost_selection.gd")
+const PRACTICE_SESSION_KIND := "practice"
 
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
@@ -84,7 +85,7 @@ func _start() -> void:
 		"cpu_count": roundi(cpu_count.value),
 		"lap_count": 0 if infinite else roundi(lap_count.value),
 		"infinite_laps": infinite,
-		"session_kind": PracticeController.SESSION_KIND,
+		"session_kind": PRACTICE_SESSION_KIND,
 		"leaderboard_eligible": false,
 		"leaderboard_ineligible_reason": "practice_unranked",
 		"grand_prix_current_track": 0,
