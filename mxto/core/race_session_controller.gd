@@ -224,6 +224,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 				instance.transform = trigger["transform"]
 				object_container.add_child(instance)
 				trigger_objects.append(instance)
+		game_sim.set_trigger_visuals(trigger_objects)
 	return true
 
 

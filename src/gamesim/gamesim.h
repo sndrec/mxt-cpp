@@ -8,7 +8,9 @@
 #include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/gpu_particles3d.hpp"
 #include "godot_cpp/classes/material.hpp"
+#include "godot_cpp/classes/mesh_instance3d.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
+#include "godot_cpp/classes/shader_material.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/rid.hpp"
 #include "godot_cpp/variant/array.hpp"
@@ -329,6 +331,14 @@ namespace godot {
 		godot::Node3D* car_node_container = nullptr;
 		godot::Node3D* spark_node_container = nullptr;
 		godot::Object* car_render_manager = nullptr;
+		struct RenderDashplateVisual {
+			Dashplate* trigger = nullptr;
+			godot::Ref<godot::ShaderMaterial> projection_material;
+			float boost_time = 0.0f;
+		};
+		std::vector<RenderDashplateVisual> render_dashplate_visuals;
+		void update_dashplate_visuals(float process_delta);
+		void clear_trigger_visuals();
 		std::vector<godot::Node3D*> render_car_transform_nodes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_car_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_outline_multimeshes;
@@ -634,6 +644,7 @@ namespace godot {
 		void destroy_gamesim();
 		void render_gamesim();
 		void render_gamesim_visuals_only(double process_delta);
+		void set_trigger_visuals(godot::Array visual_nodes);
 		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);
 		godot::Dictionary get_input_frame_as_dictionary(int target_tick) const;
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);

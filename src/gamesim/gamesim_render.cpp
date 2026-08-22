@@ -22,6 +22,7 @@ using namespace godot;
 static constexpr float VEHICLE_OVERLAY_RESPONSE_MULTIPLIER = 4.0f;
 static constexpr float VEHICLE_RECHARGE_OVERLAY_GAIN = 0.018f * VEHICLE_OVERLAY_RESPONSE_MULTIPLIER;
 static constexpr float VEHICLE_OVERLAY_FADE_WEIGHT = 0.03f * VEHICLE_OVERLAY_RESPONSE_MULTIPLIER;
+static constexpr float DASHPLATE_VISUAL_HEAT_TO_INTENSITY = 0.4f;
 
 static godot::Transform3D build_camera_transform(const godot::Vector3& position, const godot::Vector3& interest, const godot::Vector3& up)
 	{
@@ -146,6 +147,71 @@ static inline void write_multimesh_buffer_instance(
 	instance[17] = custom_data.g;
 	instance[18] = custom_data.b;
 	instance[19] = custom_data.a;
+}
+
+void GameSim::clear_trigger_visuals()
+{
+	render_dashplate_visuals.clear();
+}
+
+void GameSim::set_trigger_visuals(godot::Array visual_nodes)
+{
+	clear_trigger_visuals();
+	if (!current_track || !current_track->trigger_colliders) {
+		return;
+	}
+
+	const int visual_count = std::min(
+		static_cast<int>(visual_nodes.size()),
+		current_track->num_trigger_colliders);
+	render_dashplate_visuals.reserve(visual_count);
+	for (int i = 0; i < visual_count; ++i) {
+		TriggerCollider* trigger = current_track->trigger_colliders[i];
+		if (!trigger || trigger->type != TRIGGER_TYPE::DASHPLATE) {
+			continue;
+		}
+
+		Node* root = Object::cast_to<Node>(visual_nodes[i]);
+		if (!root) {
+			continue;
+		}
+		MeshInstance3D* mesh = Object::cast_to<MeshInstance3D>(
+			root->get_node_or_null(NodePath("Visual/DashplateMesh")));
+		if (!mesh) {
+			continue;
+		}
+		Ref<ShaderMaterial> projection_material = mesh->get_active_material(0);
+		if (projection_material.is_null()) {
+			continue;
+		}
+
+		RenderDashplateVisual visual;
+		visual.trigger = static_cast<Dashplate*>(trigger);
+		visual.projection_material = projection_material;
+		visual.projection_material->set_shader_parameter("booster_intensity", 1.0f);
+		visual.projection_material->set_shader_parameter("boost_time", 0.0f);
+		render_dashplate_visuals.push_back(visual);
+	}
+}
+
+void GameSim::update_dashplate_visuals(float process_delta)
+{
+	if (render_dashplate_visuals.empty()) {
+		return;
+	}
+
+	const float delta = std::clamp(process_delta, 0.0f, 0.1f);
+	const uint32_t current_tick = tick > 0 ? static_cast<uint32_t>(tick) : 0u;
+	for (RenderDashplateVisual& visual : render_dashplate_visuals) {
+		if (!visual.trigger || visual.projection_material.is_null()) {
+			continue;
+		}
+		const float heat = visual.trigger->effective_heat_at_tick(current_tick);
+		const float intensity = 1.0f + heat * DASHPLATE_VISUAL_HEAT_TO_INTENSITY;
+		visual.projection_material->set_shader_parameter("booster_intensity", intensity);
+		visual.boost_time += delta * (((intensity - 1.0f) * 3.0f) + 1.0f);
+		visual.projection_material->set_shader_parameter("boost_time", visual.boost_time);
+	}
 }
 
 void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
@@ -1560,6 +1626,7 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	const float effect_delta = std::max(0.0f, std::min(0.1f, static_cast<float>(process_delta)));
+	update_dashplate_visuals(effect_delta);
 	uint64_t profile_step = render_profile_enabled ? render_profile_now_us() : 0;
 	update_native_visual_effects(std::min(num_cars, static_cast<int>(render_final_current_transforms.size())), alpha, false, effect_delta, true);
 	if (render_profile_enabled) {

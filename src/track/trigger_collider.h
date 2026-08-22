@@ -33,6 +33,7 @@ public:
 
     Dashplate();
     void start_touch(PhysicsCar* car);
+    float effective_heat_at_tick(uint32_t current_tick) const;
 
     float heat;
     uint32_t last_activation_tick;

@@ -14,6 +14,7 @@ void GameSim::_bind_methods()
 		"dashplate_boost_active", "s_boost_active"), &GameSim::evaluate_car_properties);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
+	ClassDB::bind_method(D_METHOD("set_trigger_visuals", "visual_nodes"), &GameSim::set_trigger_visuals);
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
 	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);

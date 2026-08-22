@@ -153,6 +153,18 @@ Dashplate::Dashplate()
 	has_last_activation = false;
 }
 
+float Dashplate::effective_heat_at_tick(uint32_t current_tick) const
+{
+	if (!has_last_activation)
+		return heat;
+
+	float elapsed_seconds = 0.0f;
+	if (current_tick >= last_activation_tick) {
+		elapsed_seconds = static_cast<float>(current_tick - last_activation_tick) * kDashplateSecondsPerTick;
+	}
+	return std::clamp(heat + sample_dashplate_heat_delta(elapsed_seconds), kHeatMin, kHeatMax);
+}
+
 void Dashplate::start_touch(PhysicsCar* car)
 {
 	if (!car)
