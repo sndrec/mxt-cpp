@@ -355,8 +355,9 @@ static void drift_plasma_write_instance(
 	drift_plasma_write_vertex(instance, 1, origin + horizontal - vertical);
 	drift_plasma_write_vertex(instance, 2, origin + horizontal + vertical);
 	drift_plasma_write_vertex(instance, 3, origin - horizontal + vertical);
-	const float life_scale = static_cast<float>(particle.life) /
+	const float life_fraction = static_cast<float>(particle.life) /
 		static_cast<float>(particle.initial_life);
+	const float life_scale = std::sin(life_fraction * DRIFT_PLASMA_HALF_PI);
 	instance[12] = particle.red * life_scale;
 	instance[13] = particle.green * life_scale;
 	instance[14] = particle.blue * life_scale;
