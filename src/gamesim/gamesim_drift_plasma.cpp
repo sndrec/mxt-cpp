@@ -41,6 +41,7 @@ struct DriftPlasmaParticle {
 	float green = 0.0f;
 	float blue = 0.0f;
 	uint16_t life = 0;
+	uint16_t initial_life = 0;
 	int16_t car_index = -1;
 	uint8_t update_count = 0;
 	uint8_t active = 0;
@@ -108,12 +109,6 @@ static void drift_plasma_advance_particle(DriftPlasmaParticle& particle)
 	particle.position += particle.velocity;
 	particle.damping += DRIFT_PLASMA_DAMPING_EASE * (particle.target_damping - particle.damping);
 	particle.width += DRIFT_PLASMA_WIDTH_EASE * (particle.target_width - particle.width);
-	if (particle.life < 3u) {
-		const float fade = 1.0f - 1.0f / static_cast<float>(particle.life + 1u);
-		particle.red *= fade;
-		particle.green *= fade;
-		particle.blue *= fade;
-	}
 }
 
 static DriftPlasmaParticle* drift_plasma_allocate(DriftPlasmaRuntime& runtime)
@@ -170,6 +165,7 @@ static void drift_plasma_spawn(
 	particle.green = 0.5f * color_scale;
 	particle.blue = particle.green;
 	particle.life = life;
+	particle.initial_life = life;
 
 	// The emitting machine is itself an earlier record in GX's shared effect
 	// pool. fn_1_58694 reaches a newly allocated drift particle later in the
@@ -359,9 +355,11 @@ static void drift_plasma_write_instance(
 	drift_plasma_write_vertex(instance, 1, origin + horizontal - vertical);
 	drift_plasma_write_vertex(instance, 2, origin + horizontal + vertical);
 	drift_plasma_write_vertex(instance, 3, origin - horizontal + vertical);
-	instance[12] = particle.red;
-	instance[13] = particle.green;
-	instance[14] = particle.blue;
+	const float life_scale = static_cast<float>(particle.life) /
+		static_cast<float>(particle.initial_life);
+	instance[12] = particle.red * life_scale;
+	instance[13] = particle.green * life_scale;
+	instance[14] = particle.blue * life_scale;
 	instance[15] = 1.0f;
 	instance[16] = 0.0f;
 	instance[17] = 0.0f;
