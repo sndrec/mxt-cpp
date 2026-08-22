@@ -269,8 +269,9 @@ static void move_to_plane_side(PhysicsCar& car, const SimVec3& plane_point, cons
 static void apply_car_collision_knockback(PhysicsCar& car, const SimVec3& impulse)
 {
 	STORE_CAR_VEC3(car, collision_response, impulse);
-	const float weight = car.soa->stat_weight[car.soa_index];
-	STORE_CAR_VEC3(car, velocity, LOAD_CAR_VEC3(car, velocity) + impulse * weight);
+	// Machine impacts use the independently decaying displacement channel so
+	// ordinary tire forces cannot absorb the entire shove on the following tick.
+	STORE_CAR_VEC3(car, knockback_velocity, impulse);
 }
 
 static inline bool machine_is_restoring(const PhysicsCar& car)
@@ -441,10 +442,12 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 	}
 	if (other_attacking && damage1 > 0.0f) {
 		self.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		soa->machine_state[soa_index] |= MACHINESTATE::LOWGRIP;
 		soa->rail_collision_timer[soa_index] = 20;
 	}
 	if (this_attacking && damage2 > 0.0f) {
 		other_machine.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		other_machine.soa->machine_state[other_machine.soa_index] |= MACHINESTATE::LOWGRIP;
 		other_machine.soa->rail_collision_timer[other_machine.soa_index] = 20;
 	}
 	if (damage1 > 0.0f) {

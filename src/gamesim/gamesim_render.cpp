@@ -847,6 +847,9 @@ void GameSim::apply_render_multimeshes(float alpha)
 			body_overlay.r += render_vehicle_effect_refs[i].energy_overlay.r;
 			body_overlay.g += render_vehicle_effect_refs[i].energy_overlay.g;
 			body_overlay.b += render_vehicle_effect_refs[i].energy_overlay.b;
+			body_overlay.r += render_vehicle_effect_refs[i].impact_flash;
+			body_overlay.g += render_vehicle_effect_refs[i].impact_flash;
+			body_overlay.b += render_vehicle_effect_refs[i].impact_flash;
 			body_overlay.a = 1.0f;
 		}
 		SimVec3 outline_velocity = LOAD_INDEXED_VEC3(soa, position_old, lane) - LOAD_INDEXED_VEC3(soa, position_current, lane);
@@ -1557,6 +1560,7 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 		profile_step = now;
 	}
 	update_native_gameplay_camera(false);
+	render_collision_spark_effects(alpha);
 	update_spatial_audio(effect_delta);
 	if (render_profile_enabled) {
 		const uint64_t now = render_profile_now_us();
@@ -1692,6 +1696,7 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		update_render_visual_snapshots(native_visual_count);
+		step_collision_spark_effects();
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			const uint64_t elapsed = now - profile_step;

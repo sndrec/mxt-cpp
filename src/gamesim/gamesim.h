@@ -32,6 +32,7 @@ namespace godot {
 	class NetcodeSession;
 	class MxtSpatialAudioManager;
 	class FinishLineDisplay;
+	struct CollisionSparkRuntime;
 
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
@@ -389,10 +390,12 @@ namespace godot {
 				uint32_t terrain_state_old = 0;
 				uint32_t machine_state_old = 0;
 				uint8_t full_effect_active = 0;
+				float impact_flash = 0.0f;
 				godot::Color overlay = godot::Color(0, 0, 0, 1);
 				godot::Color energy_overlay = godot::Color(0, 0, 0, 1);
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
+			CollisionSparkRuntime* collision_spark_runtime = nullptr;
 			std::vector<uint8_t> render_effect_full_flags;
 			struct RenderEffectPoolSlot {
 				godot::Node* node = nullptr;
@@ -419,6 +422,10 @@ namespace godot {
 			bool render_thruster_lights_enabled = true;
 			void cache_native_visual_effect_nodes();
 			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
+			void step_collision_spark_effects();
+			void render_collision_spark_effects(float alpha);
+			void reset_collision_spark_effects(bool release_render_node);
+			void destroy_collision_spark_runtime();
 			void clear_render_thruster_lights();
 			void ensure_render_thruster_light_capacity(int capacity);
 			void hide_unused_render_thruster_lights(int used_count);
