@@ -332,6 +332,22 @@ text = "Accent"
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 
+[node name="OutlineColourLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid"]
+layout_mode = 2
+text = "Outline"
+
+[node name="OutlineColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid"]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+
+[node name="TrailColourLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid"]
+layout_mode = 2
+text = "Outline Trail"
+
+[node name="TrailColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid"]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+
 [node name="StampSettingsLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=571093426]
 layout_mode = 2
 text = "BODY STAMPS"

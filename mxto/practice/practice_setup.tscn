@@ -78,6 +78,14 @@ text = "S-BOOST"
 layout_mode = 2
 text = "Enabled"
 
+[node name="BoostFromStartLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Manual Boost"
+
+[node name="BoostFromStart" type="CheckBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Unlocked from lap 0"
+
 [node name="RestoreLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
 layout_mode = 2
 text = "Vehicle Restore"

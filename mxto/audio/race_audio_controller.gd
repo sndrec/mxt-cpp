@@ -118,7 +118,8 @@ func configure_vehicle_properties(definitions: Array) -> void:
 			boost_sfx = definition.manual_boost_sfx
 		if boost_sfx == null:
 			boost_sfx = DEFAULT_VEHICLE_BOOST_STREAM
-		spatial_audio.call("set_vehicle_manual_boost_stream", i, boost_sfx)
+		var boost_volume_db := definition.manual_boost_volume_db if definition != null else 0.0
+		spatial_audio.call("set_vehicle_manual_boost_stream", i, boost_sfx, boost_volume_db)
 
 func _play_ui_sfx(stream: AudioStream, volume_db: float = 0.0, pitch_scale: float = 1.0) -> void:
 	if stream == null or DisplayServer.get_name() == "headless":
@@ -227,7 +228,7 @@ func reset_for_race() -> void:
 	_cancel_race_finish_audio(true)
 	race_audio_last_tick = -1
 	race_audio_last_local_lap = -1
-	race_audio_boost_power_announced = false
+	race_audio_boost_power_announced = _boost_unlocked_from_start()
 	race_audio_final_lap_requested = false
 	race_audio_waiting_music_start = false
 	race_audio_pending_music_wait_for_race_start = false
@@ -242,12 +243,20 @@ func reset_for_race() -> void:
 func reconcile_practice_state_restore(next_tick: int, lap: int, finished: bool) -> void:
 	race_audio_last_tick = next_tick - 1
 	race_audio_last_local_lap = lap
-	race_audio_boost_power_announced = lap >= RACE_BOOST_POWER_LAP_INDEX
+	race_audio_boost_power_announced = _boost_unlocked_from_start() or lap >= RACE_BOOST_POWER_LAP_INDEX
 	race_audio_final_lap_requested = lap >= RACE_FINAL_LAP_INDEX
 	if !finished:
 		_cancel_race_finish_audio(true)
 	if spatial_audio != null and spatial_audio.has_method("clear_announcer_queue"):
 		spatial_audio.call("clear_announcer_queue")
+
+
+func _boost_unlocked_from_start() -> bool:
+	return game_manager != null \
+		and game_manager.network_manager != null \
+		and String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice" \
+		and bool(game_manager.network_manager.race_options.get("boost_unlocked_from_start", false))
+
 
 func _resolve_track_audio_path(track_dir: String, path_value) -> String:
 	var path := str(path_value)

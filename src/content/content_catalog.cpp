@@ -326,6 +326,16 @@ Dictionary MxtContentCatalog::add_loose_track(
 		result["errors"] = error_array(errors);
 		return result;
 	}
+	for (const mxt::content::ContentRecord &existing : records) {
+		if (existing.content_type == mxt::content::ContentType::TRACK &&
+			existing.source == mxt::content::ContentSource::OFFICIAL &&
+			existing.gameplay_digest == gameplay_digest) {
+			result["valid"] = true;
+			result["errors"] = PackedStringArray();
+			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			return result;
+		}
+	}
 
 	mxt::content::ContentRecord record;
 	record.content_type = mxt::content::ContentType::TRACK;

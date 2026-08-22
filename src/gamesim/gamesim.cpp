@@ -91,7 +91,15 @@ namespace {
 #endif
 	}
 
-static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled, bool s_boost_enabled)
+static void begin_vehicle_tick_soa(
+	PhysicsCarSoA& c,
+	PhysicsCar* car_views,
+	PlayerInput* inputs,
+	uint32_t tick_count,
+	int count,
+	bool vehicle_restore_enabled,
+	bool s_boost_enabled,
+	bool boost_unlocked_from_start)
 	{
 		for (int i = 0; i < count; ++i) {
 			PlayerInput& input = inputs[i];
@@ -188,7 +196,7 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 				c.machine_state[i] |= MACHINESTATE::SIDEATTACKING;
 			if (input.spinattack)
 				c.machine_state[i] |= MACHINESTATE::SPINATTACKING;
-			if (input.boost && c.lap[i] > 1 && !c.s_boost_active[i])
+			if (input.boost && (boost_unlocked_from_start || c.lap[i] > 1) && !c.s_boost_active[i])
 				c.machine_state[i] |= MACHINESTATE::JUST_PRESSED_BOOST;
 
 			c.g_anim_timer[i] += 1;
@@ -700,6 +708,9 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 			if (c.rail_collision_timer[i] > 0) {
 				c.rail_collision_timer[i] -= 1;
 			}
+			if (c.shift_boost_cooldown_frames[i] > 0) {
+				c.shift_boost_cooldown_frames[i] -= 1;
+			}
 			c.machine_state[i] &= ~(MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
 				MACHINESTATE::TOOKDAMAGE | MACHINESTATE::B14 |
 				MACHINESTATE::MANUAL_DRIFT);
@@ -1047,7 +1058,7 @@ void GameSim::update_bumper_vehicles()
 
 		begin_vehicle_tick_soa(car_soa, sim.bumper_cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(sim.tick), car_soa.count,
-			false, false);
+			false, false, false);
 
 		apply_vehicle_motion_inputs_soa(car_soa, soa.inputs + global_start, car_soa.count);
 		prepare_vehicle_floor_phase(car_soa, sim.bumper_cars + global_start, car_soa.count, track_scratch);
@@ -1535,7 +1546,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 
 		begin_vehicle_tick_soa(car_soa, sim.cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(sim.tick), car_soa.count,
-			sim.vehicle_restore_enabled, sim.s_boost_enabled);
+			sim.vehicle_restore_enabled, sim.s_boost_enabled, sim.boost_unlocked_from_start);
 		vehicle_subphase_mark(sim.phase_profile_vehicle_begin_us);
 
 		apply_vehicle_motion_inputs_soa(car_soa, soa.inputs + global_start, car_soa.count);

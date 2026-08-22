@@ -36,6 +36,8 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var primary_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/PrimaryColourPicker
 @onready var secondary_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/SecondaryColourPicker
 @onready var accent_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/AccentColourPicker
+@onready var outline_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/OutlineColourPicker
+@onready var trail_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/TrailColourPicker
 @onready var settings_tab_container: TabContainer = $Container/SettingsTabs
 @onready var driver_tab: VBoxContainer = $Container/SettingsTabs/Driver
 @onready var garage_tab: HBoxContainer = $Container/SettingsTabs/Garage
@@ -181,6 +183,8 @@ func _ready() -> void:
 	primary_colour_picker.color_changed.connect(_on_primary_colour_changed)
 	secondary_colour_picker.color_changed.connect(_on_secondary_colour_changed)
 	accent_colour_picker.color_changed.connect(_on_accent_colour_changed)
+	outline_colour_picker.color_changed.connect(_on_outline_colour_changed)
+	trail_colour_picker.color_changed.connect(_on_trail_colour_changed)
 	for i in range(sticker_selectors.size()):
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
 	vehicle_editor.content_changed.connect(_on_vehicle_editor_content_changed)
@@ -620,6 +624,8 @@ func _update_livery_lock_state() -> void:
 	primary_colour_picker.disabled = locked
 	secondary_colour_picker.disabled = locked
 	accent_colour_picker.disabled = locked
+	outline_colour_picker.disabled = locked
+	trail_colour_picker.disabled = locked
 	if garage_panel != null:
 		garage_panel.modulate = Color(0.55, 0.55, 0.55, 1.0) if locked else Color.WHITE
 	if custom_stamp_catalog_tab != null:
@@ -688,6 +694,8 @@ func _update_livery_controls() -> void:
 	primary_colour_picker.color = current_livery.primary_colour
 	secondary_colour_picker.color = current_livery.secondary_colour
 	accent_colour_picker.color = current_livery.accent_colour
+	outline_colour_picker.color = current_livery.outline_colour if current_livery.outline_colour_customized else _authored_outline_colour(false)
+	trail_colour_picker.color = current_livery.trail_colour if current_livery.trail_colour_customized else _authored_outline_colour(true)
 	updating_colour_controls = false
 
 func _on_primary_colour_changed(colour: Color) -> void:
@@ -710,6 +718,41 @@ func _on_accent_colour_changed(colour: Color) -> void:
 	current_livery.accent_colour = colour
 	_apply_preview_livery_colours()
 	_save_livery_for_selected_car(false)
+
+func _on_outline_colour_changed(colour: Color) -> void:
+	if updating_colour_controls or _livery_editing_locked():
+		return
+	current_livery.outline_colour = colour
+	current_livery.outline_colour_customized = true
+	_apply_preview_livery_colours()
+	_save_livery_for_selected_car(false)
+
+func _on_trail_colour_changed(colour: Color) -> void:
+	if updating_colour_controls or _livery_editing_locked():
+		return
+	current_livery.trail_colour = colour
+	current_livery.trail_colour_customized = true
+	_apply_preview_livery_colours()
+	_save_livery_for_selected_car(false)
+
+func _authored_outline_colour(trail: bool) -> Color:
+	var fallback := Color(0.25, 0.55, 1.0, 1.0)
+	var definition := _selected_car_definition()
+	if definition == null or definition.car_scene == null:
+		return fallback
+	var template := definition.car_scene.instantiate() as Node3D
+	if template == null:
+		return fallback
+	var node_name := "VEHICLE_OUTLINE" if trail else "VEHICLE_OUTLINE_MAIN"
+	var mesh := template.get_node_or_null(node_name) as MeshInstance3D
+	var material := mesh.material_override as ShaderMaterial if mesh != null else null
+	var parameter = material.get_shader_parameter("trail_colour" if trail else "outline_color") if material != null else null
+	template.free()
+	if parameter is Color:
+		return parameter
+	if parameter is Vector3:
+		return Color(parameter.x, parameter.y, parameter.z, 1.0)
+	return fallback
 
 func _apply_preview_livery_colours() -> void:
 	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:

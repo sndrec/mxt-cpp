@@ -367,28 +367,41 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 			if (this_side_attacking) {
 				damage1 *= 2.0f;
 			}
+			damage1 *= other_side_attacking
+				? other_machine.soa->stat_side_attack_damage_multiplier[other_machine.soa_index]
+				: other_machine.soa->stat_spin_attack_damage_multiplier[other_machine.soa_index];
 		}
 		if (this_attacking && !other_spin_attacking) {
 			damage2 = attack_impulse_strength * (this_side_attacking ? 20.0f : 10.0f);
 			if (other_side_attacking) {
 				damage2 *= 2.0f;
 			}
+			damage2 *= this_side_attacking
+				? soa->stat_side_attack_damage_multiplier[soa_index]
+				: soa->stat_spin_attack_damage_multiplier[soa_index];
 		}
 	}
 	if (this_attacking && !other_attacking) {
 		impulse1 = impulse * 2.0f;
-		impulse2 = collision_normal * (1.5f * attack_impulse_strength);
+		impulse2 = collision_normal *
+			(1.5f * attack_impulse_strength * soa->stat_attack_knockback_multiplier[soa_index]);
 	} else if (!this_attacking && other_attacking) {
-		impulse1 = collision_normal * (-1.5f * attack_impulse_strength);
+		impulse1 = collision_normal *
+			(-1.5f * attack_impulse_strength *
+			 other_machine.soa->stat_attack_knockback_multiplier[other_machine.soa_index]);
 		impulse2 = -impulse * 2.0f;
 	} else if (this_attacking && other_attacking) {
 		impulse1 = impulse * 0.2f;
 		impulse2 = impulse * -0.2f;
 		if (!this_spin_attacking) {
-			impulse1 = collision_normal * (-1.5f * attack_impulse_strength * (this_side_attacking ? 2.0f : 1.0f));
+			impulse1 = collision_normal *
+				(-1.5f * attack_impulse_strength * (this_side_attacking ? 2.0f : 1.0f) *
+				 other_machine.soa->stat_attack_knockback_multiplier[other_machine.soa_index]);
 		}
 		if (!other_spin_attacking) {
-			impulse2 = collision_normal * (1.5f * attack_impulse_strength * (other_side_attacking ? 2.0f : 1.0f));
+			impulse2 = collision_normal *
+				(1.5f * attack_impulse_strength * (other_side_attacking ? 2.0f : 1.0f) *
+				 soa->stat_attack_knockback_multiplier[soa_index]);
 		}
 	}
 	if (this_bumper != other_bumper) {

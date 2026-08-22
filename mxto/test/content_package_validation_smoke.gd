@@ -221,6 +221,7 @@ func _add_vehicle_texture_payloads(root: String) -> void:
 	var visual_path := root.path_join("vehicle/visual.json")
 	var visual: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(visual_path))
 	(visual["material_inputs"] as Dictionary)["use_mesh_normals"] = true
+	visual["manual_boost_volume_db"] = 7.5
 	var visual_file := FileAccess.open(visual_path, FileAccess.WRITE)
 	visual_file.store_string(JSON.stringify(visual, "  ", true))
 	visual_file.close()

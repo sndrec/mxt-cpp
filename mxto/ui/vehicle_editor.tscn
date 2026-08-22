@@ -393,6 +393,36 @@ text = "Remove"
 [node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters"]
 layout_mode = 2
 
+[node name="Audio" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
+visible = false
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Audio"]
+layout_mode = 2
+text = "Manual boost sound playback"
+
+[node name="BoostVolumeRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Audio"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Boost Volume Modifier"
+
+[node name="Slider" type="HSlider" parent="Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20.0
+max_value = 20.0
+step = 0.5
+tooltip_text = "Adjusts manual boost sound playback without changing machine performance."
+
+[node name="Value" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow"]
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+text = "+0.0 dB"
+horizontal_alignment = 2
+
 [node name="Performance" parent="Workspace/VisualColumn/PhysicalTabs" instance=ExtResource("4_grade_panel")]
 visible = false
 layout_mode = 2

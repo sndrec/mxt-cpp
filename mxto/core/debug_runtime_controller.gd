@@ -14,7 +14,6 @@ enum ProfilePhase {
 	RENDER,
 	AUDIO_TICK,
 	NAMETAG,
-	LOCAL_VISUAL,
 	FINISH_CHECK,
 }
 
@@ -241,8 +240,6 @@ func print_profile_summary(singleplayer_cpu_count: int, launch_cpu_driver_count:
 		" render_max_us=", profile_phase_max_us[ProfilePhase.RENDER],
 		" nametag_us=", int(profile_phase_us[ProfilePhase.NAMETAG] / profile_frames),
 		" nametag_max_us=", profile_phase_max_us[ProfilePhase.NAMETAG],
-		" local_visual_us=", int(profile_phase_us[ProfilePhase.LOCAL_VISUAL] / profile_frames),
-		" local_visual_max_us=", profile_phase_max_us[ProfilePhase.LOCAL_VISUAL],
 		" input_us=", int(profile_phase_us[ProfilePhase.INPUT] / profile_frames),
 		" input_max_us=", profile_phase_max_us[ProfilePhase.INPUT],
 		" events_us=", int(profile_phase_us[ProfilePhase.EVENTS] / profile_frames),

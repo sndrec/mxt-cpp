@@ -522,6 +522,7 @@ namespace godot {
 		bool multiplayer_intro_camera_enabled = false;
 		bool bumpers_enabled = false;
 		bool s_boost_enabled = true;
+		bool boost_unlocked_from_start = false;
 		uint32_t target_lap_count = 3;
 		int bumper_count = 0;
 		uint32_t bumper_track_seed = 0;
@@ -544,6 +545,8 @@ namespace godot {
 		bool get_bumpers_enabled() const { return bumpers_enabled; }
 		void set_s_boost_enabled(bool enabled);
 		bool get_s_boost_enabled() const { return s_boost_enabled; }
+		void set_boost_unlocked_from_start(bool enabled) { boost_unlocked_from_start = enabled; }
+		bool get_boost_unlocked_from_start() const { return boost_unlocked_from_start; }
 		void set_target_lap_count(int lap_count);
 		int get_target_lap_count() const { return static_cast<int>(target_lap_count); }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }

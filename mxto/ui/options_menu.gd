@@ -88,7 +88,6 @@ func open_settings() -> void:
 	_update_audio_controls()
 	_update_graphics_controls()
 	_apply_audio_bus_multipliers()
-	_apply_graphics_settings()
 	_set_voice_level_meter_enabled(true)
 	if controller_settings != null and controller_settings.has_method("open_settings"):
 		controller_settings.call("open_settings")

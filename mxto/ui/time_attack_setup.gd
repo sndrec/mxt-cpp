@@ -74,11 +74,13 @@ func open_for_current_selection() -> void:
 	var settings := game_manager.car_settings.get_player_settings()
 	game_manager.vehicle_content_controller.apply_evidence(settings)
 	eligibility = LeaderboardEligibilityClass.evaluate_start(game_manager, options, settings)
-	var board: Dictionary = eligibility.get("board", {})
-	board_name = String(board.get("steam_name", ""))
 	var selected_track_index := game_manager.track_selector.selected
 	var selected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(selected_track_index) \
 		if selected_track_index >= 0 else ""
+	# The selected machine controls submission eligibility, not which ranked track
+	# replays may be used as ghosts in an unranked run.
+	var board := TimeAttackRulesClass.board_for_track_digest(selected_track_digest)
+	board_name = String(board.get("steam_name", ""))
 	ghost_selection_scope = board_name if !board_name.is_empty() else "local:" + selected_track_digest
 	ghost_selection.set_board(ghost_selection_scope)
 	var track_name := "Unknown Track"

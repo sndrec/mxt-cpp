@@ -23,6 +23,8 @@ Save livery data per car definition, not as one global player setting. A simple 
 - `primary_colour`
 - `secondary_colour`
 - `accent_colour`
+- optional `outline_colour` override
+- optional `trail_colour` override
 - `stamps`, max 16
 
 Each stamp stores a local-space projector:
@@ -91,6 +93,8 @@ Author machine albedo textures as grayscale or close to grayscale when they shou
 For a fully primary body panel, the mask should be red `(1, 0, 0)`. For a secondary stripe, use green `(0, 1, 0)`. For accent trim, use blue `(0, 0, 1)`. Soft masks and blends are allowed; overlapping channels are normalized before colour selection, while the summed mask controls how strongly the painted result replaces the grayscale albedo.
 
 Existing materials without `in_paint_mask` fall back to using `in_albedo` as a mask when a livery is applied. That is only a compatibility path; new machine assets should set an explicit `shader_parameter/in_paint_mask`.
+
+Outline and motion-trail colours retain the vehicle material's authored defaults until the player changes them in the garage. This keeps existing liveries and older replay payloads visually unchanged while allowing each colour to be customized independently.
 
 ## Implementation phases
 

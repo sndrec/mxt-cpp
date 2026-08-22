@@ -11,6 +11,18 @@ namespace {
 
 static constexpr uint8_t CAR_PROPS_MAGIC[8] = {'M', 'X', 'T', 'C', 'P', 'R', 'P', 0};
 static constexpr size_t CAR_PROPS_HEADER_SIZE = 24;
+// Workshop vehicles are production content. New stat IDs are appended, and these retained
+// fingerprints keep older packages loadable with defaults for stats they could not author.
+static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_40_STATS = UINT64_C(0xf201716eab2f6cee);
+static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_42_STATS = UINT64_C(0xe06547cc5eb0ef6a);
+static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_46_STATS = UINT64_C(0x5a4c2cce04ea4971);
+static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_54_STATS = UINT64_C(0x57c5af6b099ab863);
+static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_63_STATS = UINT64_C(0x39e8b73e58c265db);
+static_assert(CAR_STAT_DRIFT_TURN_MOVEMENT == 40);
+static_assert(CAR_STAT_SHIFT_BOOST_COOLDOWN_SECONDS == 42);
+static_assert(CAR_STAT_SPIN_ATTACK_DAMAGE_MULTIPLIER == 46);
+static_assert(CAR_STAT_LANDING_STABILITY == 54);
+static_assert(CAR_STAT_DIRT_DRAG_MULTIPLIER == 63);
 
 static constexpr float DEFAULT_BASE_STATS[CAR_STAT_COUNT] = {
 	1260.0f,       // weight_kg
@@ -54,7 +66,29 @@ static constexpr float DEFAULT_BASE_STATS[CAR_STAT_COUNT] = {
 	1.0f,          // acceleration_response_multiplier
 	1.0f,          // forward_thrust_multiplier
 	145.0f,        // drift_turn_movement
-	200.0f         // max_turn_rate
+	200.0f,        // max_turn_rate
+	2.0f,          // shift_boost_cooldown_seconds
+	0.0f,          // shift_boost_cooldown_strength
+	0.6666667f,    // drift_accel_buildup_seconds
+	0.0f,          // drift_accel_strafe_multiplier
+	1.0f,          // spin_attack_damage_multiplier
+	1.0f,          // side_attack_damage_multiplier
+	1.0f,          // attack_knockback_multiplier
+	4.0f,          // attack_cooldown_seconds
+	1.0f,          // suspension_stiffness_multiplier
+	1.0f,          // suspension_damping_multiplier
+	1.0f,          // rail_speed_retention_multiplier
+	1.0f,          // rail_deflection_multiplier
+	1.0f,          // landing_stability
+	0.2f,          // shift_boost_alignment_tolerance
+	20.0f,         // accel_press_grip_strength
+	1.0f,          // air_pitch_authority_multiplier
+	1.0f,          // air_angular_damping_multiplier
+	1.0f,          // air_auto_alignment_multiplier
+	0.7f,          // drift_initiation_steer_threshold
+	1.0f,          // high_speed_drag_multiplier
+	1.0f,          // air_orientation_drag_multiplier
+	1.0f           // dirt_drag_multiplier
 };
 
 struct ByteReader {
@@ -343,7 +377,20 @@ bool PhysicsCarProperties::deserialize_and_sample(
 		set_error(out_error, "car properties header is truncated");
 		return false;
 	}
-	if (fingerprint != MXT_CAR_PROPS_SCHEMA_FINGERPRINT) {
+	uint16_t schema_stat_count = 0;
+	if (fingerprint == MXT_CAR_PROPS_SCHEMA_FINGERPRINT) {
+		schema_stat_count = CAR_STAT_COUNT;
+	} else if (fingerprint == CAR_PROPS_SCHEMA_FINGERPRINT_63_STATS) {
+		schema_stat_count = 63;
+	} else if (fingerprint == CAR_PROPS_SCHEMA_FINGERPRINT_54_STATS) {
+		schema_stat_count = 54;
+	} else if (fingerprint == CAR_PROPS_SCHEMA_FINGERPRINT_46_STATS) {
+		schema_stat_count = 46;
+	} else if (fingerprint == CAR_PROPS_SCHEMA_FINGERPRINT_42_STATS) {
+		schema_stat_count = 42;
+	} else if (fingerprint == CAR_PROPS_SCHEMA_FINGERPRINT_40_STATS) {
+		schema_stat_count = 40;
+	} else {
 		set_error(out_error, "car properties schema fingerprint does not match this build");
 		return false;
 	}
@@ -394,7 +441,7 @@ bool PhysicsCarProperties::deserialize_and_sample(
 			set_error(out_error, "car properties S-BOOST override is truncated");
 			return false;
 		}
-		if (stat_raw >= CAR_STAT_COUNT ||
+		if (stat_raw >= schema_stat_count ||
 			!stat_supports_live_modifiers(static_cast<CarStatId>(stat_raw)) ||
 			s_boost_seen[stat_raw]) {
 			set_error(out_error, "car properties S-BOOST override has an invalid or duplicate stat");
@@ -419,7 +466,7 @@ bool PhysicsCarProperties::deserialize_and_sample(
 			set_error(out_error, "car properties curve header is truncated");
 			return false;
 		}
-		if (stat_raw >= CAR_STAT_COUNT || layer >= CAR_CURVE_LAYER_COUNT || reserved != 0 ||
+		if (stat_raw >= schema_stat_count || layer >= CAR_CURVE_LAYER_COUNT || reserved != 0 ||
 			curve_seen[layer][stat_raw]) {
 			set_error(out_error, "car properties curve has an invalid or duplicate stat/layer");
 			return false;
@@ -446,7 +493,7 @@ bool PhysicsCarProperties::deserialize_and_sample(
 		return false;
 	}
 
-	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+	for (uint16_t stat = 0; stat < schema_stat_count; ++stat) {
 		if (!curve_seen[CAR_CURVE_BASE][stat]) {
 			set_error(out_error, "car properties file is missing a required base curve");
 			return false;

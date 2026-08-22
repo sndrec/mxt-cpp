@@ -25,6 +25,7 @@ func _run() -> void:
 	var practice := game_manager.practice_controller
 	if !practice.session_active or !practice.timeline_enabled \
 			or game_manager.game_sim.get_target_lap_count() != 99 \
+			or !game_manager.game_sim.get_boost_unlocked_from_start() \
 			or !game_manager.replay_controller.replay_recording_active \
 			or game_manager.replay_controller.replay_recording_source != "practice":
 		_fail("finite Practice did not start with its exact policy")
@@ -148,6 +149,7 @@ func _options(laps: int) -> Dictionary:
 		"vehicle_restore": true,
 		"bumpers": false,
 		"s_boost": true,
+		"boost_unlocked_from_start": true,
 		"cpu_count": 0,
 		"lap_count": laps,
 		"infinite_laps": laps == 0,

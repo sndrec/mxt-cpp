@@ -32,6 +32,9 @@ func _run() -> void:
 		return
 	var game_manager := main_scene.instantiate() as GameManager
 	root.add_child(game_manager)
+	if game_manager.time_attack_setup.ghost_selection != game_manager.practice_setup.ghost_selection:
+		_fail("Time Attack and Practice do not share one per-track ghost selection")
+		return
 	game_manager.set_physics_process(false)
 	for child in game_manager.get_children():
 		if child is Timer:

@@ -565,7 +565,13 @@ func _process( _delta:float ) -> void:
 	var health_meter_shader := healthmeter.material as ShaderMaterial
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)
 	health_meter_shader.set_shader_parameter("max_health_amount", car_max_energy)
-	health_meter_shader.set_shader_parameter("can_boost", car.lap > 1)
+	var boost_unlocked_from_start := car.game_manager != null \
+		and car.game_manager.game_sim != null \
+		and car.game_manager.game_sim.has_method("get_boost_unlocked_from_start") \
+		and bool(car.game_manager.game_sim.call("get_boost_unlocked_from_start"))
+	health_meter_shader.set_shader_parameter(
+		"can_boost",
+		boost_unlocked_from_start or car.lap > 1)
 	var boost_health_total_cost : float = float(car.boost_frames_manual) * 0.1666666667 * boost_energy_use_rate
 	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
 	

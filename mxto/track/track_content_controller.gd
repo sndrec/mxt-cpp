@@ -6,6 +6,7 @@ const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 const OFFICIAL_TRACK_MANIFEST_PATH := "res://track/official_tracks.json"
 const OFFICIAL_TRACK_MANIFEST_REVISION := 1
+const DEFAULT_GROUND_TEXTURE: Texture2D = preload("res://asset/tex/cityscape.png")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
@@ -329,6 +330,8 @@ func _register_loose_track(json_path: String, seen_paths: Dictionary, seen_conte
 		push_warning("Skipped loose track %s: %s" % [json_path.get_base_dir(), str(result.get("errors", []))])
 		return
 	var record: Dictionary = result.get("record", {})
+	if String(record.get("source", "")) != "local_loose":
+		return
 	var content_id := String(record.get("content_id", ""))
 	if content_id.is_empty() or seen_content_ids.has(content_id):
 		return
@@ -509,6 +512,8 @@ func _apply_environment() -> void:
 	game_manager.directional_light_3d.light_energy = current_metadata.light_intensity
 	game_manager.world_environment.environment.ambient_light_color = Color(current_metadata.ambient_color[0], current_metadata.ambient_color[1], current_metadata.ambient_color[2])
 	game_manager.world_environment.environment.ambient_light_energy = current_metadata.ambient_intensity
+	current_ground_image = null
+	floor_material.set_shader_parameter("texture_albedo", DEFAULT_GROUND_TEXTURE)
 	if current_visual_replaces_debug_environment:
 		return
 	var ground_path := current_track_dir.path_join("ground.png")
@@ -517,7 +522,10 @@ func _apply_environment() -> void:
 	var bytes := FileAccess.get_file_as_bytes(ground_path)
 	if bytes.is_empty():
 		return
-	current_ground_image = Image.load_from_file(ground_path)
+	var loaded_ground_image := Image.load_from_file(ground_path)
+	if loaded_ground_image == null or loaded_ground_image.is_empty():
+		return
+	current_ground_image = loaded_ground_image
 	var floor_texture := ImageTexture.new()
 	floor_texture.set_image(current_ground_image)
 	floor_material.set_shader_parameter("texture_albedo", floor_texture)

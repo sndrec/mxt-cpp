@@ -336,6 +336,8 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_model_resource_usage"), &MxtCarAuthoringSession::get_model_resource_usage);
 	ClassDB::bind_method(D_METHOD("get_material_setup"), &MxtCarAuthoringSession::get_material_setup);
 	ClassDB::bind_method(D_METHOD("set_material_setup", "value"), &MxtCarAuthoringSession::set_material_setup);
+	ClassDB::bind_method(D_METHOD("get_manual_boost_volume_db"), &MxtCarAuthoringSession::get_manual_boost_volume_db);
+	ClassDB::bind_method(D_METHOD("set_manual_boost_volume_db", "value"), &MxtCarAuthoringSession::set_manual_boost_volume_db);
 	ClassDB::bind_method(D_METHOD("get_thrusters"), &MxtCarAuthoringSession::get_thrusters);
 	ClassDB::bind_method(D_METHOD("set_thrusters", "value"), &MxtCarAuthoringSession::set_thrusters);
 	ClassDB::bind_method(D_METHOD("sample_effective_stats", "machine_setting", "technique", "technique_intensity", "boost_state"), &MxtCarAuthoringSession::sample_effective_stats);
@@ -550,7 +552,9 @@ bool MxtCarAuthoringSession::read_document(
 	for (SimVec3 &corner : target.wall_corners) {
 		if (!reader.read_f32(corner.x) || !reader.read_f32(corner.y) || !reader.read_f32(corner.z)) return false;
 	}
-	target.s_boost_values.fill(0.0f);
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		target.s_boost_values[stat] = runtime_check.s_boost_stats[stat];
+	}
 	uint16_t override_count = 0;
 	if (!reader.read_u16(override_count)) return false;
 	for (uint16_t i = 0; i < override_count; ++i) {
@@ -585,6 +589,23 @@ bool MxtCarAuthoringSession::read_document(
 		}
 	}
 	if (reader.cursor != reader.size) return false;
+	// Older production Workshop documents do not contain curves for stats appended later.
+	// Materialize those defaults in the authoring session so an old vehicle can be edited and
+	// saved directly in the current format without a separate migration layer.
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		for (uint8_t layer = CAR_CURVE_BASE; layer < CAR_CURVE_LAYER_COUNT; ++layer) {
+			if (layer != CAR_CURVE_BASE &&
+				!PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat))) {
+				continue;
+			}
+			Curve &curve = target.curve_at(layer, stat);
+			if (!curve.empty()) continue;
+			const float value = layer == CAR_CURVE_BASE
+				? runtime_check.base_stats[stat]
+				: runtime_check.modifier_stats[layer - 1][stat];
+			curve.push_back({0.0f, value, 0.0f, 0.0f});
+		}
+	}
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
 		if (!PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat))) {
 			target.s_boost_values[stat] = runtime_check.base_stats[stat];
@@ -676,6 +697,19 @@ bool MxtCarAuthoringSession::validate_document(PackedStringArray &out_errors, Pa
 		CAR_STAT_TURBO_FLAT_LOSS_PER_SECOND,
 		CAR_STAT_TURBO_PERCENT_LOSS_PER_SECOND,
 		CAR_STAT_MAX_TURN_RATE,
+		CAR_STAT_SHIFT_BOOST_COOLDOWN_SECONDS,
+		CAR_STAT_DRIFT_ACCEL_BUILDUP_SECONDS,
+		CAR_STAT_ATTACK_COOLDOWN_SECONDS,
+		CAR_STAT_LANDING_STABILITY,
+		CAR_STAT_SHIFT_BOOST_ALIGNMENT_TOLERANCE,
+		CAR_STAT_ACCEL_PRESS_GRIP_STRENGTH,
+		CAR_STAT_AIR_PITCH_AUTHORITY_MULTIPLIER,
+		CAR_STAT_AIR_ANGULAR_DAMPING_MULTIPLIER,
+		CAR_STAT_AIR_AUTO_ALIGNMENT_MULTIPLIER,
+		CAR_STAT_DRIFT_INITIATION_STEER_THRESHOLD,
+		CAR_STAT_HIGH_SPEED_DRAG_MULTIPLIER,
+		CAR_STAT_AIR_ORIENTATION_DRAG_MULTIPLIER,
+		CAR_STAT_DIRT_DRAG_MULTIPLIER,
 	};
 	for (CarStatId stat : NONNEGATIVE_STATS) {
 		for (uint32_t sample = 0; sample <= 100; ++sample) {
@@ -1141,6 +1175,7 @@ bool MxtCarAuthoringSession::capture_history_snapshot(HistorySnapshot &out_snaps
 	out_snapshot.normal_surface = normal_surface;
 	out_snapshot.paint_mask_surface = paint_mask_surface;
 	out_snapshot.use_mesh_normals = use_mesh_normals;
+	out_snapshot.manual_boost_volume_db = manual_boost_volume_db;
 	out_snapshot.thrusters = thrusters;
 	return true;
 }
@@ -1191,6 +1226,7 @@ bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &sna
 	normal_surface = snapshot.normal_surface;
 	paint_mask_surface = snapshot.paint_mask_surface;
 	use_mesh_normals = snapshot.use_mesh_normals;
+	manual_boost_volume_db = snapshot.manual_boost_volume_db;
 	thrusters = snapshot.thrusters;
 	dirty = mark_dirty ? true : snapshot.dirty;
 	return true;
@@ -1347,6 +1383,7 @@ Dictionary MxtCarAuthoringSession::load_vehicle_package(const String &package_ro
 	Dictionary material_setup = package.visual_metadata.get("material_inputs", Dictionary());
 	material_setup["body_surfaces"] = package.visual_metadata.get("body_surfaces", Array());
 	set_material_setup(material_setup);
+	set_manual_boost_volume_db(package.visual_metadata.get("manual_boost_volume_db", 0.0));
 	set_thrusters(package.visual_metadata.get("thrusters", Array()));
 	undo_history.clear();
 	redo_history.clear();
@@ -1461,6 +1498,7 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	material_inputs["paint_mask_surface"] = paint_mask_surface;
 	material_inputs["use_mesh_normals"] = use_mesh_normals;
 	visual["material_inputs"] = material_inputs;
+	visual["manual_boost_volume_db"] = manual_boost_volume_db;
 	visual["thrusters"] = thruster_values;
 	if (!write_text_file(root.path_join("vehicle/visual.json"), JSON::stringify(visual, "  ", true, true))) {
 		return result_dictionary(false, single_error("could not write vehicle visual metadata"), {});
@@ -1524,12 +1562,15 @@ bool MxtCarAuthoringSession::load_draft_visual_state(
 		const String &draft_model_path,
 		const Dictionary &model_transform,
 		const Dictionary &material_setup,
-		const Array &draft_thrusters)
+		const Array &draft_thrusters,
+		double draft_manual_boost_volume_db)
 {
 	Ref<MxtCarAuthoringSession> parsed;
 	parsed.instantiate();
 	parsed->model_path = draft_model_path;
-	if (!parsed->set_model_transform(model_transform) || !parsed->set_thrusters(draft_thrusters)) return false;
+	if (!parsed->set_model_transform(model_transform) ||
+			!parsed->set_thrusters(draft_thrusters) ||
+			!parsed->set_manual_boost_volume_db(draft_manual_boost_volume_db)) return false;
 	if (draft_model_path.is_empty()) {
 		const Array surfaces = material_setup.get("body_surfaces", Array());
 		if (!surfaces.is_empty() || static_cast<int64_t>(material_setup.get("albedo_surface", -1)) != -1 ||
@@ -1550,6 +1591,7 @@ bool MxtCarAuthoringSession::load_draft_visual_state(
 	normal_surface = parsed->normal_surface;
 	paint_mask_surface = parsed->paint_mask_surface;
 	use_mesh_normals = parsed->use_mesh_normals;
+	manual_boost_volume_db = parsed->manual_boost_volume_db;
 	thrusters = std::move(parsed->thrusters);
 	dirty = true;
 	return true;
@@ -1641,6 +1683,18 @@ Dictionary MxtCarAuthoringSession::get_material_setup() const
 	result["paint_mask_surface"] = paint_mask_surface;
 	result["use_mesh_normals"] = use_mesh_normals;
 	return result;
+}
+
+bool MxtCarAuthoringSession::set_manual_boost_volume_db(double value)
+{
+	if (!std::isfinite(value) || value < -20.0 || value > 20.0) return false;
+	const float replacement = static_cast<float>(value);
+	if (replacement == manual_boost_volume_db) return true;
+	push_undo_snapshot();
+	manual_boost_volume_db = replacement;
+	clear_redo_after_mutation();
+	dirty = true;
+	return true;
 }
 
 bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)

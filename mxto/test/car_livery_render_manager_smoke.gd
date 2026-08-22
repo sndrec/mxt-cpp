@@ -42,6 +42,20 @@ func _init() -> void:
 		push_error("main livery pass should provide a paint mask fallback")
 		quit(1)
 		return
+	var outline_node: MultiMeshInstance3D = (archetype[CarRenderManager.PASS_OUTLINE_MAIN] as Dictionary)["node"]
+	var outline_material := outline_node.material_override as ShaderMaterial
+	var rendered_outline_colour = outline_material.get_shader_parameter("outline_color") if outline_material != null else null
+	if !_shader_colour_matches(rendered_outline_colour, livery.outline_colour):
+		push_error("regular outline pass should use the livery outline colour: %s" % [rendered_outline_colour])
+		quit(1)
+		return
+	var trail_node: MultiMeshInstance3D = (archetype[CarRenderManager.PASS_OUTLINE] as Dictionary)["node"]
+	var trail_material := trail_node.material_override as ShaderMaterial
+	var rendered_trail_colour = trail_material.get_shader_parameter("trail_colour") if trail_material != null else null
+	if !_shader_colour_matches(rendered_trail_colour, livery.trail_colour):
+		push_error("outline trail pass should use the livery trail colour: %s" % [rendered_trail_colour])
+		quit(1)
+		return
 
 	var stamp_pass: Dictionary = archetype[CarRenderManager.PASS_STAMP]
 	var stamp_node: MultiMeshInstance3D = stamp_pass["node"]
@@ -110,6 +124,12 @@ func _add_mesh_child(parent: Node3D, name_in: String, mesh: Mesh, material: Mate
 	var child := MeshInstance3D.new()
 	child.name = name_in
 	child.mesh = mesh
+	if material == null and name_in == "VEHICLE_OUTLINE":
+		material = ShaderMaterial.new()
+		(material as ShaderMaterial).shader = load("res://vehicle/vehicle_outline.gdshader")
+	if material == null and name_in == "VEHICLE_OUTLINE_MAIN":
+		material = ShaderMaterial.new()
+		(material as ShaderMaterial).shader = load("res://vehicle/vehicle_outline_main.gdshader")
 	child.material_override = material
 	parent.add_child(child)
 	child.owner = parent
@@ -126,6 +146,10 @@ func _make_body_material() -> ShaderMaterial:
 
 func _make_livery() -> CarLivery:
 	var livery := CarLivery.new()
+	livery.outline_colour = Color(0.8, 0.1, 0.6, 1.0)
+	livery.trail_colour = Color(0.2, 0.9, 0.4, 1.0)
+	livery.outline_colour_customized = true
+	livery.trail_colour_customized = true
 	var stamp := CarLiveryStamp.new()
 	stamp.stamp_id = "circle"
 	stamp.local_origin = Vector3.ZERO
@@ -157,3 +181,12 @@ func _make_quad_mesh() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+func _shader_colour_matches(value, expected: Color) -> bool:
+	if value is Color:
+		var colour := value as Color
+		return Vector3(colour.r, colour.g, colour.b).distance_to(Vector3(expected.r, expected.g, expected.b)) < 0.005
+	if value is Vector3:
+		var vector := value as Vector3
+		return vector.distance_to(Vector3(expected.r, expected.g, expected.b)) < 0.005
+	return false

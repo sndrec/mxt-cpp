@@ -5,12 +5,12 @@ signal start_requested(options: Dictionary, context: Dictionary)
 signal back_requested
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
-const GhostSelectionClass = preload("res://time_attack/time_attack_ghost_selection.gd")
 const PRACTICE_SESSION_KIND := "practice"
 
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
 @onready var s_boost_toggle: CheckBox = $Center/Panel/Margin/Content/Options/SBoost
+@onready var boost_from_start_toggle: CheckBox = $Center/Panel/Margin/Content/Options/BoostFromStart
 @onready var restore_toggle: CheckBox = $Center/Panel/Margin/Content/Options/Restore
 @onready var bumpers_toggle: CheckBox = $Center/Panel/Margin/Content/Options/Bumpers
 @onready var cpu_count: SpinBox = $Center/Panel/Margin/Content/Options/CpuCount
@@ -25,10 +25,9 @@ var ghost_selection: TimeAttackGhostSelection
 var ghost_selection_scope := ""
 
 
-func initialize(in_game_manager: GameManager) -> void:
+func initialize(in_game_manager: GameManager, shared_ghost_selection: TimeAttackGhostSelection) -> void:
 	game_manager = in_game_manager
-	ghost_selection = GhostSelectionClass.new()
-	ghost_selection.initialize(game_manager.leaderboard_replay_cache)
+	ghost_selection = shared_ghost_selection
 	ghost_selection.changed.connect(_on_ghost_selection_changed)
 	ghost_picker.initialize(game_manager, ghost_selection)
 	ghost_picker.closed.connect(func(): choose_ghosts_button.grab_focus())
@@ -82,6 +81,7 @@ func _start() -> void:
 		"vehicle_restore": restore_toggle.button_pressed,
 		"bumpers": bumpers_toggle.button_pressed,
 		"s_boost": s_boost_toggle.button_pressed,
+		"boost_unlocked_from_start": boost_from_start_toggle.button_pressed,
 		"cpu_count": roundi(cpu_count.value),
 		"lap_count": 0 if infinite else roundi(lap_count.value),
 		"infinite_laps": infinite,

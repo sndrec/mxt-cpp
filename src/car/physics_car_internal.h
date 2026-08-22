@@ -152,7 +152,6 @@ constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
 constexpr float kMaxPositiveCheckpointAdvance = 1500.0f;
 constexpr float kAnalyticRoadBelowCenterlineFalloutWorldY = 500.0f;
-constexpr uint16_t kAttackCooldownFrames = static_cast<uint16_t>(4.0f * _TICKS_PER_SECOND);
 constexpr float kSpinAttackShortenMultiplier = 1.3f;
 
 static inline float track_lap_length(const RaceTrack *track)

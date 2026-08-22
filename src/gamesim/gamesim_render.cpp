@@ -19,6 +19,10 @@
 
 using namespace godot;
 
+static constexpr float VEHICLE_OVERLAY_RESPONSE_MULTIPLIER = 4.0f;
+static constexpr float VEHICLE_RECHARGE_OVERLAY_GAIN = 0.018f * VEHICLE_OVERLAY_RESPONSE_MULTIPLIER;
+static constexpr float VEHICLE_OVERLAY_FADE_WEIGHT = 0.03f * VEHICLE_OVERLAY_RESPONSE_MULTIPLIER;
+
 static godot::Transform3D build_camera_transform(const godot::Vector3& position, const godot::Vector3& interest, const godot::Vector3& up)
 	{
 		godot::Vector3 backward = position - interest;
@@ -1107,13 +1111,13 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			refs.overlay.b += (0.3f - refs.overlay.b) * 0.6f;
 		}
 		if (step_effects && (terrain_state & TERRAIN::RECHARGE) != 0u) {
-			refs.overlay.r += 0.018f;
-			refs.overlay.b += 0.018f;
+			refs.overlay.r += VEHICLE_RECHARGE_OVERLAY_GAIN;
+			refs.overlay.b += VEHICLE_RECHARGE_OVERLAY_GAIN;
 		}
 		if (step_effects) {
-			refs.overlay.r += (0.0f - refs.overlay.r) * 0.03f;
-			refs.overlay.g += (0.0f - refs.overlay.g) * 0.03f;
-			refs.overlay.b += (0.0f - refs.overlay.b) * 0.03f;
+			refs.overlay.r += (0.0f - refs.overlay.r) * VEHICLE_OVERLAY_FADE_WEIGHT;
+			refs.overlay.g += (0.0f - refs.overlay.g) * VEHICLE_OVERLAY_FADE_WEIGHT;
+			refs.overlay.b += (0.0f - refs.overlay.b) * VEHICLE_OVERLAY_FADE_WEIGHT;
 		}
 		const float max_energy = std::max(soa.calced_max_energy[lane], 0.001f);
 		const float energy_ratio = std::clamp(soa.energy[lane] / max_energy, 0.0f, 1.0f);

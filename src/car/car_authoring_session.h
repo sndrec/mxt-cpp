@@ -49,6 +49,7 @@ private:
 	int32_t normal_surface = -1;
 	int32_t paint_mask_surface = -1;
 	bool use_mesh_normals = false;
+	float manual_boost_volume_db = 0.0f;
 	struct Thruster {
 		Vector3 position;
 		Vector3 rotation_degrees;
@@ -68,6 +69,7 @@ private:
 		int32_t normal_surface = -1;
 		int32_t paint_mask_surface = -1;
 		bool use_mesh_normals = false;
+		float manual_boost_volume_db = 0.0f;
 		std::vector<Thruster> thrusters;
 	};
 	std::vector<HistorySnapshot> undo_history;
@@ -156,13 +158,16 @@ public:
 			const String &draft_model_path,
 			const Dictionary &model_transform,
 			const Dictionary &material_setup,
-			const Array &draft_thrusters);
+			const Array &draft_thrusters,
+			double draft_manual_boost_volume_db);
 	Dictionary get_model_transform() const;
 	bool set_model_transform(const Dictionary &value);
 	Array get_model_surfaces() const;
 	Dictionary get_model_resource_usage() const;
 	Dictionary get_material_setup() const;
 	bool set_material_setup(const Dictionary &value);
+	double get_manual_boost_volume_db() const { return manual_boost_volume_db; }
+	bool set_manual_boost_volume_db(double value);
 	Array get_thrusters() const;
 	bool set_thrusters(const Array &value);
 	Dictionary sample_effective_stats(

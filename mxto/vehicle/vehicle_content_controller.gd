@@ -729,6 +729,8 @@ func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), record)
 	definition.runtime_transform = _transform_from_metadata(visual_metadata.get("model_transform", {})) * mesh_data["transform"]
 	definition.manual_boost_sfx = _load_packaged_boost_sfx(String(record.get("manual_boost_sfx_path", "")))
+	definition.manual_boost_volume_db = clampf(
+		float(visual_metadata.get("manual_boost_volume_db", 0.0)), -20.0, 20.0)
 	for thruster_value in visual_metadata.get("thrusters", []):
 		definition.runtime_thruster_transforms.append(_thruster_transform_from_metadata(thruster_value))
 	instance.free()

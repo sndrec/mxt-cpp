@@ -282,7 +282,7 @@ func _ready() -> void:
 		practice_hud_label,
 		practice_input_editor_layer,
 		practice_input_editor)
-	practice_setup.initialize(self)
+	practice_setup.initialize(self, time_attack_setup.ghost_selection)
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
 	replay_controller.initialize()
@@ -1668,11 +1668,6 @@ func _run_active_race_physics_frame(delta: float) -> void:
 	race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, debug_runtime_controller.disable_hud)
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.NAMETAG, profile_nametag_start)
-	var profile_local_visual_start := Time.get_ticks_usec() if profile_enabled else 0
-	if car_node_container.local_visual_car != null:
-		car_node_container.local_visual_car.just_rendered()
-	if profile_enabled:
-		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.LOCAL_VISUAL, profile_local_visual_start)
 	var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0
 	if !replay_controller.replay_playback_active:
 		_check_race_finished()
@@ -1734,8 +1729,6 @@ func reconcile_practice_state_restore() -> void:
 	_update_native_render_camera()
 	game_sim.render_gamesim()
 	_sync_gameplay_camera_settings()
-	if car_node_container.local_visual_car != null:
-		car_node_container.local_visual_car.just_rendered()
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
 	if !network_manager.telemetry.dump_auth_input_samples:

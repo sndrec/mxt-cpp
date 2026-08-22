@@ -648,7 +648,8 @@ static bool validate_vehicle_visual_metadata(
 	}
 	const Dictionary root = parsed;
 	static const char *ROOT_KEYS[] = {
-		"format_revision", "model_transform", "body_surfaces", "material_inputs", "thrusters"
+		"format_revision", "model_transform", "body_surfaces", "material_inputs",
+		"manual_boost_volume_db", "thrusters"
 	};
 	has_only_keys(root, ROOT_KEYS, std::size(ROOT_KEYS), "vehicle visual metadata", errors);
 	const Variant revision_value = root.get("format_revision", Variant());
@@ -750,6 +751,21 @@ static bool validate_vehicle_visual_metadata(
 	const int64_t albedo_surface = read_material_surface("albedo_surface", &VehicleGlbSurface::has_albedo_texture);
 	const int64_t normal_surface = read_material_surface("normal_surface", &VehicleGlbSurface::has_normal_texture);
 	const int64_t paint_mask_surface = read_material_surface("paint_mask_surface", &VehicleGlbSurface::has_paint_mask_texture);
+	// Revision-1 Workshop vehicles predate per-vehicle boost volume. Keeping the
+	// member optional and defaulting to 0 dB preserves their original playback.
+	const Variant boost_volume_value = root.get("manual_boost_volume_db", 0.0);
+	double manual_boost_volume_db = 0.0;
+	if (boost_volume_value.get_type() == Variant::INT) {
+		manual_boost_volume_db = static_cast<double>(static_cast<int64_t>(boost_volume_value));
+	} else if (boost_volume_value.get_type() == Variant::FLOAT) {
+		manual_boost_volume_db = static_cast<double>(boost_volume_value);
+	} else {
+		add_error(errors, "vehicle visual manual_boost_volume_db must be a number");
+	}
+	if (!std::isfinite(manual_boost_volume_db) ||
+			manual_boost_volume_db < -20.0 || manual_boost_volume_db > 20.0) {
+		add_error(errors, "vehicle visual manual_boost_volume_db is outside [-20, 20]");
+	}
 	if (!root.has("thrusters") || root["thrusters"].get_type() != Variant::ARRAY) {
 		add_error(errors, "vehicle visual thrusters must be an array");
 		return false;
@@ -801,6 +817,7 @@ static bool validate_vehicle_visual_metadata(
 	normalized_material_inputs["paint_mask_surface"] = paint_mask_surface;
 	normalized_material_inputs["use_mesh_normals"] = use_mesh_normals;
 	out_metadata["material_inputs"] = normalized_material_inputs;
+	out_metadata["manual_boost_volume_db"] = manual_boost_volume_db;
 	out_metadata["thrusters"] = normalized_thrusters;
 	return true;
 }

@@ -107,6 +107,7 @@ private:
 	std::vector<VehicleCandidate> vehicle_candidates;
 	std::vector<VehicleLoopState> vehicle_loop_states;
 	std::vector<Ref<AudioStream>> vehicle_manual_boost_streams;
+	std::vector<float> vehicle_manual_boost_volume_db;
 	std::vector<float> final_lap_music_timestamps;
 	std::vector<QueuedAnnouncer> announcer_queue;
 	AudioStreamPlayer* music_player = nullptr;
@@ -221,7 +222,7 @@ public:
 	void clear_announcer_queue();
 	int get_announcer_queue_size() const { return static_cast<int>(announcer_queue.size()); }
 	void update_from_gamesim(GameSim* sim, int local_player_id, double delta, bool update_assignments);
-	void set_vehicle_manual_boost_stream(int car_index, const Ref<AudioStream>& stream);
+	void set_vehicle_manual_boost_stream(int car_index, const Ref<AudioStream>& stream, double volume_db);
 	bool play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool set_vehicle_loop(int car_index, const StringName& key, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool stop_vehicle_loop(int car_index, const StringName& key);

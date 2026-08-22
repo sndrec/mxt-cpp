@@ -518,7 +518,7 @@ void MxtSpatialAudioManager::_bind_methods()
 	ClassDB::bind_method(D_METHOD("clear_announcer_queue"), &MxtSpatialAudioManager::clear_announcer_queue);
 	ClassDB::bind_method(D_METHOD("get_announcer_queue_size"), &MxtSpatialAudioManager::get_announcer_queue_size);
 	ClassDB::bind_method(D_METHOD("update_from_gamesim", "game_sim", "local_player_id", "delta", "update_assignments"), &MxtSpatialAudioManager::update_from_gamesim, DEFVAL(true));
-	ClassDB::bind_method(D_METHOD("set_vehicle_manual_boost_stream", "car_index", "stream"), &MxtSpatialAudioManager::set_vehicle_manual_boost_stream);
+	ClassDB::bind_method(D_METHOD("set_vehicle_manual_boost_stream", "car_index", "stream", "volume_db"), &MxtSpatialAudioManager::set_vehicle_manual_boost_stream);
 	ClassDB::bind_method(D_METHOD("play_vehicle_oneshot", "car_index", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::play_vehicle_oneshot, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("set_vehicle_loop", "car_index", "key", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::set_vehicle_loop, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("stop_vehicle_loop", "car_index", "key"), &MxtSpatialAudioManager::stop_vehicle_loop);
@@ -1293,7 +1293,12 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						const size_t boost_sfx_index = static_cast<size_t>(emitter.car_index);
 						if (boost_sfx_index < vehicle_manual_boost_streams.size() &&
 							vehicle_manual_boost_streams[boost_sfx_index].is_valid()) {
-							play_stream_on_emitter(emitter, vehicle_manual_boost_streams[boost_sfx_index], -3.0f, 1.0f);
+							const float volume_modifier = boost_sfx_index < vehicle_manual_boost_volume_db.size()
+									? vehicle_manual_boost_volume_db[boost_sfx_index]
+									: 0.0f;
+							play_stream_on_emitter(
+								emitter, vehicle_manual_boost_streams[boost_sfx_index],
+								-3.0f + volume_modifier, 1.0f);
 						}
 					}
 				}
@@ -1888,7 +1893,10 @@ void MxtSpatialAudioManager::update_from_gamesim(GameSim* sim, int local_player_
 	}
 }
 
-void MxtSpatialAudioManager::set_vehicle_manual_boost_stream(int car_index, const Ref<AudioStream>& stream)
+void MxtSpatialAudioManager::set_vehicle_manual_boost_stream(
+		int car_index,
+		const Ref<AudioStream>& stream,
+		double volume_db)
 {
 	if (car_index < 0) {
 		return;
@@ -1896,8 +1904,10 @@ void MxtSpatialAudioManager::set_vehicle_manual_boost_stream(int car_index, cons
 	const size_t index = static_cast<size_t>(car_index);
 	if (index >= vehicle_manual_boost_streams.size()) {
 		vehicle_manual_boost_streams.resize(index + 1u);
+		vehicle_manual_boost_volume_db.resize(index + 1u, 0.0f);
 	}
 	vehicle_manual_boost_streams[index] = stream;
+	vehicle_manual_boost_volume_db[index] = static_cast<float>(std::clamp(volume_db, -20.0, 20.0));
 }
 
 bool MxtSpatialAudioManager::play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db, double pitch_scale)
@@ -1988,6 +1998,7 @@ void MxtSpatialAudioManager::clear_all()
 	}
 	stop_emitters();
 	vehicle_manual_boost_streams.clear();
+	vehicle_manual_boost_volume_db.clear();
 	clear_announcer_queue();
 }
 

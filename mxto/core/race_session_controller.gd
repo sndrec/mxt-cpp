@@ -179,7 +179,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 				car_node_container.local_visual_car.name_label.text = nametag_names[visual_player_index]
 	debug_runtime_controller.apply_race_render_options(car_render_manager, car_node_container.local_visual_car)
 	car_render_manager.set_custom_stamp_atlas(custom_stamp_atlas)
-	car_render_manager.configure(render_definitions, car_node_container.get_children(), render_settings)
+	car_render_manager.configure(render_definitions, render_settings)
 	_clear_players()
 	spectator_controller.configure_race(local_player_id, local_player_index != -1)
 	var car_properties: Array = []
@@ -324,6 +324,10 @@ func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_prope
 		sim.set_bumpers_enabled(bumpers_enabled and bumper_definition != null)
 	if sim.has_method("set_s_boost_enabled"):
 		sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
+	if sim.has_method("set_boost_unlocked_from_start"):
+		sim.set_boost_unlocked_from_start(
+			String(network_manager.race_options.get("session_kind", "")) == "practice" \
+			and bool(network_manager.race_options.get("boost_unlocked_from_start", false)))
 	if sim.has_method("set_multiplayer_intro_camera_enabled"):
 		sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_controller.replay_playback_use_multiplayer_startup)
 	sim.instantiate_gamesim(level_buffer.duplicate(), car_properties.duplicate(true), acceleration_settings)

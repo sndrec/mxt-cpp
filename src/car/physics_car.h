@@ -100,6 +100,28 @@ struct PhysicsCarFloorProfile {
 	X(float, stat_s_boost_base_speed_add_per_second, 0.0f) \
 	X(float, stat_shift_boost_base_speed_add, 0.0f) \
 	X(float, stat_shift_boost_velocity_multiplier, 1.0f) \
+	X(float, stat_shift_boost_cooldown_seconds, 2.0f) \
+	X(float, stat_shift_boost_cooldown_strength, 0.0f) \
+	X(float, stat_drift_accel_buildup_seconds, 0.6666667f) \
+	X(float, stat_drift_accel_strafe_multiplier, 0.0f) \
+	X(float, stat_spin_attack_damage_multiplier, 1.0f) \
+	X(float, stat_side_attack_damage_multiplier, 1.0f) \
+	X(float, stat_attack_knockback_multiplier, 1.0f) \
+	X(float, stat_attack_cooldown_seconds, 4.0f) \
+	X(float, stat_suspension_stiffness_multiplier, 1.0f) \
+	X(float, stat_suspension_damping_multiplier, 1.0f) \
+	X(float, stat_rail_speed_retention_multiplier, 1.0f) \
+	X(float, stat_rail_deflection_multiplier, 1.0f) \
+	X(float, stat_landing_stability, 1.0f) \
+	X(float, stat_shift_boost_alignment_tolerance, 0.2f) \
+	X(float, stat_accel_press_grip_strength, 20.0f) \
+	X(float, stat_air_pitch_authority_multiplier, 1.0f) \
+	X(float, stat_air_angular_damping_multiplier, 1.0f) \
+	X(float, stat_air_auto_alignment_multiplier, 1.0f) \
+	X(float, stat_drift_initiation_steer_threshold, 0.7f) \
+	X(float, stat_high_speed_drag_multiplier, 1.0f) \
+	X(float, stat_air_orientation_drag_multiplier, 1.0f) \
+	X(float, stat_dirt_drag_multiplier, 1.0f) \
 	X(float, stat_air_pitch_up_speed_loss_factor, 0.0f) \
 	X(float, stat_air_glide_steering_speed_loss_factor, 0.0f) \
 	X(float, stat_drive_target_speed_multiplier, 1.0f) \
@@ -172,6 +194,7 @@ struct PhysicsCarFloorProfile {
 	X(uint32_t, frames_since_death, 0) \
 	X(int8_t, drift_sign, 0) \
 	X(float, drift_ramp, 0.0f) \
+	X(uint32_t, shift_boost_cooldown_frames, 0) \
 	X(uint32_t, state_2, 0) \
 	X(uint64_t, level_start_time, 0) \
 	X(int, some_breakdown_int, 0) \

@@ -26,6 +26,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_bumpers_enabled"), &GameSim::get_bumpers_enabled);
 	ClassDB::bind_method(D_METHOD("set_s_boost_enabled", "enabled"), &GameSim::set_s_boost_enabled);
 	ClassDB::bind_method(D_METHOD("get_s_boost_enabled"), &GameSim::get_s_boost_enabled);
+	ClassDB::bind_method(D_METHOD("set_boost_unlocked_from_start", "enabled"), &GameSim::set_boost_unlocked_from_start);
+	ClassDB::bind_method(D_METHOD("get_boost_unlocked_from_start"), &GameSim::get_boost_unlocked_from_start);
 	ClassDB::bind_method(D_METHOD("set_target_lap_count", "lap_count"), &GameSim::set_target_lap_count);
 	ClassDB::bind_method(D_METHOD("get_target_lap_count"), &GameSim::get_target_lap_count);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);

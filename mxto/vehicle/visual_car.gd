@@ -182,11 +182,6 @@ var car_desired_vel := Vector3.ZERO
 var old_ts_normal := Vector3.ZERO
 var desired_ts_normal := Vector3.ZERO
 
-var car_overlay_colour := Color.BLACK
-var car_material : ShaderMaterial
-var car_outline_material : ShaderMaterial
-var vehicle_main : MeshInstance3D
-var vehicle_shadow : MeshInstance3D
 var _needs_process_reset := false
 var render_profile_process_frames := 0
 var render_profile_process_us := 0
@@ -274,12 +269,6 @@ func _apply_low_cost_visual_state() -> void:
 	var use_transform := Transform3D(basis_physical.basis, position_current)
 	car_transform.global_transform = use_transform
 	transform_visual = use_transform
-	car_overlay_colour = car_overlay_colour.lerp(Color.BLACK, 0.2)
-	if car_outline_material and is_instance_valid(car_outline_material):
-		car_outline_material.set_shader_parameter("overlay_colour", Color.BLACK)
-		car_outline_material.set_shader_parameter("in_velocity", Vector3.ZERO)
-	if car_material and is_instance_valid(car_material):
-		car_material.set_shader_parameter("in_overlay_colour", Color.BLACK)
 
 func _apply_effect_tier_state() -> void:
 	var full_effects_enabled := effect_tier == EffectTier.FULL
@@ -642,25 +631,6 @@ func _physics_process(delta):
 		render_profile_physics_max_us = maxi(render_profile_physics_max_us, profile_us)
 		render_profile_physics_frames += 1
 
-var is_predicted = true
-
-func just_rendered() -> void:
-	is_predicted = false
-		
-	if (machine_state & FZ_MS.JUST_PRESSED_BOOST) != 0 or (machine_state & FZ_MS.JUST_HIT_DASHPLATE) != 0:
-		car_overlay_colour += Color.SKY_BLUE * 0.75
-	if (machine_state & FZ_MS.SPINATTACKING) != 0 or (machine_state & FZ_MS.SIDEATTACKING) != 0:
-		car_overlay_colour = car_overlay_colour.lerp(Color.YELLOW * 0.5, 0.5)
-	if s_boost_active:
-		car_overlay_colour = car_overlay_colour.lerp(Color(1.0, 0.9, 0.3), 0.6)
-	if (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
-		car_overlay_colour += Color.MAGENTA * 0.018
-	car_overlay_colour = car_overlay_colour.lerp(Color.BLACK, 0.03)
-		#var new_boost_effect := preload("res://asset/effect/boost_effect.tscn").instantiate()
-		#new_boost_effect.position = Vector3(0, 0, -5)
-		#new_boost_effect.life_time = 1000
-		#car_camera.add_child(new_boost_effect)
-
 var track_surface_smoothed := Vector3.UP
 
 func _process(delta: float) -> void:
@@ -705,8 +675,6 @@ func _process(delta: float) -> void:
 	
 	if effect_tier == EffectTier.FULL and (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
-		if is_instance_valid(vehicle_shadow):
-			boost_electricity.ground = Plane(_safe_track_normal(), vehicle_shadow.global_position)
 	else:
 		boost_electricity.boosting = false
 	if effect_tier == EffectTier.FULL:
@@ -717,7 +685,6 @@ func _process(delta: float) -> void:
 			var profile_electricity_us := Time.get_ticks_usec() - profile_electricity_start
 			render_profile_electricity_us += profile_electricity_us
 			render_profile_electricity_max_us = maxi(render_profile_electricity_max_us, profile_electricity_us)
-	is_predicted = true
 	#DebugDraw2D.set_text("current_checkpoint", current_checkpoint)
 	if profile_enabled:
 		var profile_us := Time.get_ticks_usec() - profile_start

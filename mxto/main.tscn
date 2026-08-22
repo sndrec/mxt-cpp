@@ -34,7 +34,7 @@
 [ext_resource type="Script" uid="uid://c0hq6ixi0y144" path="res://netplay/network_telemetry_controller.gd" id="43_network_telemetry"]
 [ext_resource type="PackedScene" path="res://ui/time_attack_setup.tscn" id="44_time_attack_setup"]
 [ext_resource type="PackedScene" path="res://practice/practice_setup.tscn" id="45_practice_setup"]
-[ext_resource type="Script" path="res://practice/practice_controller.gd" id="46_practice_controller"]
+[ext_resource type="Script" uid="uid://i7ijrucdmnjv" path="res://practice/practice_controller.gd" id="46_practice_controller"]
 [ext_resource type="PackedScene" path="res://practice/practice_hud.tscn" id="47_practice_hud"]
 [ext_resource type="PackedScene" path="res://practice/practice_input_editor.tscn" id="48_practice_input_editor"]
 
@@ -158,9 +158,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=929353351]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=1580174025]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1747022238]
+[node name="GameSim" type="GameSim" parent="." unique_id=1025527394]
 
 [node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
@@ -449,14 +449,14 @@ visible = false
 
 [node name="TimeAttackSetup" parent="." unique_id=1640364448 instance=ExtResource("44_time_attack_setup")]
 
-[node name="PracticeSetup" parent="." instance=ExtResource("45_practice_setup")]
+[node name="PracticeSetup" parent="." unique_id=1050423354 instance=ExtResource("45_practice_setup")]
 
-[node name="PracticeController" type="Node" parent="."]
+[node name="PracticeController" type="Node" parent="." unique_id=1157279663]
 script = ExtResource("46_practice_controller")
 
-[node name="PracticeHud" parent="." instance=ExtResource("47_practice_hud")]
+[node name="PracticeHud" parent="." unique_id=1027236131 instance=ExtResource("47_practice_hud")]
 
-[node name="PracticeInputEditor" parent="." instance=ExtResource("48_practice_input_editor")]
+[node name="PracticeInputEditor" parent="." unique_id=1365697422 instance=ExtResource("48_practice_input_editor")]
 
 [node name="OptionsLayer" type="CanvasLayer" parent="." unique_id=1517233725]
 layer = 200

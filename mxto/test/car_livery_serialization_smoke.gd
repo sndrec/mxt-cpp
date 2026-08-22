@@ -10,6 +10,10 @@ func _init() -> void:
 	livery.primary_colour = Color(0.2, 0.4, 0.8, 1.0)
 	livery.secondary_colour = Color(0.9, 0.8, 0.7, 1.0)
 	livery.accent_colour = Color(0.1, 0.2, 0.3, 1.0)
+	livery.outline_colour = Color(0.8, 0.1, 0.6, 1.0)
+	livery.trail_colour = Color(0.2, 0.9, 0.4, 1.0)
+	livery.outline_colour_customized = true
+	livery.trail_colour_customized = true
 
 	var accepted := 0
 	for i in range(CarLivery.MAX_STAMPS + 1):
@@ -58,6 +62,19 @@ func _init() -> void:
 	var restored_livery := restored_settings.get_car_livery_resource()
 	if restored_livery.to_dict() != livery.to_dict():
 		push_error("player settings did not preserve livery data")
+		quit(1)
+		return
+
+	var legacy_livery := CarLivery.new()
+	legacy_livery.from_dict({
+		"vehicle_content_id": "mxt:vehicle:official:legacy",
+		"primary_colour": "ffffffff",
+		"secondary_colour": "ffffffff",
+		"accent_colour": "ffffffff",
+		"stamps": [],
+	})
+	if legacy_livery.outline_colour_customized or legacy_livery.trail_colour_customized:
+		push_error("older liveries should retain their vehicle-authored outline colours")
 		quit(1)
 		return
 

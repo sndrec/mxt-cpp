@@ -228,6 +228,7 @@ static Dictionary visual_dictionary(const MxtCarAuthoringSession &session) {
 	Dictionary visual;
 	visual["model_transform"] = transform;
 	visual["material_setup"] = material;
+	visual["manual_boost_volume_db"] = session.get_manual_boost_volume_db();
 	visual["thrusters"] = thrusters;
 	return visual;
 }
@@ -319,9 +320,19 @@ static bool parse_visual_dictionary(const Dictionary &visual, MxtCarAuthoringSes
 		decoded["scale"] = scale;
 		decoded_thrusters.push_back(decoded);
 	}
+	// Drafts created before boost-volume authoring shipped have no member here;
+	// 0 dB preserves their prior playback exactly.
+	const Variant boost_volume_value = visual.get("manual_boost_volume_db", 0.0);
+	if (boost_volume_value.get_type() != Variant::INT &&
+			boost_volume_value.get_type() != Variant::FLOAT) return false;
+	const double boost_volume_db = boost_volume_value.get_type() == Variant::INT
+			? static_cast<double>(static_cast<int64_t>(boost_volume_value))
+			: static_cast<double>(boost_volume_value);
+	if (!std::isfinite(boost_volume_db) || boost_volume_db < -20.0 || boost_volume_db > 20.0) return false;
 	return session.load_draft_visual_state(FileAccess::file_exists(model_path) ? model_path
-																			   : String(),
-										   decoded_transform, decoded_material, decoded_thrusters);
+																   : String(),
+										   decoded_transform, decoded_material, decoded_thrusters,
+										   boost_volume_db);
 }
 
 static Dictionary read_manifest(const String &draft_id) {
@@ -424,7 +435,9 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 		Dictionary transform = session->get_model_transform();
 		Dictionary material = session->get_material_setup();
 		Array thrusters = session->get_thrusters();
-		if (!session->load_draft_visual_state(canonical_model, transform, material, thrusters)) {
+		if (!session->load_draft_visual_state(
+				canonical_model, transform, material, thrusters,
+				session->get_manual_boost_volume_db())) {
 			return result_dictionary(false, "could not adopt the stored draft model");
 		}
 	}

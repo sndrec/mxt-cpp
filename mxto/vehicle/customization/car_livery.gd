@@ -10,6 +10,10 @@ const MAX_STAMPS := 16
 @export var primary_colour: Color = Color(0.1, 0.35, 1.0, 1.0)
 @export var secondary_colour: Color = Color(1.0, 1.0, 1.0, 1.0)
 @export var accent_colour: Color = Color(0.05, 0.05, 0.06, 1.0)
+@export var outline_colour: Color = Color(0.25, 0.55, 1.0, 1.0)
+@export var trail_colour: Color = Color(0.25, 0.55, 1.0, 1.0)
+@export var outline_colour_customized := false
+@export var trail_colour_customized := false
 @export var stamps: Array[CarLiveryStamp] = []
 
 func to_dict() -> Dictionary:
@@ -25,6 +29,10 @@ func to_dict() -> Dictionary:
 		"primary_colour": primary_colour.to_html(true),
 		"secondary_colour": secondary_colour.to_html(true),
 		"accent_colour": accent_colour.to_html(true),
+		"outline_colour": outline_colour.to_html(true),
+		"trail_colour": trail_colour.to_html(true),
+		"outline_colour_customized": outline_colour_customized,
+		"trail_colour_customized": trail_colour_customized,
 		"stamps": stamp_dicts,
 	}
 
@@ -37,6 +45,16 @@ func from_dict(data: Dictionary) -> void:
 		secondary_colour = Color.html(str(data["secondary_colour"]))
 	if data.has("accent_colour"):
 		accent_colour = Color.html(str(data["accent_colour"]))
+	if data.has("outline_colour"):
+		outline_colour = Color.html(str(data["outline_colour"]))
+		outline_colour_customized = true
+	if data.has("trail_colour"):
+		trail_colour = Color.html(str(data["trail_colour"]))
+		trail_colour_customized = true
+	if data.has("outline_colour_customized"):
+		outline_colour_customized = bool(data["outline_colour_customized"])
+	if data.has("trail_colour_customized"):
+		trail_colour_customized = bool(data["trail_colour_customized"])
 	stamps.clear()
 	if data.has("stamps") and typeof(data["stamps"]) == TYPE_ARRAY:
 		var stamp_data: Array = data["stamps"]

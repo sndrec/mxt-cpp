@@ -47,6 +47,8 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var corner_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Corners/Rows
 @onready var thruster_selector: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Selector
 @onready var thruster_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Rows
+@onready var boost_volume_slider: HSlider = $Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow/Slider
+@onready var boost_volume_value: Label = $Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow/Value
 @onready var search_input: LineEdit = $Workspace/StatsColumn/StatFilters/Search
 @onready var category_option: OptionButton = $Workspace/StatsColumn/StatFilters/Category
 @onready var advanced_mode: CheckBox = $Workspace/StatsColumn/StatFilters/AdvancedMode
@@ -351,6 +353,9 @@ func _connect_controls() -> void:
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Add.pressed.connect(_add_thruster)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Remove.pressed.connect(_remove_thruster)
 	thruster_selector.item_selected.connect(func(_index): _refresh_thruster_controls())
+	boost_volume_slider.drag_started.connect(_begin_boost_volume_edit)
+	boost_volume_slider.drag_ended.connect(_end_boost_volume_edit)
+	boost_volume_slider.value_changed.connect(_set_boost_volume)
 	body_surface_list.multi_selected.connect(func(_index, _selected): _apply_material_controls())
 	albedo_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	normal_surface_option.item_selected.connect(func(_index): _apply_material_controls())
@@ -608,7 +613,8 @@ func _refresh_document_mode_controls() -> void:
 	for tab in range(physical_tabs.get_tab_count()):
 		var title := physical_tabs.get_tab_title(tab)
 		physical_tabs.set_tab_disabled(
-			tab, editing_official and title in ["Transform", "Materials", "Thrusters"])
+			tab, editing_official and title in ["Transform", "Materials", "Thrusters", "Audio"])
+	boost_volume_slider.editable = !editing_official
 	if editing_official and physical_tabs.is_tab_disabled(physical_tabs.current_tab):
 		_select_physical_tab("Corners")
 
@@ -862,6 +868,8 @@ func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
 		visual_result = _copy_packaged_vehicle_visual(record)
 	if !bool(visual_result.get("valid", false)):
 		return visual_result
+	if !session.set_manual_boost_volume_db(definition.manual_boost_volume_db):
+		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid boost-volume metadata"]), "warnings": PackedStringArray()}
 	return session.validate()
 
 
@@ -1512,12 +1520,40 @@ func _test_drive() -> void:
 func _refresh_all() -> void:
 	_refresh_stat_options()
 	_refresh_visual_controls()
+	_refresh_boost_volume_controls()
 	_refresh_preview_paint_controls()
 	_refresh_resource_usage()
 	_refresh_preview()
 	_refresh_samples()
 	_show_diagnostics(session.validate())
 	_refresh_history_buttons()
+
+
+func _refresh_boost_volume_controls() -> void:
+	var volume_db := session.get_manual_boost_volume_db()
+	boost_volume_slider.set_value_no_signal(volume_db)
+	boost_volume_value.text = "%+.1f dB" % volume_db
+
+
+func _begin_boost_volume_edit() -> void:
+	if updating_controls:
+		return
+	session.begin_edit_transaction()
+
+
+func _end_boost_volume_edit(_value_changed: bool) -> void:
+	if updating_controls:
+		return
+	session.end_edit_transaction()
+	_refresh_history_buttons()
+
+
+func _set_boost_volume(value: float) -> void:
+	if updating_controls:
+		return
+	if session.set_manual_boost_volume_db(value):
+		boost_volume_value.text = "%+.1f dB" % value
+		_refresh_history_buttons()
 
 
 func _refresh_history_buttons() -> void:

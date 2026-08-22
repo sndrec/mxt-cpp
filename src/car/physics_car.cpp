@@ -270,8 +270,10 @@ float PhysicsCar::classify_machine_drift(
 
     // ───────────── Grip / drift threshold ─────────────
     float grip_threshold = 0.0f;
-    if ((!is_drifting && is_strafing) || soa->grip_frames_from_accel_press[soa_index] != 0) {
-        grip_threshold = 20.0f;
+	if (soa->grip_frames_from_accel_press[soa_index] != 0) {
+		grip_threshold = soa->stat_accel_press_grip_strength[soa_index];
+	} else if (!is_drifting && is_strafing) {
+		grip_threshold = 20.0f;
     } else {
 		float base_grip = grip_1;
         grip_threshold = base_grip;
@@ -292,7 +294,8 @@ float PhysicsCar::classify_machine_drift(
         soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
     }
 
-	if (!is_drifting && std::abs(soa->input_steer_yaw[soa_index]) <= 0.7f) {
+	if (!is_drifting && std::abs(soa->input_steer_yaw[soa_index]) <=
+			soa->stat_drift_initiation_steer_threshold[soa_index]) {
 		allow_drift = false;
     }
 
@@ -466,7 +469,9 @@ void PhysicsCar::handle_linear_velocity()
 		float drift_factor = 1.0f - (norm_z_vel_flat_rot * norm_z_vel_flat_rot);
 		drift_accel_component = drift_factor * soa->stat_drift_accel[soa_index];
 
-		float strafe_factor = (1.0f - std::abs(soa->input_strafe[soa_index]));
+		const float strafe_amount = std::abs(soa->input_strafe[soa_index]);
+		const float strafe_factor = 1.0f +
+			(soa->stat_drift_accel_strafe_multiplier[soa_index] - 1.0f) * strafe_amount;
 		if (soa->velocity_local_x[soa_index] > 0.0f && soa->drift_sign[soa_index] == -1)
 		{
 			soa->drift_sign[soa_index] = 1;
@@ -478,7 +483,14 @@ void PhysicsCar::handle_linear_velocity()
 		}
 		if ((soa->velocity_local_x[soa_index] > 0.0f && soa->drift_sign[soa_index] == 1) || (soa->velocity_local_x[soa_index] < 0.0f && soa->drift_sign[soa_index] == -1))
 		{
-			soa->drift_ramp[soa_index] = std::min(1.0f, soa->drift_ramp[soa_index] + (0.025f - soa->drift_ramp[soa_index] * 0.025f) * (1.0f + soa->boost_turbo[soa_index] * 0.03f));
+			const float buildup_seconds = soa->stat_drift_accel_buildup_seconds[soa_index];
+			const float buildup_per_tick = buildup_seconds <= 0.0f
+				? 1.0f
+				: std::min(1.0f, (1.0f / 60.0f) / buildup_seconds);
+			soa->drift_ramp[soa_index] = std::min(1.0f,
+				soa->drift_ramp[soa_index] +
+				buildup_per_tick * (1.0f - soa->drift_ramp[soa_index]) *
+				(1.0f + soa->boost_turbo[soa_index] * 0.03f));
 		}
 		drift_accel_component = drift_accel_component * soa->drift_ramp[soa_index] * strafe_factor;
 	}
@@ -719,10 +731,16 @@ float PhysicsCar::handle_machine_accel_and_boost(
 			current_accel_magnitude = 0.0f;
 		}
 
-		if (speed_difference > 0.0f &&
-			(normalized_fwd_speed < 0.0f || (soa->terrain_state[soa_index] & TERRAIN::DIRT))) {
-			current_accel_magnitude *= 5.0f;
-	}
+		float positive_speed_difference_response = 1.0f;
+		if (normalized_fwd_speed < 0.0f) {
+			positive_speed_difference_response = 5.0f;
+		} else if (soa->terrain_state[soa_index] & TERRAIN::DIRT) {
+			positive_speed_difference_response =
+				1.0f + 4.0f * std::max(soa->stat_dirt_drag_multiplier[soa_index], 0.0f);
+		}
+		if (speed_difference > 0.0f) {
+			current_accel_magnitude *= positive_speed_difference_response;
+		}
 
 	float final_accel_term = (1.0f - drift_accel_factor) *
 	((speed_difference * current_accel_magnitude) +
@@ -753,9 +771,8 @@ float PhysicsCar::handle_machine_accel_and_boost(
 		if (dashplate_hit || start_manual_boost) {
 			released_accel_magnitude = 0.0f;
 		}
-		if (released_speed_difference > 0.0f &&
-			(normalized_fwd_speed < 0.0f || (soa->terrain_state[soa_index] & TERRAIN::DIRT))) {
-			released_accel_magnitude *= 5.0f;
+		if (released_speed_difference > 0.0f) {
+			released_accel_magnitude *= positive_speed_difference_response;
 		}
 
 		const float released_final_accel_term = 0.05f * (1.0f - drift_accel_factor) *
@@ -834,8 +851,9 @@ return final_thrust_output;
 void PhysicsCar::handle_angle_velocity()
 {
 	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
-		soa->velocity_angular_x[soa_index] *= 0.9f;
-		soa->velocity_angular_z[soa_index] *= 0.99f;
+		const float damping = soa->stat_air_angular_damping_multiplier[soa_index];
+		soa->velocity_angular_x[soa_index] *= std::max(0.0f, 1.0f - 0.1f * damping);
+		soa->velocity_angular_z[soa_index] *= std::max(0.0f, 1.0f - 0.01f * damping);
 	}
 
 	const float max_yaw_radians_per_tick =
@@ -866,7 +884,8 @@ void PhysicsCar::handle_airborne_controls()
 			(0.3f * air_time_factor);
 		}
 
-		soa->air_tilt[soa_index] += current_tilt_increment;
+		soa->air_tilt[soa_index] +=
+			current_tilt_increment * soa->stat_air_pitch_authority_multiplier[soa_index];
 		soa->air_tilt[soa_index] = std::clamp(soa->air_tilt[soa_index], min_air_tilt, max_air_tilt);
 	} else {
 		soa->air_tilt[soa_index] = 0.0f;
@@ -942,7 +961,7 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 
 		if (dot < 0.992f) {
 			float adjusted_dot = dot + 0.008f;
-			float base_rot_deg = 15.0f;
+			float base_rot_deg = 15.0f * soa->stat_air_auto_alignment_multiplier[soa_index];
 			SimVec3 axis = safe_world_up.cross(safe_track_normal);
 			float axis_thresh = 0.1f * 0.1f;
 			if (axis.length_squared() < axis_thresh || adjusted_dot < 0.008f) {
@@ -1019,12 +1038,15 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	SimVec3 normal_force =
 	LOAD_VEC3(track_surface_normal) *
 	(soa->stat_weight[soa_index] * alignment_with_normal * speed_weight_ratio);
-	float base_drag_mag = speed_weight_ratio * speed_weight_ratio * 8.0f;
+	float base_drag_mag = speed_weight_ratio * speed_weight_ratio * 8.0f *
+		soa->stat_high_speed_drag_multiplier[soa_index];
 	SimVec3 drag_vector = LOAD_VEC3(velocity) - normal_force;
 
 	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
 		if (forward_normal_alignment < 0.0f)
-			base_drag_mag *= std::max(0.0f, 1.0f + forward_normal_alignment);
+			base_drag_mag *= std::max(0.0f,
+				1.0f + forward_normal_alignment *
+				soa->stat_air_orientation_drag_multiplier[soa_index]);
 	}
 
 	float drag_len = drag_vector.length();
@@ -1361,6 +1383,28 @@ void PhysicsCar::update_effective_machine_stats(bool include_technique)
 	soa->stat_s_boost_base_speed_add_per_second[soa_index] = stat(CAR_STAT_S_BOOST_BASE_SPEED_ADD_PER_SECOND);
 	soa->stat_shift_boost_base_speed_add[soa_index] = stat(CAR_STAT_SHIFT_BOOST_BASE_SPEED_ADD);
 	soa->stat_shift_boost_velocity_multiplier[soa_index] = stat(CAR_STAT_SHIFT_BOOST_VELOCITY_MULTIPLIER);
+	soa->stat_shift_boost_cooldown_seconds[soa_index] = stat(CAR_STAT_SHIFT_BOOST_COOLDOWN_SECONDS);
+	soa->stat_shift_boost_cooldown_strength[soa_index] = stat(CAR_STAT_SHIFT_BOOST_COOLDOWN_STRENGTH);
+	soa->stat_drift_accel_buildup_seconds[soa_index] = stat(CAR_STAT_DRIFT_ACCEL_BUILDUP_SECONDS);
+	soa->stat_drift_accel_strafe_multiplier[soa_index] = stat(CAR_STAT_DRIFT_ACCEL_STRAFE_MULTIPLIER);
+	soa->stat_spin_attack_damage_multiplier[soa_index] = stat(CAR_STAT_SPIN_ATTACK_DAMAGE_MULTIPLIER);
+	soa->stat_side_attack_damage_multiplier[soa_index] = stat(CAR_STAT_SIDE_ATTACK_DAMAGE_MULTIPLIER);
+	soa->stat_attack_knockback_multiplier[soa_index] = stat(CAR_STAT_ATTACK_KNOCKBACK_MULTIPLIER);
+	soa->stat_attack_cooldown_seconds[soa_index] = stat(CAR_STAT_ATTACK_COOLDOWN_SECONDS);
+	soa->stat_suspension_stiffness_multiplier[soa_index] = stat(CAR_STAT_SUSPENSION_STIFFNESS_MULTIPLIER);
+	soa->stat_suspension_damping_multiplier[soa_index] = stat(CAR_STAT_SUSPENSION_DAMPING_MULTIPLIER);
+	soa->stat_rail_speed_retention_multiplier[soa_index] = stat(CAR_STAT_RAIL_SPEED_RETENTION_MULTIPLIER);
+	soa->stat_rail_deflection_multiplier[soa_index] = stat(CAR_STAT_RAIL_DEFLECTION_MULTIPLIER);
+	soa->stat_landing_stability[soa_index] = stat(CAR_STAT_LANDING_STABILITY);
+	soa->stat_shift_boost_alignment_tolerance[soa_index] = stat(CAR_STAT_SHIFT_BOOST_ALIGNMENT_TOLERANCE);
+	soa->stat_accel_press_grip_strength[soa_index] = stat(CAR_STAT_ACCEL_PRESS_GRIP_STRENGTH);
+	soa->stat_air_pitch_authority_multiplier[soa_index] = stat(CAR_STAT_AIR_PITCH_AUTHORITY_MULTIPLIER);
+	soa->stat_air_angular_damping_multiplier[soa_index] = stat(CAR_STAT_AIR_ANGULAR_DAMPING_MULTIPLIER);
+	soa->stat_air_auto_alignment_multiplier[soa_index] = stat(CAR_STAT_AIR_AUTO_ALIGNMENT_MULTIPLIER);
+	soa->stat_drift_initiation_steer_threshold[soa_index] = stat(CAR_STAT_DRIFT_INITIATION_STEER_THRESHOLD);
+	soa->stat_high_speed_drag_multiplier[soa_index] = stat(CAR_STAT_HIGH_SPEED_DRAG_MULTIPLIER);
+	soa->stat_air_orientation_drag_multiplier[soa_index] = stat(CAR_STAT_AIR_ORIENTATION_DRAG_MULTIPLIER);
+	soa->stat_dirt_drag_multiplier[soa_index] = stat(CAR_STAT_DIRT_DRAG_MULTIPLIER);
 	soa->stat_air_pitch_up_speed_loss_factor[soa_index] = stat(CAR_STAT_AIR_PITCH_UP_SPEED_LOSS_FACTOR);
 	soa->stat_air_glide_steering_speed_loss_factor[soa_index] = stat(CAR_STAT_AIR_GLIDE_STEERING_SPEED_LOSS_FACTOR);
 	soa->stat_drive_target_speed_multiplier[soa_index] = stat(CAR_STAT_DRIVE_TARGET_SPEED_MULTIPLIER);
@@ -1437,7 +1481,8 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->spinattack_direction[soa_index] = 0;
 	soa->frames_since_start[soa_index] = 0;
 	soa->side_attack_delay[soa_index] = 0;
-	soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
+	soa->attack_cooldown_frames[soa_index] = static_cast<uint16_t>(std::clamp(
+		std::lround(soa->stat_attack_cooldown_seconds[soa_index] * _TICKS_PER_SECOND), 0l, 65535l));
 	soa->brake_timer[soa_index] = 0;
 	soa->rail_collision_timer[soa_index] = 0;
 	soa->terrain_state[soa_index] = 0;
@@ -1454,6 +1499,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->some_breakdown_int[soa_index] = 0;
 	soa->drift_sign[soa_index] = 1;
 	soa->drift_ramp[soa_index] = 0.0;
+	soa->shift_boost_cooldown_frames[soa_index] = 0;
 
 	// Orient the machine at the spawn position
 	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.basis = SimBasis().rotated(SimVec3(0, 1, 0), spawn_rot + PI); STORE_TRANSFORM(basis_physical, mxt_tmp); }
@@ -1630,23 +1676,20 @@ void PhysicsCar::update_suspension_forces(
 		float prev_frame_compression_metric = soa->tilt_force[p];
 		soa->tilt_force[p] = current_compression;
 
-		float stiffness_k1 = 9000.0f;
-		float damping_coeff_shared = 0.009f;
-		float stiffness_k2_for_damping = 10000.0f;
-
 		STORE_TILT_VEC3(up_vector, p, LOAD_TILT_VEC3(up_vector_2, p));
 
 		float spring_force_comp =
-		damping_coeff_shared * (stiffness_k1 * current_compression) *
-		mass_fraction;
+		81.0f * soa->stat_suspension_stiffness_multiplier[soa_index] *
+		current_compression * mass_fraction;
 
 		float delta_compression = prev_frame_compression_metric - current_compression;
 		float damping2_force_comp =
-		mass_fraction * stiffness_k2_for_damping * damping_coeff_shared *
-		delta_compression;
+		90.0f * soa->stat_suspension_damping_multiplier[soa_index] *
+		mass_fraction * delta_compression;
 
 		calculated_force_magnitude =
-		damping1_force_component + spring_force_comp - damping2_force_comp;
+		damping1_force_component * soa->stat_suspension_damping_multiplier[soa_index] +
+		spring_force_comp - damping2_force_comp;
 	} else if (grounded_contact) {
 		soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::AIRBORNE);
 		soa->tilt_force[p] = 0.0f;
@@ -2138,7 +2181,8 @@ void PhysicsCar::handle_attack_states()
 			if (soa->attack_cooldown_frames[soa_index] != 0) {
 				soa->machine_state[soa_index] &= ~MACHINESTATE::SPINATTACKING;
 			} else {
-				soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
+				soa->attack_cooldown_frames[soa_index] = static_cast<uint16_t>(std::clamp(
+					std::lround(soa->stat_attack_cooldown_seconds[soa_index] * _TICKS_PER_SECOND), 0l, 65535l));
 				soa->spinattack_angle[soa_index] = Math_PI * 8.0f;
 				soa->spinattack_decrement[soa_index] = Math_PI * 0.125f * kSpinAttackShortenMultiplier;
 				if (std::abs(soa->input_steer_yaw[soa_index]) > 0.1f) {
@@ -2168,7 +2212,8 @@ void PhysicsCar::handle_attack_states()
 			if (soa->attack_cooldown_frames[soa_index] != 0) {
 				soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
 			} else {
-				soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
+				soa->attack_cooldown_frames[soa_index] = static_cast<uint16_t>(std::clamp(
+					std::lround(soa->stat_attack_cooldown_seconds[soa_index] * _TICKS_PER_SECOND), 0l, 65535l));
 				soa->side_attack_delay[soa_index] = 6;
 				soa->side_attack_indicator[soa_index] = 0.4f * soa->input_steer_yaw[soa_index];
 			}
@@ -3028,13 +3073,17 @@ if (s_boost_rail_contact) {
 				boost_turbo_additional_mult = 0.6f * base_speed_mult;
 			}
 			if (!soa->s_boost_active[soa_index]){
-				soa->base_speed[soa_index] *= base_speed_mult;
+				soa->base_speed[soa_index] *=
+					base_speed_mult * soa->stat_rail_speed_retention_multiplier[soa_index];
 			}
-			soa->boost_turbo[soa_index] *= (0.3f + boost_turbo_additional_mult);
+			soa->boost_turbo[soa_index] *=
+				(0.3f + boost_turbo_additional_mult) *
+				soa->stat_rail_speed_retention_multiplier[soa_index];
 		}
 
 		if (speed_over_weight <= 1.851851851f) {
-			ADD_VEC3(velocity, response_impulse_base * -1.0f);
+			ADD_VEC3(velocity, response_impulse_base *
+				(-soa->stat_rail_deflection_multiplier[soa_index]));
 		} else {
 			float final_impulse_scale_factor;
 			if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
@@ -3045,7 +3094,8 @@ if (s_boost_rail_contact) {
 				final_impulse_scale_factor = 2.0f - std::abs(clamped_opposing_dot_prod);
 			}
 
-			ADD_VEC3(velocity, response_impulse_base * (-final_impulse_scale_factor));
+			ADD_VEC3(velocity, response_impulse_base *
+				(-final_impulse_scale_factor * soa->stat_rail_deflection_multiplier[soa_index]));
 
 			if (soa->rail_collision_timer[soa_index] == 0) {
 				set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
@@ -3078,7 +3128,9 @@ if (s_boost_rail_contact) {
 		float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
 		if (up_dot_track < 0.0f)
 			up_dot_track = 0.0f;
-		const float landing_penalty_factor = landing_alignment_penalty_factor(soa->air_time[soa_index]);
+		const float landing_penalty_factor = std::clamp(
+			landing_alignment_penalty_factor(soa->air_time[soa_index]) /
+			std::max(soa->stat_landing_stability[soa_index], 0.0001f), 0.0f, 1.0f);
 		const float effective_up_dot_track = 1.0f - ((1.0f - up_dot_track) * landing_penalty_factor);
 		const SimVec3 velocity_before_landing_penalty = LOAD_VEC3(velocity);
 		float vel_along_track = LOAD_VEC3(velocity).length() * vel_dot_track;
@@ -3086,10 +3138,20 @@ if (s_boost_rail_contact) {
 		SimVec3 normal_vel = LOAD_VEC3(track_surface_normal) * vel_along_track;
 		float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
 		SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
-		if (vel_align_factor >= 0.8f && soa->energy[soa_index] > 0.001f && (soa->machine_state[soa_index] & MACHINESTATE::HAS_DISCONNECTED) == 0)
+		if (vel_align_factor >= 1.0f - soa->stat_shift_boost_alignment_tolerance[soa_index] &&
+			soa->energy[soa_index] > 0.001f &&
+			(soa->machine_state[soa_index] & MACHINESTATE::HAS_DISCONNECTED) == 0)
 		{
-			STORE_VEC3(velocity, LOAD_VEC3(velocity) * soa->stat_shift_boost_velocity_multiplier[soa_index]);
-			soa->base_speed[soa_index] += soa->stat_shift_boost_base_speed_add[soa_index];
+			const float cooldown_strength = soa->shift_boost_cooldown_frames[soa_index] > 0
+				? soa->stat_shift_boost_cooldown_strength[soa_index]
+				: 1.0f;
+			const float velocity_multiplier = 1.0f +
+				(soa->stat_shift_boost_velocity_multiplier[soa_index] - 1.0f) * cooldown_strength;
+			STORE_VEC3(velocity, LOAD_VEC3(velocity) * velocity_multiplier);
+			soa->base_speed[soa_index] +=
+				soa->stat_shift_boost_base_speed_add[soa_index] * cooldown_strength;
+			soa->shift_boost_cooldown_frames[soa_index] = static_cast<uint32_t>(std::max(
+				0l, std::lround(soa->stat_shift_boost_cooldown_seconds[soa_index] * 60.0f)));
 		}else
 		{
 			vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);

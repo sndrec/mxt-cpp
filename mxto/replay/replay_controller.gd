@@ -1483,8 +1483,6 @@ func _step_replay_by_ticks(delta_ticks: int) -> void:
 		if game_manager.game_sim.sim_started:
 			game_manager._update_native_render_camera()
 			game_manager.game_sim.render_gamesim()
-			if game_manager.car_node_container.local_visual_car != null:
-				game_manager.car_node_container.local_visual_car.just_rendered()
 	_update_replay_timeline_controls()
 
 func _update_replay_timeline_controls() -> void:
@@ -1802,8 +1800,6 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 	if game_manager.game_sim.sim_started:
 		game_manager._update_native_render_camera()
 		game_manager.game_sim.render_gamesim()
-		if game_manager.car_node_container.local_visual_car != null:
-			game_manager.car_node_container.local_visual_car.just_rendered()
 	if show_notice:
 		race_presentation_controller.show_notification("Replay: %s" % _format_replay_timeline_time(game_manager._singleplayer_tick), 900)
 	return true

@@ -1,6 +1,6 @@
 extends SceneTree
 
-const RULESET_REVISION := 1
+const RULESET_REVISION := 2
 
 func _argument(args: PackedStringArray, name: String) -> String:
 	var index := args.find(name)

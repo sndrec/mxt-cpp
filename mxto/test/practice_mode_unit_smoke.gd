@@ -1,8 +1,10 @@
 extends SceneTree
 
 const TimelineClass = preload("res://practice/practice_replay_timeline.gd")
+const PlayerInputClass = preload("res://player/player_input.gd")
 const TRACK_RELATIVE := "../export-bin/track/surface_slide/track.mxt_track"
 const CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+const TELEMETRY_MANUAL_BOOST_ACTIVE := 13
 
 
 func _init() -> void:
@@ -97,11 +99,14 @@ func _exercise_native_practice_state() -> bool:
 	var sim := GameSim.new()
 	root.add_child(sim)
 	sim.set_target_lap_count(0)
+	sim.set_boost_unlocked_from_start(true)
 	sim.instantiate_gamesim(buffer, [car_bytes], [0.5])
 	sim.set_player_metadata([42], [false])
 	sim.set_sim_started(true)
 	if sim.get_target_lap_count() != 0:
 		return _fail("native infinite-lap target was not retained")
+	if !sim.get_boost_unlocked_from_start():
+		return _fail("native boost-from-start policy was not retained")
 	var telemetry: PackedFloat32Array = sim.get_player_telemetry_sample(42)
 	if telemetry.size() != 39 or int(telemetry[2]) != 0:
 		return _fail("native telemetry did not expose the infinite-lap target")
@@ -109,6 +114,17 @@ func _exercise_native_practice_state() -> bool:
 	sim.set_target_lap_count(99)
 	if sim.get_target_lap_count() != 99 or !sim.load_full_state_data(0, state) or sim.get_target_lap_count() != 0:
 		return _fail("full-state restore did not preserve the recorded lap target")
+	var accelerate := PlayerInputClass.new()
+	accelerate.accelerate = 1.0
+	for _tick in range(301):
+		sim.tick_singleplayer(42, accelerate.serialize())
+	if sim.get_player_lap(42) > 1:
+		return _fail("boost-from-start fixture advanced beyond the opening lap")
+	accelerate.boost = true
+	sim.tick_singleplayer(42, accelerate.serialize())
+	telemetry = sim.get_player_telemetry_sample(42)
+	if telemetry[TELEMETRY_MANUAL_BOOST_ACTIVE] < 0.5:
+		return _fail("boost-from-start did not permit a manual boost on the opening lap")
 	sim.destroy_gamesim()
 	sim.queue_free()
 	return true

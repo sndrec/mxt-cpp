@@ -4,6 +4,7 @@ class MockSpatialAudio extends Node:
 	var stopped_music: Array[float] = []
 	var cleared_announcer_count := 0
 	var vehicle_stream_count := 0
+	var vehicle_boost_volumes: Array[float] = []
 
 	func stop_music(fade_seconds: float = 0.0) -> void:
 		stopped_music.append(fade_seconds)
@@ -11,8 +12,9 @@ class MockSpatialAudio extends Node:
 	func clear_announcer_queue() -> void:
 		cleared_announcer_count += 1
 
-	func set_vehicle_manual_boost_stream(_car_index: int, _stream: AudioStream) -> void:
+	func set_vehicle_manual_boost_stream(_car_index: int, _stream: AudioStream, volume_db: float) -> void:
 		vehicle_stream_count += 1
+		vehicle_boost_volumes.append(volume_db)
 
 func _fail(message: String) -> void:
 	push_error("MXT_RACE_AUDIO_CONTROLLER_SMOKE_FAIL " + message)
@@ -36,6 +38,12 @@ func _run() -> void:
 	var mock := MockSpatialAudio.new()
 	audio.add_child(mock)
 	audio.spatial_audio = mock
+	var definition := CarDefinition.new()
+	definition.manual_boost_volume_db = 7.5
+	audio.configure_vehicle_properties([definition])
+	if mock.vehicle_stream_count != 1 or mock.vehicle_boost_volumes != [7.5]:
+		_fail("vehicle boost-volume modifier did not reach native audio configuration")
+		return
 	audio.configure_track_music("res://content/base/music", {
 		"music": {
 			"loop": "raceresults_loop.ogg",

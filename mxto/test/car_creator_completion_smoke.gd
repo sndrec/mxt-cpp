@@ -48,6 +48,8 @@ func _test_derived_authoring_and_drafts() -> void:
 		"workshop_published_file_id": 0,
 		"preview_livery": {},
 	}
+	_expect(session.set_manual_boost_volume_db(-7.5), "boost volume should accept values within [-20, 20] dB")
+	_expect(!session.set_manual_boost_volume_db(20.5), "boost volume should reject values above 20 dB")
 	var saved: Dictionary = store.save_draft(draft_id, session, metadata)
 	_expect(bool(saved.get("valid", false)), "multiline draft metadata should save atomically: %s" % [saved.get("errors", [])])
 	var loaded_session := MxtCarAuthoringSession.new()
@@ -55,6 +57,7 @@ func _test_derived_authoring_and_drafts() -> void:
 	_expect(bool(loaded.get("valid", false)), "saved draft should reload: %s" % [loaded])
 	_expect(String(loaded.get("description", "")) == metadata.description, "draft reload should preserve multiline description")
 	_expect(loaded_session.get_authoring_intent() == session.get_authoring_intent(), "draft reload should preserve derived/custom intent")
+	_expect(is_equal_approx(loaded_session.get_manual_boost_volume_db(), -7.5), "draft reload should preserve boost volume")
 	_remove_tree(ProjectSettings.globalize_path("user://vehicle_drafts/" + draft_id))
 
 

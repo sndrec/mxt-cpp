@@ -6,8 +6,8 @@ const CAR_PATHS := [
 	"res://vehicle/asset/bruiser/wild_goose.mxt_car_props",
 	"res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props",
 ]
-const STAT_COUNT := 42
-const LIVE_STAT_COUNT := 40
+const STAT_COUNT := 64
+const LIVE_STAT_COUNT := 62
 const MODIFIER_LAYER_COUNT := 6
 
 
@@ -43,6 +43,44 @@ func _validate_sample(sample: Dictionary, label: String) -> bool:
 			return false
 	if base_stats.max_turn_rate != 200.0:
 		_fail("%s: maximum turning rate is not the flat 200 degrees/second default" % label)
+		return false
+	if base_stats.shift_boost_cooldown_seconds != 2.0 \
+			or base_stats.shift_boost_cooldown_strength != 0.0:
+		_fail("%s: shift boost cooldown defaults were not supplied" % label)
+		return false
+	if base_stats.spin_attack_damage_multiplier != 1.0 \
+			or base_stats.side_attack_damage_multiplier != 1.0 \
+			or base_stats.attack_knockback_multiplier != 1.0 \
+			or base_stats.attack_cooldown_seconds != 4.0:
+		_fail("%s: attack behavior defaults were not supplied" % label)
+		return false
+	if base_stats.suspension_stiffness_multiplier != 1.0 \
+			or base_stats.suspension_damping_multiplier != 1.0:
+		_fail("%s: suspension behavior defaults were not supplied" % label)
+		return false
+	if base_stats.rail_speed_retention_multiplier != 1.0 \
+			or base_stats.rail_deflection_multiplier != 1.0:
+		_fail("%s: rail behavior defaults were not supplied" % label)
+		return false
+	if base_stats.landing_stability != 1.0 \
+			or not is_equal_approx(base_stats.shift_boost_alignment_tolerance, 0.2):
+		_fail("%s: landing behavior defaults were not supplied" % label)
+		return false
+	if base_stats.accel_press_grip_strength != 20.0 \
+			or not is_equal_approx(base_stats.drift_initiation_steer_threshold, 0.7):
+		_fail("%s: grip initiation defaults were not supplied" % label)
+		return false
+	if base_stats.air_pitch_authority_multiplier != 1.0 \
+			or base_stats.air_angular_damping_multiplier != 1.0 \
+			or base_stats.air_auto_alignment_multiplier != 1.0 \
+			or base_stats.air_orientation_drag_multiplier != 1.0:
+		_fail("%s: airborne behavior defaults were not supplied" % label)
+		return false
+	if base_stats.high_speed_drag_multiplier != 1.0:
+		_fail("%s: high-speed drag default was not supplied" % label)
+		return false
+	if base_stats.dirt_drag_multiplier != 1.0:
+		_fail("%s: dirt drag default was not supplied" % label)
 		return false
 	return true
 

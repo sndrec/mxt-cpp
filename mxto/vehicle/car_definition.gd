@@ -5,6 +5,7 @@ class_name CarDefinition extends Resource
 @export var properties_path : String
 @export var car_scene : PackedScene
 @export var manual_boost_sfx : AudioStream
+@export_range(-20.0, 20.0, 0.5, "suffix:dB") var manual_boost_volume_db := 0.0
 
 var runtime_mesh: Mesh
 var runtime_material: Material
