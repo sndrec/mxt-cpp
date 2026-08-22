@@ -25,12 +25,16 @@ void vertex() {
 void fragment() {
 	// EFF_RENSFREA01 is modulated by the particle RGB and submitted with GX's
 	// ONE/ONE additive blend into an 8-bit EFB. Approximate that code-space
-	// accumulation inside Godot's linear framebuffer around four overlapping
-	// particles, where the characteristic red mid-band is most visible.
-	const float reference_overlap = 4.0;
+	// accumulation inside Godot's linear framebuffer. Bright texels use the
+	// four-particle reference that produces the characteristic red mid-band;
+	// faint fringe texels approach a single contribution so sparse tails do not
+	// inherit the brightness compensation intended for dense overlap.
 	vec3 texture_code = texture(plasma_texture, UV).rgb;
 	vec3 tint_code = floor(COLOR.rgb * 255.0 + 0.5) / 255.0;
 	vec3 tev_code = floor(texture_code * tint_code * 255.0 + 0.5) / 255.0;
+	float texture_strength = max(texture_code.r, max(texture_code.g, texture_code.b));
+	float overlap_weight = smoothstep(0.08, 0.35, texture_strength);
+	float reference_overlap = mix(1.0, 4.0, overlap_weight);
 	vec3 gx_accumulated = min(tev_code * reference_overlap, vec3(1.0));
 	ALBEDO = srgb_to_linear(gx_accumulated) / reference_overlap;
 	ALPHA = 1.0;
