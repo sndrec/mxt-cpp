@@ -5,14 +5,21 @@ const SPARK_COUNT := 256
 const SPARK_NODE_NAME := "SparkMultiMesh"
 const COLLISION_SPARK_COUNT := 512
 const COLLISION_SPARK_NODE_NAME := "CollisionSparkMultiMesh"
+const DRIFT_PLASMA_COUNT := 1536
+const DRIFT_PLASMA_NODE_NAME := "DriftPlasmaMultiMesh"
 
 var spark_texture := preload("res://asset/tex/superspark.png")
 var collision_spark_texture := preload("res://asset/tex/collision_spark.png")
 var collision_spark_shader := preload("res://asset/effect/collision_spark.gdshader")
+# Extracted losslessly from GFZE01 init/efcmdl.tpl texture 26, bound by
+# EFF_SMOKE_D for GX's ET_DRIFT_PTCL ribbon effect.
+var drift_plasma_texture := preload("res://asset/tex/gx_drift_plasma.png")
+var drift_plasma_shader := preload("res://asset/effect/drift_plasma.gdshader")
 
 func _ready() -> void:
 	_ensure_super_spark_multimesh()
 	_ensure_collision_spark_multimesh()
+	_ensure_drift_plasma_multimesh()
 
 
 func _ensure_super_spark_multimesh() -> void:
@@ -79,3 +86,35 @@ func _ensure_collision_spark_multimesh() -> void:
 	spark_multimesh.material_override = material
 	spark_multimesh.multimesh = multimesh
 	add_child(spark_multimesh)
+
+
+func _ensure_drift_plasma_multimesh() -> void:
+	var plasma_multimesh := get_node_or_null(DRIFT_PLASMA_NODE_NAME) as MultiMeshInstance3D
+	if plasma_multimesh != null:
+		return
+	if drift_plasma_texture == null or drift_plasma_shader == null:
+		return
+
+	var quad_mesh := QuadMesh.new()
+	quad_mesh.size = Vector2.ONE
+
+	var material := ShaderMaterial.new()
+	material.shader = drift_plasma_shader
+	material.set_shader_parameter("plasma_texture", drift_plasma_texture)
+
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.use_custom_data = true
+	multimesh.instance_count = DRIFT_PLASMA_COUNT
+	multimesh.visible_instance_count = 0
+	multimesh.mesh = quad_mesh
+	multimesh.custom_aabb = AABB(Vector3(-40000.0, -40000.0, -40000.0), Vector3(80000.0, 80000.0, 80000.0))
+
+	plasma_multimesh = MultiMeshInstance3D.new()
+	plasma_multimesh.name = DRIFT_PLASMA_NODE_NAME
+	plasma_multimesh.top_level = true
+	plasma_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	plasma_multimesh.material_override = material
+	plasma_multimesh.multimesh = multimesh
+	add_child(plasma_multimesh)

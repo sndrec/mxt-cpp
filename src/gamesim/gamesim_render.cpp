@@ -1561,6 +1561,7 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 	}
 	update_native_gameplay_camera(false);
 	render_collision_spark_effects(alpha);
+	render_drift_plasma_effects(alpha);
 	update_spatial_audio(effect_delta);
 	if (render_profile_enabled) {
 		const uint64_t now = render_profile_now_us();
@@ -1697,6 +1698,7 @@ void GameSim::update_super_spark_visuals()
 		}
 		update_render_visual_snapshots(native_visual_count);
 		step_collision_spark_effects();
+		step_drift_plasma_effects();
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			const uint64_t elapsed = now - profile_step;

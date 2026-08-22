@@ -151,6 +151,7 @@ GameSim::~GameSim()
 	stop_vehicle_lane_workers();
 	destroy_gamesim();
 	destroy_collision_spark_runtime();
+	destroy_drift_plasma_runtime();
 	delete finish_line_display;
 	finish_line_display = nullptr;
 	free_vehicle_tick_soa();

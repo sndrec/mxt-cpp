@@ -33,6 +33,7 @@ namespace godot {
 	class MxtSpatialAudioManager;
 	class FinishLineDisplay;
 	struct CollisionSparkRuntime;
+	struct DriftPlasmaRuntime;
 
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
@@ -396,6 +397,7 @@ namespace godot {
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			CollisionSparkRuntime* collision_spark_runtime = nullptr;
+			DriftPlasmaRuntime* drift_plasma_runtime = nullptr;
 			std::vector<uint8_t> render_effect_full_flags;
 			struct RenderEffectPoolSlot {
 				godot::Node* node = nullptr;
@@ -426,6 +428,10 @@ namespace godot {
 			void render_collision_spark_effects(float alpha);
 			void reset_collision_spark_effects(bool release_render_node);
 			void destroy_collision_spark_runtime();
+			void step_drift_plasma_effects();
+			void render_drift_plasma_effects(float alpha);
+			void reset_drift_plasma_effects(bool release_render_node);
+			void destroy_drift_plasma_runtime();
 			void clear_render_thruster_lights();
 			void ensure_render_thruster_light_capacity(int capacity);
 			void hide_unused_render_thruster_lights(int used_count);
