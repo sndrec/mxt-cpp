@@ -256,7 +256,10 @@ void GameSim::step_drift_plasma_effects()
 				soa.tilt_pos_old_z[point]);
 			const SimVec3 corner_delta = position - previous_position;
 			const float lateral_delta = corner_delta.dot(lateral);
-			const bool positive_side_corner = corner == 0 || corner == 2;
+			// Official and custom property files do not require the left/right
+			// corners to use one fixed array ordering. The lateral vector above is
+			// local -X, so classify the physical side from the authored offset.
+			const bool positive_side_corner = soa.tilt_offset_x[point] < 0.0f;
 			if ((lateral_delta > 0.0f) != positive_side_corner) {
 				continue;
 			}
