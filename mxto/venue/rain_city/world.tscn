@@ -15,7 +15,7 @@ sky_material = SubResource("ProceduralSkyMaterial_lbh3e")
 [sub_resource type="Environment" id="Environment_qweva"]
 background_mode = 2
 sky = SubResource("Sky_m140g")
-tonemap_mode = 2
+tonemap_mode = 0
 glow_enabled = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_48yif"]

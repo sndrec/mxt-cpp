@@ -12,7 +12,7 @@ sky_material = SubResource("ProceduralSkyMaterial_dlthc")
 [sub_resource type="Environment" id="Environment_gmwqh"]
 background_mode = 2
 sky = SubResource("Sky_a3qc5")
-tonemap_mode = 2
+tonemap_mode = 0
 glow_enabled = true
 
 [sub_resource type="SphereMesh" id="SphereMesh_q2mt6"]

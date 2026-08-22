@@ -28,7 +28,7 @@ sky_material = SubResource("ProceduralSkyMaterial_nbp6g")
 [sub_resource type="Environment" id="Environment_ps0cd"]
 background_mode = 2
 sky = SubResource("Sky_i63ss")
-tonemap_mode = 2
+tonemap_mode = 0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ps0cd"]
 render_priority = 0

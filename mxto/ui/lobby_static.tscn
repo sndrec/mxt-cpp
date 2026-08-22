@@ -30,7 +30,7 @@ sky_material = SubResource("ProceduralSkyMaterial_chibi")
 [sub_resource type="Environment" id="Environment_chibi"]
 background_mode = 2
 sky = SubResource("Sky_chibi")
-tonemap_mode = 2
+tonemap_mode = 0
 glow_enabled = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_chibi_floor"]
