@@ -1,7 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://i8momx14lmfb"]
 
 [ext_resource type="Texture2D" uid="uid://donkwt1u14ol3" path="res://asset/tex/pitstop.png" id="1_5w2l0"]
-[ext_resource type="Texture2D" uid="uid://braqowcagu8r4" path="res://asset/tex/random_noise.png" id="1_uk7yi"]
 [ext_resource type="Texture2D" uid="uid://b3ejtupgpp6h7" path="res://asset/tex/pitstop_dither.png" id="2_tejqh"]
 
 [sub_resource type="Shader" id="Shader_8yl70"]
@@ -17,21 +16,29 @@ uniform vec4 albedo_1_glow : source_color;
 uniform vec4 albedo_2_glow : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D texture_dither : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D alpha_dither : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
 
-// Controls how often the dither pattern updates (set to your display refresh if you like)
-uniform float dither_fps = 360.0;
+uint hash_u32(uint value) {
+	value ^= value >> 16u;
+	value *= 2246822519u;
+	value ^= value >> 13u;
+	value *= 3266489917u;
+	value ^= value >> 16u;
+	return value;
+}
+
+float dither_random(vec2 pixel, uint time_seed) {
+	uvec2 coordinate = uvec2(floor(pixel));
+	uint seed = coordinate.x * 1597334677u;
+	seed ^= coordinate.y * 3812015801u;
+	seed ^= time_seed * 2798796415u;
+	return float(hash_u32(seed)) * (1.0 / 4294967296.0);
+}
 
 void vertex() {
 	UV = UV * uv1_scale.xy;
-}
-
-// cheap hash to produce a pseudo-random value that changes each 'frame' (based on dither_fps)
-float _rand (vec2 st) {
-    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
 }
 
 void fragment() {
@@ -67,14 +74,11 @@ void fragment() {
 	fog_mix = sin(fog_mix * PI * 0.5);
 	float alpha_prob = 1.0 - fog_mix; // this is the chance to KEEP the pixel
 
-	float rnd = texture(alpha_dither, SCREEN_UV + (vec2(fract(TIME) * 490.421834)) * 8.0).r;
+	float rnd = dither_random(FRAGCOORD.xy, uint(floor(TIME * 1000.0)));
 
 	if (rnd > alpha_prob) {
 		discard;
 	}
-
-	// If not discarded, make fully opaque so blending is not used per-pixel.
-	ALPHA = 1.0;
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)
@@ -110,7 +114,5 @@ shader_parameter/albedo_1_glow = Color(3, 0.3, 1, 1)
 shader_parameter/albedo_2_glow = Color(0, 0, 0, 1)
 shader_parameter/texture_albedo = ExtResource("1_5w2l0")
 shader_parameter/texture_dither = ExtResource("2_tejqh")
-shader_parameter/alpha_dither = ExtResource("1_uk7yi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)
-shader_parameter/dither_fps = 144.0

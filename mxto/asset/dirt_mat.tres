@@ -14,6 +14,23 @@ uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
 
+uint hash_u32(uint value) {
+	value ^= value >> 16u;
+	value *= 2246822519u;
+	value ^= value >> 13u;
+	value *= 3266489917u;
+	value ^= value >> 16u;
+	return value;
+}
+
+float dither_random(vec2 pixel, uint time_seed) {
+	uvec2 coordinate = uvec2(floor(pixel));
+	uint seed = coordinate.x * 1597334677u;
+	seed ^= coordinate.y * 3812015801u;
+	seed ^= time_seed * 2798796415u;
+	return float(hash_u32(seed)) * (1.0 / 4294967296.0);
+}
+
 void vertex() {
 	UV = UV * uv1_scale.xy;
 }
@@ -45,7 +62,11 @@ void fragment() {
 	float fog_mix = max(0.0, (length(VERTEX) - 500.0) / fog_dist);
 	fog_mix = clamp(pow(fog_mix, 2.0), 0.0, 1.0);
 	fog_mix = sin(fog_mix * PI * 0.5);
-	ALPHA = 1.0 - fog_mix;
+	float alpha_prob = 1.0 - fog_mix;
+	float rnd = dither_random(FRAGCOORD.xy, uint(floor(TIME * 1000.0)));
+	if (rnd > alpha_prob) {
+		discard;
+	}
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)

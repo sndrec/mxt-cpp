@@ -1,6 +1,5 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://bfxpum1jau64"]
 
-[ext_resource type="Texture2D" uid="uid://braqowcagu8r4" path="res://asset/tex/random_noise.png" id="1_8yl70"]
 [ext_resource type="Texture2D" uid="uid://c7dk0u778rjsw" path="res://asset/tex/road.png" id="1_uybpi"]
 [ext_resource type="Texture2D" uid="uid://cxodgfjvijdwb" path="res://asset/tex/crosshatch/small_3.png" id="2_cross"]
 
@@ -13,10 +12,26 @@ render_mode blend_mix, depth_draw_always, cull_disabled, fog_disabled;
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
-uniform sampler2D alpha_dither : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
+
+uint hash_u32(uint value) {
+	value ^= value >> 16u;
+	value *= 2246822519u;
+	value ^= value >> 13u;
+	value *= 3266489917u;
+	value ^= value >> 16u;
+	return value;
+}
+
+float dither_random(vec2 pixel, uint time_seed) {
+	uvec2 coordinate = uvec2(floor(pixel));
+	uint seed = coordinate.x * 1597334677u;
+	seed ^= coordinate.y * 3812015801u;
+	seed ^= time_seed * 2798796415u;
+	return float(hash_u32(seed)) * (1.0 / 4294967296.0);
+}
 
 void vertex() {
 	UV = UV * uv1_scale.xy;
@@ -40,7 +55,7 @@ void fragment() {
 	fog_mix = sin(fog_mix * PI * 0.5);
 	float alpha_prob = 1.0 - fog_mix; // this is the chance to KEEP the pixel
 
-	float rnd = texture(alpha_dither, SCREEN_UV + (vec2(fract(TIME) * 490.421834)) * 8.0).r;
+	float rnd = dither_random(FRAGCOORD.xy, uint(floor(TIME * 1000.0)));
 
 	if (rnd > alpha_prob) {
 		discard;
@@ -86,6 +101,5 @@ shader = SubResource("Shader_8yl70")
 shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("1_uybpi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
-shader_parameter/alpha_dither = ExtResource("1_8yl70")
 shader_parameter/cross_hatch = ExtResource("2_cross")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)
