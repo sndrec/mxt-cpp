@@ -421,7 +421,11 @@ void GameSim::render_collision_spark_effects(float alpha)
 	int visible_count = 0;
 	for (int particle_index = 0; particle_index < COLLISION_SPARK_CAPACITY; ++particle_index) {
 		const CollisionSparkParticle& spark = runtime.particles[particle_index];
-		if (!spark.active) {
+		// A spark is spawned at the current 60 Hz simulation position while the
+		// vehicle is still rendered between its previous and current positions.
+		// Keep that incomplete newborn interval hidden; after one simulation step,
+		// both can be interpolated across the same pair of ticks.
+		if (!spark.active || spark.life == spark.total_life) {
 			continue;
 		}
 		const SimVec3 interpolated_position = spark.previous_position.lerp(spark.position, alpha);
