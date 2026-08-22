@@ -113,7 +113,8 @@ struct PhysicsCarProperties {
 		const godot::PackedByteArray &bytes,
 		float machine_setting,
 		PhysicsCarProperties &out_properties,
-		godot::String &out_error);
+		godot::String &out_error,
+		uint16_t *out_schema_stat_count = nullptr);
 
 	static bool stat_supports_live_modifiers(CarStatId stat);
 	static const char *stat_name(CarStatId stat);

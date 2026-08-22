@@ -356,9 +356,11 @@ bool PhysicsCarProperties::deserialize_and_sample(
 	const godot::PackedByteArray &bytes,
 	float machine_setting,
 	PhysicsCarProperties &out_properties,
-	godot::String &out_error)
+	godot::String &out_error,
+	uint16_t *out_schema_stat_count)
 {
 	out_error = godot::String();
+	if (out_schema_stat_count) *out_schema_stat_count = 0;
 	if (bytes.size() < static_cast<int64_t>(CAR_PROPS_HEADER_SIZE)) {
 		set_error(out_error, "car properties file is shorter than its header");
 		return false;
@@ -514,5 +516,6 @@ bool PhysicsCarProperties::deserialize_and_sample(
 	parsed.s_boost_stats[CAR_STAT_WEIGHT_KG] = parsed.base_stats[CAR_STAT_WEIGHT_KG];
 	parsed.s_boost_stats[CAR_STAT_MAX_ENERGY] = parsed.base_stats[CAR_STAT_MAX_ENERGY];
 	out_properties = parsed;
+	if (out_schema_stat_count) *out_schema_stat_count = schema_stat_count;
 	return true;
 }

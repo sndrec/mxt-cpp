@@ -15,6 +15,7 @@
 #include <godot_cpp/variant/array.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -824,6 +825,7 @@ static bool validate_vehicle_visual_metadata(
 
 static bool validate_vehicle_authoring_metadata(
 		const DiskEntry &entry,
+		uint16_t source_stat_count,
 		Dictionary &out_metadata,
 		std::vector<String> &errors)
 {
@@ -848,41 +850,72 @@ static bool validate_vehicle_authoring_metadata(
 		return false;
 	}
 	const String encoded = root["derived_mask_hex"];
-	static constexpr uint32_t MASK_WORDS =
-			(CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT + 63u) / 64u;
-	if (encoded.length() != static_cast<int64_t>(MASK_WORDS * 16u)) {
+	if (source_stat_count == 0 || source_stat_count > CAR_STAT_COUNT) {
+		add_error(errors, "vehicle authoring metadata has no supported properties schema");
+		return false;
+	}
+	const uint32_t source_pair_count = CAR_AUTHORING_SPECIAL_LAYER_COUNT * source_stat_count;
+	const uint32_t source_mask_words = (source_pair_count + 63u) / 64u;
+	if (encoded.length() != static_cast<int64_t>(source_mask_words * 16u)) {
 		add_error(errors, "vehicle authoring derived_mask_hex has the wrong length");
 		return false;
 	}
-	uint64_t words[MASK_WORDS] = {};
-	for (uint32_t word = 0; word < MASK_WORDS; ++word) {
+	std::vector<uint64_t> source_words(source_mask_words, 0);
+	for (uint32_t word = 0; word < source_mask_words; ++word) {
 		for (uint32_t digit = 0; digit < 16; ++digit) {
 			const char32_t c = encoded[static_cast<int64_t>(word * 16u + digit)];
 			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
 				add_error(errors, "vehicle authoring derived_mask_hex must use lowercase hexadecimal");
 				return false;
 			}
-			words[word] = (words[word] << 4) |
+			source_words[word] = (source_words[word] << 4) |
 				static_cast<uint64_t>(c <= '9' ? c - '0' : c - 'a' + 10);
 		}
 	}
-	const uint32_t pair_count = CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT;
-	for (uint32_t bit = 0; bit < MASK_WORDS * 64u; ++bit) {
-		if ((words[bit / 64u] & (UINT64_C(1) << (bit % 64u))) == 0) continue;
-		if (bit >= pair_count) {
+	for (uint32_t bit = source_pair_count; bit < source_mask_words * 64u; ++bit) {
+		if ((source_words[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0) {
 			add_error(errors, "vehicle authoring derived mask has nonzero padding bits");
-			continue;
 		}
-		const uint8_t layer = static_cast<uint8_t>(bit / CAR_STAT_COUNT);
-		const uint16_t stat = static_cast<uint16_t>(bit % CAR_STAT_COUNT);
-		if (!car_special_pair_is_supported(
-				static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
-			add_error(errors, "vehicle authoring derived mask enables an unsupported pair");
+	}
+
+	static constexpr uint32_t CURRENT_PAIR_COUNT = CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT;
+	static constexpr uint32_t CURRENT_MASK_WORDS = (CURRENT_PAIR_COUNT + 63u) / 64u;
+	std::array<uint64_t, CURRENT_MASK_WORDS> current_words{};
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		for (uint16_t stat = 0; stat < source_stat_count; ++stat) {
+			const uint32_t source_bit = static_cast<uint32_t>(layer) * source_stat_count + stat;
+			if ((source_words[source_bit / 64u] & (UINT64_C(1) << (source_bit % 64u))) == 0) continue;
+			if (!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
+				add_error(errors, "vehicle authoring derived mask enables an unsupported pair");
+				continue;
+			}
+			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
+			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
+		}
+		// Appended stats did not exist when this document was authored. Their materialized
+		// default curves use the automatic derivation rules and remain editable as such.
+		for (uint16_t stat = source_stat_count; stat < CAR_STAT_COUNT; ++stat) {
+			if (!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) continue;
+			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
+			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
 		}
 	}
 	if (!errors.empty()) return false;
+	static constexpr char HEX[] = "0123456789abcdef";
+	String normalized;
+	for (uint64_t word : current_words) {
+		char digits[17];
+		for (int32_t digit = 15; digit >= 0; --digit) {
+			digits[digit] = HEX[word & 0xfu];
+			word >>= 4;
+		}
+		digits[16] = '\0';
+		normalized += String(digits);
+	}
 	out_metadata["format_revision"] = 1;
-	out_metadata["derived_mask_hex"] = encoded;
+	out_metadata["derived_mask_hex"] = normalized;
 	return true;
 }
 
@@ -916,6 +949,7 @@ static bool validate_payloads(
 		const DiskEntry *authoring_metadata = find_disk_entry(entries, "vehicle/authoring.json");
 		VehicleGlbInfo model_info;
 		bool model_valid = false;
+		uint16_t properties_schema_stat_count = 0;
 		if (model) {
 			model_valid = validate_glb_file(model->absolute_path, manifest.content_type, errors, &model_info);
 		}
@@ -924,25 +958,31 @@ static bool validate_payloads(
 			if (read_file_limited(properties->absolute_path, VEHICLE_PROPERTIES_MAX_BYTES, bytes, errors)) {
 				PhysicsCarProperties sampled;
 				String parse_error;
-				if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, sampled, parse_error)) {
+				if (!PhysicsCarProperties::deserialize_and_sample(
+						bytes, 0.5f, sampled, parse_error, &properties_schema_stat_count)) {
 					add_error(errors, "vehicle properties rejected: " + parse_error);
 				}
 			}
 		}
 		if (authoring_metadata) validate_vehicle_authoring_metadata(
-				*authoring_metadata, out_authoring_metadata, errors);
+				*authoring_metadata, properties_schema_stat_count, out_authoring_metadata, errors);
 		if (properties && !out_authoring_metadata.is_empty() && errors.empty()) {
 			Ref<FileAccess> file = FileAccess::open(properties->absolute_path, FileAccess::READ);
 			const PackedByteArray original = file->get_buffer(file->get_length());
 			Ref<MxtCarAuthoringSession> session;
 			session.instantiate();
 			Dictionary loaded = session->load_bytes(original);
+			Dictionary normalized = session->serialize();
 			Dictionary applied = session->set_authoring_intent(out_authoring_metadata);
-			Dictionary serialized = session->serialize();
-			const PackedByteArray canonical = serialized.get("bytes", PackedByteArray());
+			Dictionary materialized = session->serialize();
+			const PackedByteArray normalized_bytes = normalized.get("bytes", PackedByteArray());
+			const PackedByteArray materialized_bytes = materialized.get("bytes", PackedByteArray());
 			if (!static_cast<bool>(loaded.get("valid", false)) ||
+				!static_cast<bool>(normalized.get("valid", false)) ||
 				!static_cast<bool>(applied.get("valid", false)) ||
-				!static_cast<bool>(serialized.get("valid", false)) || canonical != original) {
+				!static_cast<bool>(materialized.get("valid", false)) ||
+				materialized_bytes != normalized_bytes ||
+				(properties_schema_stat_count == CAR_STAT_COUNT && normalized_bytes != original)) {
 				add_error(errors, "vehicle authoring intent does not match the materialized properties");
 			}
 		}
