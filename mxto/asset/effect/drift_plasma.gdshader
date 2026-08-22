@@ -3,6 +3,8 @@ shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, skip_vertex_transform;
 
 uniform sampler2D plasma_texture : filter_linear_mipmap, repeat_disable;
+uniform sampler2D depth_texture : hint_depth_texture, repeat_disable, filter_nearest;
+uniform float depth_fade_distance : hint_range(0.01, 2.0, 0.01) = 0.35;
 
 vec3 srgb_to_linear(vec3 color) {
 	vec3 low = color / 12.92;
@@ -36,6 +38,17 @@ void fragment() {
 	float overlap_weight = smoothstep(0.08, 0.35, texture_strength);
 	float reference_overlap = mix(1.0, 4.0, overlap_weight);
 	vec3 gx_accumulated = min(tev_code * reference_overlap, vec3(1.0));
-	ALBEDO = srgb_to_linear(gx_accumulated) / reference_overlap;
+
+	float raw_scene_depth = textureLod(depth_texture, SCREEN_UV, 0.0).r;
+	vec3 scene_ndc = vec3(SCREEN_UV * 2.0 - 1.0, raw_scene_depth);
+	vec4 scene_view = INV_PROJECTION_MATRIX * vec4(scene_ndc, 1.0);
+	float scene_depth = -scene_view.z / scene_view.w;
+	float plasma_depth = -VERTEX.z;
+	float depth_fade = smoothstep(
+		0.0,
+		depth_fade_distance,
+		scene_depth - plasma_depth);
+
+	ALBEDO = srgb_to_linear(gx_accumulated) * depth_fade / reference_overlap;
 	ALPHA = 1.0;
 }
