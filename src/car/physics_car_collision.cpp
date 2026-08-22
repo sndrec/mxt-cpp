@@ -342,6 +342,10 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 	const bool other_side_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::SIDEATTACKING) != 0;
 	const bool this_attacking = this_spin_attacking || this_side_attacking;
 	const bool other_attacking = other_spin_attacking || other_side_attacking;
+	const bool this_unopposed_attacker =
+		!this_bumper && !other_bumper && this_attacking && !other_attacking;
+	const bool other_unopposed_attacker =
+		!this_bumper && !other_bumper && other_attacking && !this_attacking;
 	const bool this_alive_before = (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0;
 	const bool other_alive_before = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) == 0;
 
@@ -431,11 +435,11 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 	other_machine.soa->visual_rotation_z[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).x;
 	other_machine.soa->visual_rotation_x[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).z;
 	if (impulse_strength > 0.5f) {
-		if (!this_bumper_slide) {
+		if (!this_bumper_slide && !this_unopposed_attacker) {
 			self.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			soa->drift_ramp[soa_index] = 0.0f;
 		}
-		if (!other_bumper_slide) {
+		if (!other_bumper_slide && !other_unopposed_attacker) {
 			other_machine.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
 		}
@@ -469,8 +473,14 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 		other_machine.soa->energy[other_machine.soa_index] = 0.0f;
 	}
 
-	soa->machine_state[soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
-	other_machine.soa->machine_state[other_machine.soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+	soa->machine_state[soa_index] |= MACHINESTATE::ACTIVE;
+	other_machine.soa->machine_state[other_machine.soa_index] |= MACHINESTATE::ACTIVE;
+	if (!this_unopposed_attacker) {
+		soa->machine_state[soa_index] |= MACHINESTATE::JUSTHITVEHICLE_Q;
+	}
+	if (!other_unopposed_attacker) {
+		other_machine.soa->machine_state[other_machine.soa_index] |= MACHINESTATE::JUSTHITVEHICLE_Q;
+	}
 
 	if (soa->frames_since_start_2[soa_index] == 0) {
 		self.apply_initial_accel_activation(0.0f);

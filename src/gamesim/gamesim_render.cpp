@@ -1334,6 +1334,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	}
 	PhysicsCarSoA& soa = *cars[car_index].soa;
 	const int lane = cars[car_index].soa_index;
+	godot::Input* input = godot::Input::get_singleton();
 	SimVec3 camera_position_correction;
 	const bool has_camera_render_correction =
 		car_index < static_cast<int>(render_rollback_correction_active.size()) &&
@@ -1361,7 +1362,6 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			vehicle_pitch_delta_radians =
 				(raw_pitch - std::copysign(3.0f, raw_pitch)) / soa.weight_derived_1[lane];
 		}
-		godot::Input* input = godot::Input::get_singleton();
 		const bool view_up_pressed = input && input->is_action_just_pressed(godot::StringName("CameraUp"));
 		const bool view_down_pressed = input && input->is_action_just_pressed(godot::StringName("CameraDown"));
 			gameplay_camera->step(
@@ -1524,6 +1524,26 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			render_fov = 72.0f;
 		}
 		render_transform = build_camera_transform(position, interest, up);
+	}
+	const bool race_camera_active =
+		!intro_camera_active && (soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0u;
+	if (race_camera_active && input && input->is_action_pressed(godot::StringName("LookBack"))) {
+		const SimTransform car_transform = get_interpolated_car_transform(car_index);
+		const godot::Vector3 pivot = gd_vec3(car_transform.origin + camera_position_correction);
+		godot::Vector3 up = gd_vec3(car_transform.basis.get_column(1));
+		if (up.length_squared() <= 0.0001f) {
+			up = render_transform.basis.get_column(1);
+		}
+		up.normalize();
+		auto rotate_half_turn = [&](const godot::Vector3& vector) {
+			return up * (2.0f * up.dot(vector)) - vector;
+		};
+		render_transform.origin = pivot + rotate_half_turn(render_transform.origin - pivot);
+		for (int column = 0; column < 3; ++column) {
+			render_transform.basis.set_column(
+				column,
+				rotate_half_turn(render_transform.basis.get_column(column)));
+		}
 	}
 	gameplay_camera_node->set_global_transform(render_transform);
 	gameplay_camera_node->set_fov(render_fov);

@@ -247,6 +247,7 @@ void FzgxGameplayCamera::reset()
 	camera.persistent_saved_zoom_mode = persistent_zoom_mode;
 	current_transform = Transform3D();
 	previous_transform = Transform3D();
+	older_transform = Transform3D();
 	current_fov = 55.0f;
 	previous_fov = 55.0f;
 	has_view = false;
@@ -543,7 +544,9 @@ Dictionary FzgxGameplayCamera::step(
 		camera.perspective = 55.0f;
 	}
 
-	previous_transform = has_view ? current_transform : build_camera_transform(camera.previous_position, camera.interest, camera.up);
+	const Transform3D initial_transform = build_camera_transform(camera.previous_position, camera.interest, camera.up);
+	older_transform = has_view ? previous_transform : initial_transform;
+	previous_transform = has_view ? current_transform : initial_transform;
 	previous_fov = has_view ? current_fov : camera.perspective;
 	current_transform = build_camera_transform(camera.position, camera.interest, normalized_or(camera.up, Vector3(0.0f, 1.0f, 0.0f)));
 	current_fov = camera.perspective;
@@ -563,6 +566,15 @@ Transform3D FzgxGameplayCamera::get_render_transform(float alpha) const
 	}
 	const float clamped = std::clamp(alpha, 0.0f, 1.0f);
 	return previous_transform.interpolate_with(current_transform, clamped);
+}
+
+Transform3D FzgxGameplayCamera::get_previous_render_transform(float alpha) const
+{
+	if (!has_view) {
+		return previous_transform;
+	}
+	const float clamped = std::clamp(alpha, 0.0f, 1.0f);
+	return older_transform.interpolate_with(previous_transform, clamped);
 }
 
 float FzgxGameplayCamera::get_render_fov(float alpha) const

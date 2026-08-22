@@ -5,14 +5,14 @@ const SPARK_COUNT := 256
 const SPARK_NODE_NAME := "SparkMultiMesh"
 const COLLISION_SPARK_COUNT := 512
 const COLLISION_SPARK_NODE_NAME := "CollisionSparkMultiMesh"
-const DRIFT_PLASMA_COUNT := 1536
+const DRIFT_PLASMA_COUNT := 190
 const DRIFT_PLASMA_NODE_NAME := "DriftPlasmaMultiMesh"
 
 var spark_texture := preload("res://asset/tex/superspark.png")
 var collision_spark_texture := preload("res://asset/tex/collision_spark.png")
 var collision_spark_shader := preload("res://asset/effect/collision_spark.gdshader")
-# Extracted losslessly from GFZE01 init/efcmdl.tpl texture 26, bound by
-# EFF_SMOKE_D for GX's ET_DRIFT_PTCL ribbon effect.
+# Extracted losslessly from GFZE01 init/efcmdl.tpl texture 18, selected by
+# EFF_RENSFREA01 (init/efcmdl.gma model 29) for GX's ET_DRIFT_PTCL effect.
 var drift_plasma_texture := preload("res://asset/tex/gx_drift_plasma.png")
 var drift_plasma_shader := preload("res://asset/effect/drift_plasma.gdshader")
 

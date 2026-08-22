@@ -36,7 +36,7 @@ func _run() -> void:
 		return
 	var controls := options.get_node("Shade/Center/Panel/Margin/Root/Tabs/Controls/ControllerSettings") as Control
 	var expected_actions := [
-		"Pause", "CameraUp", "CameraDown",
+		"Pause", "CameraUp", "CameraDown", "LookBack",
 		"StickerSlot1", "StickerSlot2", "StickerSlot3", "StickerSlot4",
 		"PracticeSlotPrevious", "PracticeSlotNext", "PracticeSlotSave", "PracticeSlotLoad",
 		"PracticeRewind", "PracticeStep",

@@ -26,6 +26,7 @@ extends Control
 @onready var btn_toggle_voice: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer11/Button
 @onready var btn_pause: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer12/Button
 @onready var btn_camera_zoom: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer13/Button
+@onready var btn_look_back: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer20/Button
 @onready var btn_practice_slot_previous: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer14/Button
 @onready var btn_practice_slot_next: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer15/Button
 @onready var btn_practice_slot_save: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer16/Button
@@ -75,6 +76,7 @@ var bindings := [
 		{"button": Callable(self, "_get_btn_toggle_voice"), "type": "any", "actions": ["ToggleVoice"]},
 		{"button": Callable(self, "_get_btn_pause"), "type": "any", "actions": ["Pause"]},
 		{"button": Callable(self, "_get_btn_camera_zoom"), "type": "axis_pair", "actions": ["CameraUp", "CameraDown"]},
+		{"button": Callable(self, "_get_btn_look_back"), "type": "any", "actions": ["LookBack"]},
 		{"button": Callable(self, "_get_btn_practice_slot_previous"), "type": "any", "actions": ["PracticeSlotPrevious"]},
 		{"button": Callable(self, "_get_btn_practice_slot_next"), "type": "any", "actions": ["PracticeSlotNext"]},
 		{"button": Callable(self, "_get_btn_practice_slot_save"), "type": "any", "actions": ["PracticeSlotSave"]},
@@ -100,6 +102,7 @@ func _get_btn_voice_chat(): return btn_voice_chat
 func _get_btn_toggle_voice(): return btn_toggle_voice
 func _get_btn_pause(): return btn_pause
 func _get_btn_camera_zoom(): return btn_camera_zoom
+func _get_btn_look_back(): return btn_look_back
 func _get_btn_practice_slot_previous(): return btn_practice_slot_previous
 func _get_btn_practice_slot_next(): return btn_practice_slot_next
 func _get_btn_practice_slot_save(): return btn_practice_slot_save
@@ -398,7 +401,7 @@ func _collect_bindings() -> Dictionary:
 				"Accelerate", "Boost", "Brake", "SpinAttack", "SideAttack",
 				"SteerLeft", "SteerRight", "SteerUp", "SteerDown",
 				"StrafeLeft", "StrafeRight", "VoiceChat", "ToggleVoice",
-				"Pause", "CameraUp", "CameraDown",
+				"Pause", "CameraUp", "CameraDown", "LookBack",
 				"StickerSlot1", "StickerSlot2", "StickerSlot3", "StickerSlot4",
 				"PracticeSlotPrevious", "PracticeSlotNext", "PracticeSlotSave", "PracticeSlotLoad",
 				"PracticeRewind", "PracticeStep"

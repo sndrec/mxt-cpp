@@ -44,6 +44,7 @@ private:
 	Runtime camera;
 	Transform3D current_transform = Transform3D();
 	Transform3D previous_transform = Transform3D();
+	Transform3D older_transform = Transform3D();
 	float current_fov = 55.0f;
 	float previous_fov = 55.0f;
 	bool has_view = false;
@@ -84,6 +85,7 @@ public:
 		bool view_up_pressed,
 		bool view_down_pressed);
 	Transform3D get_render_transform(float alpha) const;
+	Transform3D get_previous_render_transform(float alpha) const;
 	float get_render_fov(float alpha) const;
 };
 
