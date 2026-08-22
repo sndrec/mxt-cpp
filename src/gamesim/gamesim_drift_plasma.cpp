@@ -42,6 +42,7 @@ struct DriftPlasmaParticle {
 	float blue = 0.0f;
 	uint16_t life = 0;
 	int16_t car_index = -1;
+	uint8_t update_count = 0;
 	uint8_t active = 0;
 };
 
@@ -94,6 +95,9 @@ static void drift_plasma_advance_particle(DriftPlasmaParticle& particle)
 	if (particle.life == 0u) {
 		particle.active = 0;
 		return;
+	}
+	if (particle.update_count < 0xffu) {
+		++particle.update_count;
 	}
 	particle.older_position = particle.previous_position;
 	particle.previous_position = particle.position;
@@ -395,7 +399,13 @@ void GameSim::render_drift_plasma_effects(float alpha)
 	}
 	int visible_count = 0;
 	for (const DriftPlasmaParticle& particle : runtime.particles) {
-		if (!particle.active) {
+		// The emitter commonly reaches a newly allocated record later in GX's
+		// same scheduler pass, but GX cannot render an intermediate state between
+		// that allocation and its first complete 60 Hz update. At HFR, exposing
+		// that newborn interval produces a malformed interpolated streak. Wait
+		// until the record has survived one subsequent simulation update, when
+		// both endpoints represent complete adjacent particle states.
+		if (!particle.active || particle.update_count < 2u) {
 			continue;
 		}
 		const SimVec3 previous_position = particle.older_position.lerp(particle.previous_position, alpha);

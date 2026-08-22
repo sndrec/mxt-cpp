@@ -2,7 +2,7 @@ shader_type spatial;
 
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, skip_vertex_transform;
 
-uniform sampler2D plasma_texture : filter_linear_mipmap, repeat_disable;
+uniform sampler2D plasma_texture : source_color, filter_linear_mipmap, repeat_disable;
 
 void vertex() {
 	// The four transform columns carry the final camera-space GX quad vertices
@@ -21,6 +21,5 @@ void fragment() {
 	// ONE/ONE additive blend, depth testing enabled, and depth writes disabled.
 	vec3 color = texture(plasma_texture, UV).rgb * COLOR.rgb;
 	ALBEDO = color;
-	EMISSION = color;
 	ALPHA = 1.0;
 }
