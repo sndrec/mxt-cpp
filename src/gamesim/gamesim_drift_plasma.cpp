@@ -267,9 +267,9 @@ void GameSim::step_drift_plasma_effects()
 			const float intensity = std::min(unclamped_intensity, 1.0f);
 			const float emit_strength = std::clamp(intensity, 0.3f, 1.0f);
 			const SimVec3 corner_normal(
-				soa.tilt_up_vector_x[point],
-				soa.tilt_up_vector_y[point],
-				soa.tilt_up_vector_z[point]);
+				soa.tilt_up_vector_2_x[point],
+				soa.tilt_up_vector_2_y[point],
+				soa.tilt_up_vector_2_z[point]);
 
 			SimVec3 velocity = corner_delta * DRIFT_PLASMA_CORNER_MOTION_SCALE;
 			velocity -= corner_normal * velocity.dot(corner_normal);
