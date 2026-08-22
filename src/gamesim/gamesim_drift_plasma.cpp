@@ -81,7 +81,9 @@ static bool drift_plasma_frame(
 		-soa.basis_physical_c2y[lane],
 		-soa.basis_physical_c2z[lane]);
 	const SimVec3 surface_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
-	out_lateral = forward.cross(surface_normal);
+	// GX computes forward x normal, but its local X axis has the opposite
+	// handedness from Godot. A reflected cross product needs this sign change.
+	out_lateral = surface_normal.cross(forward);
 	if (out_lateral.length_squared() <= 0.000001f) {
 		return false;
 	}
