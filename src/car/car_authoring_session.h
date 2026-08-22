@@ -84,7 +84,8 @@ private:
 	static bool read_document(
 			const PackedByteArray &bytes,
 			MxtCarAuthoringSession &target,
-			String &out_error);
+			String &out_error,
+			uint16_t *out_schema_stat_count = nullptr);
 	bool validate_document(PackedStringArray &out_errors, PackedStringArray &out_warnings) const;
 	bool serialize_document(PackedByteArray &out_bytes, String &out_error) const;
 	bool capture_history_snapshot(HistorySnapshot &out_snapshot) const;
@@ -130,6 +131,11 @@ public:
 	Dictionary revert_special_derived(const String &layer_name, const String &stat_name);
 	Dictionary get_authoring_intent() const;
 	Dictionary set_authoring_intent(const Dictionary &value);
+	static bool normalize_authoring_intent(
+			const Dictionary &value,
+			uint16_t source_stat_count,
+			Dictionary &out_value,
+			String &out_error);
 	PackedVector3Array get_tilt_corners() const;
 	PackedVector3Array get_wall_corners() const;
 	Dictionary get_collision_measurements() const;

@@ -529,7 +529,16 @@ Dictionary MxtCarDraftStore::load_draft(const String &draft_id,
 	if (!static_cast<bool>(loaded_properties.get("valid", false))) {
 		return result_dictionary(false, "draft state could not be applied to the authoring session");
 	}
-	const Dictionary intent = manifest.get("authoring_intent", session->get_authoring_intent());
+	Dictionary intent = session->get_authoring_intent();
+	if (manifest.has("authoring_intent")) {
+		String intent_error;
+		const uint16_t source_stat_count = static_cast<uint16_t>(
+				static_cast<int64_t>(loaded_properties.get("source_schema_stat_count", 0)));
+		if (!MxtCarAuthoringSession::normalize_authoring_intent(
+				manifest["authoring_intent"], source_stat_count, intent, intent_error)) {
+			return result_dictionary(false, intent_error);
+		}
+	}
 	Dictionary intent_result = session->set_authoring_intent(intent);
 	if (!static_cast<bool>(intent_result.get("valid", false))) {
 		return result_dictionary(false, "draft authoring intent is invalid");

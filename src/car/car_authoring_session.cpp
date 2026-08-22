@@ -525,10 +525,13 @@ void MxtCarAuthoringSession::reset_to_defaults()
 bool MxtCarAuthoringSession::read_document(
 		const PackedByteArray &bytes,
 		MxtCarAuthoringSession &target,
-		String &out_error)
+		String &out_error,
+		uint16_t *out_schema_stat_count)
 {
 	PhysicsCarProperties runtime_check;
-	if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, runtime_check, out_error)) return false;
+	uint16_t schema_stat_count = 0;
+	if (!PhysicsCarProperties::deserialize_and_sample(
+			bytes, 0.5f, runtime_check, out_error, &schema_stat_count)) return false;
 	ByteReader reader{bytes.ptr(), static_cast<size_t>(bytes.size()), 0};
 	for (uint8_t expected : CAR_PROPS_MAGIC) {
 		uint8_t actual = 0;
@@ -611,6 +614,7 @@ bool MxtCarAuthoringSession::read_document(
 			target.s_boost_values[stat] = runtime_check.base_stats[stat];
 		}
 	}
+	if (out_schema_stat_count) *out_schema_stat_count = schema_stat_count;
 	return true;
 }
 
@@ -621,7 +625,8 @@ Dictionary MxtCarAuthoringSession::load_bytes(const PackedByteArray &bytes)
 	parsed->undo_history.clear();
 	parsed->redo_history.clear();
 	String error;
-	if (!read_document(bytes, *parsed.ptr(), error)) {
+	uint16_t schema_stat_count = 0;
+	if (!read_document(bytes, *parsed.ptr(), error, &schema_stat_count)) {
 		return result_dictionary(false, single_error(error.is_empty() ? String("car properties document could not be decoded") : error), {});
 	}
 	curves = std::move(parsed->curves);
@@ -633,7 +638,9 @@ Dictionary MxtCarAuthoringSession::load_bytes(const PackedByteArray &bytes)
 	undo_history.clear();
 	redo_history.clear();
 	dirty = false;
-	return validate();
+	Dictionary result = validate();
+	result["source_schema_stat_count"] = schema_stat_count;
+	return result;
 }
 
 Dictionary MxtCarAuthoringSession::load_file(const String &path)
@@ -1002,6 +1009,92 @@ Dictionary MxtCarAuthoringSession::get_authoring_intent() const
 	result["format_revision"] = 1;
 	result["derived_mask_hex"] = encoded;
 	return result;
+}
+
+bool MxtCarAuthoringSession::normalize_authoring_intent(
+		const Dictionary &value,
+		uint16_t source_stat_count,
+		Dictionary &out_value,
+		String &out_error)
+{
+	out_value.clear();
+	out_error = String();
+	const Variant revision = value.get("format_revision", Variant());
+	const bool valid_revision =
+			(revision.get_type() == Variant::INT && static_cast<int64_t>(revision) == 1) ||
+			(revision.get_type() == Variant::FLOAT && static_cast<double>(revision) == 1.0);
+	if (value.size() != 2 || !value.has("format_revision") ||
+			!value.has("derived_mask_hex") ||
+			value["derived_mask_hex"].get_type() != Variant::STRING ||
+			!valid_revision) {
+		out_error = "vehicle authoring intent is malformed";
+		return false;
+	}
+	if (source_stat_count == 0 || source_stat_count > CAR_STAT_COUNT) {
+		out_error = "vehicle authoring metadata has no supported properties schema";
+		return false;
+	}
+	const String encoded = value["derived_mask_hex"];
+	const uint32_t source_pair_count = CAR_AUTHORING_SPECIAL_LAYER_COUNT * source_stat_count;
+	const uint32_t source_mask_words = (source_pair_count + 63u) / 64u;
+	if (encoded.length() != static_cast<int64_t>(source_mask_words * 16u)) {
+		out_error = "vehicle authoring derived_mask_hex has the wrong length";
+		return false;
+	}
+	std::vector<uint64_t> source_words(source_mask_words, 0);
+	for (uint32_t word = 0; word < source_mask_words; ++word) {
+		for (uint32_t digit = 0; digit < 16; ++digit) {
+			const char32_t c = encoded[static_cast<int64_t>(word * 16u + digit)];
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+				out_error = "vehicle authoring derived_mask_hex must use lowercase hexadecimal";
+				return false;
+			}
+			source_words[word] = (source_words[word] << 4) |
+				static_cast<uint64_t>(c <= '9' ? c - '0' : c - 'a' + 10);
+		}
+	}
+	for (uint32_t bit = source_pair_count; bit < source_mask_words * 64u; ++bit) {
+		if ((source_words[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0) {
+			out_error = "vehicle authoring derived mask has nonzero padding bits";
+			return false;
+		}
+	}
+	std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> current_words{};
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		for (uint16_t stat = 0; stat < source_stat_count; ++stat) {
+			const uint32_t source_bit = static_cast<uint32_t>(layer) * source_stat_count + stat;
+			if ((source_words[source_bit / 64u] & (UINT64_C(1) << (source_bit % 64u))) == 0) continue;
+			if (!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
+				out_error = "vehicle authoring derived mask enables an unsupported pair";
+				return false;
+			}
+			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
+			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
+		}
+		// Appended stats were not authorable by the source schema. They enter the current
+		// document as automatic defaults and can be made custom normally after import.
+		for (uint16_t stat = source_stat_count; stat < CAR_STAT_COUNT; ++stat) {
+			if (!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) continue;
+			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
+			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
+		}
+	}
+	static constexpr char HEX[] = "0123456789abcdef";
+	String normalized;
+	for (uint64_t word : current_words) {
+		char digits[17];
+		for (int32_t digit = 15; digit >= 0; --digit) {
+			digits[digit] = HEX[word & 0xfu];
+			word >>= 4;
+		}
+		digits[16] = '\0';
+		normalized += String(digits);
+	}
+	out_value["format_revision"] = 1;
+	out_value["derived_mask_hex"] = normalized;
+	return true;
 }
 
 bool MxtCarAuthoringSession::parse_authoring_intent(

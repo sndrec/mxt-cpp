@@ -2,7 +2,6 @@
 
 #include "car/car_properties.h"
 #include "car/car_authoring_session.h"
-#include "car/car_special_state_derivation.h"
 #include "content/glb_validator.h"
 #include "content/track_payload_validator.h"
 
@@ -15,7 +14,6 @@
 #include <godot_cpp/variant/array.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -849,73 +847,12 @@ static bool validate_vehicle_authoring_metadata(
 		add_error(errors, "vehicle authoring derived_mask_hex must be a string");
 		return false;
 	}
-	const String encoded = root["derived_mask_hex"];
-	if (source_stat_count == 0 || source_stat_count > CAR_STAT_COUNT) {
-		add_error(errors, "vehicle authoring metadata has no supported properties schema");
+	String normalize_error;
+	if (!MxtCarAuthoringSession::normalize_authoring_intent(
+			root, source_stat_count, out_metadata, normalize_error)) {
+		add_error(errors, normalize_error);
 		return false;
 	}
-	const uint32_t source_pair_count = CAR_AUTHORING_SPECIAL_LAYER_COUNT * source_stat_count;
-	const uint32_t source_mask_words = (source_pair_count + 63u) / 64u;
-	if (encoded.length() != static_cast<int64_t>(source_mask_words * 16u)) {
-		add_error(errors, "vehicle authoring derived_mask_hex has the wrong length");
-		return false;
-	}
-	std::vector<uint64_t> source_words(source_mask_words, 0);
-	for (uint32_t word = 0; word < source_mask_words; ++word) {
-		for (uint32_t digit = 0; digit < 16; ++digit) {
-			const char32_t c = encoded[static_cast<int64_t>(word * 16u + digit)];
-			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
-				add_error(errors, "vehicle authoring derived_mask_hex must use lowercase hexadecimal");
-				return false;
-			}
-			source_words[word] = (source_words[word] << 4) |
-				static_cast<uint64_t>(c <= '9' ? c - '0' : c - 'a' + 10);
-		}
-	}
-	for (uint32_t bit = source_pair_count; bit < source_mask_words * 64u; ++bit) {
-		if ((source_words[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0) {
-			add_error(errors, "vehicle authoring derived mask has nonzero padding bits");
-		}
-	}
-
-	static constexpr uint32_t CURRENT_PAIR_COUNT = CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT;
-	static constexpr uint32_t CURRENT_MASK_WORDS = (CURRENT_PAIR_COUNT + 63u) / 64u;
-	std::array<uint64_t, CURRENT_MASK_WORDS> current_words{};
-	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
-		for (uint16_t stat = 0; stat < source_stat_count; ++stat) {
-			const uint32_t source_bit = static_cast<uint32_t>(layer) * source_stat_count + stat;
-			if ((source_words[source_bit / 64u] & (UINT64_C(1) << (source_bit % 64u))) == 0) continue;
-			if (!car_special_pair_is_supported(
-					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
-				add_error(errors, "vehicle authoring derived mask enables an unsupported pair");
-				continue;
-			}
-			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
-			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
-		}
-		// Appended stats did not exist when this document was authored. Their materialized
-		// default curves use the automatic derivation rules and remain editable as such.
-		for (uint16_t stat = source_stat_count; stat < CAR_STAT_COUNT; ++stat) {
-			if (!car_special_pair_is_supported(
-					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) continue;
-			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
-			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
-		}
-	}
-	if (!errors.empty()) return false;
-	static constexpr char HEX[] = "0123456789abcdef";
-	String normalized;
-	for (uint64_t word : current_words) {
-		char digits[17];
-		for (int32_t digit = 15; digit >= 0; --digit) {
-			digits[digit] = HEX[word & 0xfu];
-			word >>= 4;
-		}
-		digits[16] = '\0';
-		normalized += String(digits);
-	}
-	out_metadata["format_revision"] = 1;
-	out_metadata["derived_mask_hex"] = normalized;
 	return true;
 }
 
