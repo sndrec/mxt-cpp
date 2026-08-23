@@ -77,10 +77,18 @@ func _run() -> void:
 
 	var initial_start := Time.get_ticks_usec()
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
-	var initial_usec := Time.get_ticks_usec() - initial_start
+	var initial_schedule_usec := Time.get_ticks_usec() - initial_start
 	if game_manager.lobby_chibi_controller.cars.size() != PLAYER_COUNT:
 		_fail("did not create all synthetic lobby cars")
 		return
+	var initial_deadline := Time.get_ticks_msec() + 15000
+	while game_manager.lobby_chibi_controller.render_manager.archetypes.is_empty() and Time.get_ticks_msec() < initial_deadline:
+		await process_frame
+		game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	if game_manager.lobby_chibi_controller.render_manager.archetypes.is_empty():
+		_fail("asynchronous initial renderer did not complete")
+		return
+	var initial_complete_usec := Time.get_ticks_usec() - initial_start
 
 	var steady_start := Time.get_ticks_usec()
 	for _frame in range(STEADY_FRAMES):
@@ -104,17 +112,61 @@ func _run() -> void:
 		return
 	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
 	var change_rebuild_start := Time.get_ticks_usec()
+	var previous_rebuild_count: int = game_manager.lobby_chibi_controller.render_rebuild_count_total
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	var change_deadline := Time.get_ticks_msec() + 10000
+	while game_manager.lobby_chibi_controller.render_rebuild_count_total == previous_rebuild_count and Time.get_ticks_msec() < change_deadline:
+		await process_frame
+		game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var change_rebuild_usec := Time.get_ticks_usec() - change_rebuild_start
+	if game_manager.lobby_chibi_controller.render_rebuild_count_total == previous_rebuild_count:
+		_fail("asynchronous changed renderer did not complete")
+		return
+	if game_manager.lobby_chibi_controller.render_manager._profile_reused_archetype_count != PLAYER_COUNT - 1:
+		_fail("one-player render change did not reuse the other renderer archetypes")
+		return
+
+	var discard_count_before: int = game_manager.lobby_chibi_controller.render_build_discard_count
+	var rebuild_count_before_churn: int = game_manager.lobby_chibi_controller.render_rebuild_count_total
+	var churn_player_a := int(roster[1])
+	var churn_settings_a: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[churn_player_a] as Dictionary).duplicate(true)
+	churn_settings_a["car_livery"] = _synthetic_livery(String(churn_settings_a["vehicle_content_id"]), 101)
+	game_manager.network_manager.lobby_settings._store_player_settings(churn_player_a, churn_settings_a)
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	var churn_player_b := int(roster[2])
+	var churn_settings_b: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[churn_player_b] as Dictionary).duplicate(true)
+	churn_settings_b["car_livery"] = _synthetic_livery(String(churn_settings_b["vehicle_content_id"]), 202)
+	game_manager.network_manager.lobby_settings._store_player_settings(churn_player_b, churn_settings_b)
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	var churn_deadline := Time.get_ticks_msec() + 10000
+	while game_manager.lobby_chibi_controller.render_rebuild_count_total == rebuild_count_before_churn and Time.get_ticks_msec() < churn_deadline:
+		await process_frame
+		game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	if game_manager.lobby_chibi_controller.render_rebuild_count_total != rebuild_count_before_churn + 1:
+		_fail("rapid renderer changes were not coalesced into one installed generation")
+		return
+	if game_manager.lobby_chibi_controller.render_build_discard_count <= discard_count_before:
+		_fail("obsolete renderer generation was not discarded")
+		return
+	if game_manager.lobby_chibi_controller.render_signature != game_manager.lobby_chibi_controller.call("_render_source_signature", roster):
+		_fail("obsolete renderer generation replaced the newest lobby state")
+		return
 	var sample_state := [1000, 120.0, Vector3(1.0, 0.0, -1.0), 3.0, Vector3(4.0, 0.05, -2.0), Vector3(0.0, 1.5, 0.1)]
 	var variant_state_bytes := var_to_bytes(sample_state).size()
 	print(
 		"MXT_LOBBY_SCALE_SMOKE_PASS players=", PLAYER_COUNT,
 		" stamps_per_livery=", STAMPS_PER_LIVERY,
-		" initial_ms=", snappedf(float(initial_usec) * 0.001, 0.001),
+		" initial_schedule_ms=", snappedf(float(initial_schedule_usec) * 0.001, 0.001),
+		" initial_complete_ms=", snappedf(float(initial_complete_usec) * 0.001, 0.001),
 		" steady_avg_us=", snappedf(steady_avg_usec, 0.1),
 		" one_player_change_schedule_ms=", snappedf(float(change_schedule_usec) * 0.001, 0.001),
 		" one_player_change_rebuild_ms=", snappedf(float(change_rebuild_usec) * 0.001, 0.001),
+		" worker_ms=", snappedf(float(game_manager.lobby_chibi_controller.render_build_last_worker_usec) * 0.001, 0.001),
+		" handoff_ms=", snappedf(float(game_manager.lobby_chibi_controller.render_build_last_handoff_usec) * 0.001, 0.001),
 		" sampled_players=", game_manager.lobby_chibi_controller.last_settings_apply_sample_count,
 		" unchanged_players=", game_manager.lobby_chibi_controller.last_settings_apply_already_current_count,
 		" archetypes=", game_manager.lobby_chibi_controller.render_manager.archetypes.size(),

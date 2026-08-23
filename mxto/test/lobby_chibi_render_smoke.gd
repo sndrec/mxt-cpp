@@ -32,6 +32,10 @@ func _init() -> void:
 		quit(1)
 		return
 	controller.process_lobby(1.0 / 60.0)
+	var render_deadline := Time.get_ticks_msec() + 10000
+	while controller.render_manager.archetypes.is_empty() and Time.get_ticks_msec() < render_deadline:
+		await process_frame
+		controller.process_lobby(1.0 / 60.0)
 	controller.set_hover(-1)
 	var chibi = controller.cars.get(42, null)
 	if chibi != null:

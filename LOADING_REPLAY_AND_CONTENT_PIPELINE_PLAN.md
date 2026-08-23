@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Phase A is complete; Phase B is next. This document is the implementation
+In progress. Phases A through F are complete; Phase G is next. This document is the implementation
 contract for the loading-performance, binary-replay, lobby-rendering, and
 Workshop-refresh work described below.
 
@@ -457,6 +457,33 @@ After Phase E:
   is still building.
 - Obsolete queued work cannot overwrite newer content.
 - Race startup receives a complete, matching content/render generation.
+
+### Phase F results
+
+- Lobby replacement rendering now has one bounded worker and one coalesced pending
+  generation. Newer roster/content/livery state supersedes an active build; obsolete
+  results are discarded without mutating the completed renderer.
+- Mesh surfaces, stamp specifications, custom-stamp blobs, and atlas placement are
+  snapshotted on the main thread. Native projection geometry, visibility-mask pixels,
+  and the shared custom-stamp atlas `Image` are prepared on the worker. `ArrayMesh`,
+  `ImageTexture`, materials, multimeshes, and renderer installation remain on the main
+  thread.
+- The active renderer and atlas stay installed during preparation. The replacement
+  atlas, stamp meshes, archetypes, player indices, and settings become active in one
+  main-thread handoff for the matching generation.
+- Custom-stamp discovery now has a no-custom-stamp fast path and no longer clones and
+  parses every lobby player's settings merely to prove that no shared atlas is needed.
+- The 48-player stamped scale smoke measured a one-player replacement at 3.6 ms to
+  collect/schedule, 2.0 ms of worker preparation, and 1.8 ms of main-thread handoff,
+  with 47 of 48 archetypes reused. The synthetic worst-case initial 48-unique-livery
+  build remained bounded to one worker and approximately 204 MB of temporary prepared
+  data; it completed in approximately 354 ms without doing its 168 ms projection work
+  on the main thread.
+- A rapid two-generation churn smoke discarded the first completed result and installed
+  only the newest generation. Queue wait, worker duration, handoff duration, discarded
+  count, and temporary bytes are included in bounded load and Workshop diagnostics.
+- Release compilation, stamp mesh and render-manager smokes, vehicle-content smoke,
+  lobby render smoke, and the 48-player scale/churn smoke completed successfully.
 
 ## Phase G: Native binary replay container
 

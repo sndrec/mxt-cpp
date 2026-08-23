@@ -37,6 +37,8 @@ var _cached_input_revisions: Array = []
 var _cached_definition_instances: Array = []
 var _cached_liveries: Array = []
 var _cached_archetype_keys: Array = []
+var _prepared_stamp_builds: Dictionary = {}
+var _active_archetype_key := ""
 
 func _exit_tree() -> void:
 	archetypes.clear()
@@ -73,6 +75,40 @@ func configure_manual(definitions: Array, player_settings: Array = [], unique_ar
 func reconfigure_manual(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> void:
 	var load_profile := _begin_configuration_profile("reconfigure_manual", definitions)
 	_reconfigure_archetypes(definitions, player_settings, input_revisions)
+	_end_configuration_profile(load_profile, definitions)
+
+
+func create_manual_reconfigure_preparation(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> Dictionary:
+	var resolved := _resolve_reconfigure_inputs(definitions, player_settings, input_revisions)
+	var reusable := {}
+	for archetype in archetypes:
+		var existing_key := String(archetype.get("key", ""))
+		if !existing_key.is_empty():
+			reusable[existing_key] = true
+	var snapshots := {}
+	var keys: Array = resolved.get("keys", [])
+	var liveries: Array = resolved.get("liveries", [])
+	for i in range(mini(definitions.size(), keys.size())):
+		var key := String(keys[i])
+		if key.is_empty() or reusable.has(key) or snapshots.has(key):
+			continue
+		var livery := liveries[i] as CarLivery
+		if livery == null or livery.stamps.is_empty():
+			continue
+		var snapshot := _snapshot_stamp_build(definitions[i] as CarDefinition, livery)
+		if !snapshot.is_empty():
+			snapshots[key] = snapshot
+	resolved["snapshots"] = snapshots
+	return resolved
+
+
+func apply_manual_reconfigure_preparation(definitions: Array, player_settings: Array, input_revisions: Array, preparation: Dictionary, prepared_stamp_builds: Dictionary) -> void:
+	var load_profile := _begin_configuration_profile("apply_prepared_reconfigure", definitions, {
+		"prepared_stamp_build_count": prepared_stamp_builds.size(),
+	})
+	_prepared_stamp_builds = prepared_stamp_builds
+	_reconfigure_archetypes(definitions, player_settings, input_revisions, preparation)
+	_prepared_stamp_builds = {}
 	_end_configuration_profile(load_profile, definitions)
 
 
@@ -124,11 +160,13 @@ func _build_profiled_archetype(definition: CarDefinition, livery: CarLivery, key
 		"vertex_count": 0,
 		"index_count": 0,
 	}
+	_active_archetype_key = key
 	var archetype := _build_archetype(definition, livery, key)
 	_active_archetype_profile["duration_usec"] = Time.get_ticks_usec() - start_usec
 	_profile_new_archetype_count += 1
 	_profile_archetype_builds.append(_active_archetype_profile)
 	_active_archetype_profile = {}
+	_active_archetype_key = ""
 	return archetype
 
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
@@ -189,24 +227,7 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		_resize_passes(archetype, int(archetype["count"]))
 	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
-func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> void:
-	car_archetype_indices.resize(definitions.size())
-	car_slots.resize(definitions.size())
-	if !multimesh_render_enabled:
-		clear_renderer()
-		car_archetype_indices.resize(definitions.size())
-		car_slots.resize(definitions.size())
-		for i in range(definitions.size()):
-			car_archetype_indices[i] = -1
-			car_slots[i] = -1
-		return
-	var reusable := {}
-	for archetype in archetypes:
-		var existing_key := str(archetype.get("key", ""))
-		if existing_key != "":
-			reusable[existing_key] = archetype
-	var next_archetypes: Array = []
-	var archetype_map := {}
+func _resolve_reconfigure_inputs(definitions: Array, player_settings: Array, input_revisions: Array) -> Dictionary:
 	var next_input_revisions: Array = []
 	var next_definition_instances: Array = []
 	var next_liveries: Array = []
@@ -237,6 +258,42 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], in
 		next_definition_instances[i] = definition_instance
 		next_liveries[i] = livery
 		next_archetype_keys[i] = key
+	return {
+		"input_revisions": next_input_revisions,
+		"definition_instances": next_definition_instances,
+		"liveries": next_liveries,
+		"keys": next_archetype_keys,
+	}
+
+
+func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], input_revisions: Array = [], resolved: Dictionary = {}) -> void:
+	car_archetype_indices.resize(definitions.size())
+	car_slots.resize(definitions.size())
+	if !multimesh_render_enabled:
+		clear_renderer()
+		car_archetype_indices.resize(definitions.size())
+		car_slots.resize(definitions.size())
+		for i in range(definitions.size()):
+			car_archetype_indices[i] = -1
+			car_slots[i] = -1
+		return
+	var reusable := {}
+	for archetype in archetypes:
+		var existing_key := str(archetype.get("key", ""))
+		if existing_key != "":
+			reusable[existing_key] = archetype
+	var next_archetypes: Array = []
+	var archetype_map := {}
+	if resolved.is_empty():
+		resolved = _resolve_reconfigure_inputs(definitions, player_settings, input_revisions)
+	var next_input_revisions: Array = resolved.get("input_revisions", [])
+	var next_definition_instances: Array = resolved.get("definition_instances", [])
+	var next_liveries: Array = resolved.get("liveries", [])
+	var next_archetype_keys: Array = resolved.get("keys", [])
+	for i in range(definitions.size()):
+		var definition: CarDefinition = definitions[i]
+		var livery := next_liveries[i] as CarLivery
+		var key := String(next_archetype_keys[i])
 		var archetype_index := -1
 		if archetype_map.has(key):
 			archetype_index = int(archetype_map[key])
@@ -499,6 +556,40 @@ func _runtime_thruster_material() -> Material:
 	template.free()
 	return material
 
+
+func _snapshot_stamp_build(definition: CarDefinition, livery: CarLivery) -> Dictionary:
+	if definition == null or livery == null or livery.stamps.is_empty():
+		return {}
+	var catalog := _get_stamp_catalog()
+	if catalog == null:
+		return {}
+	if definition.car_scene != null:
+		var template := definition.car_scene.instantiate() as Node3D
+		var body_mesh := template.get_node("VEHICLE_MAIN") as MeshInstance3D
+		var snapshot := stamp_mesh_builder.snapshot_build_inputs(
+			body_mesh,
+			_body_to_car_transform(body_mesh, template),
+			livery,
+			catalog,
+			stamp_visibility_masks_enabled,
+			stamp_visibility_mask_skip_layer)
+		template.free()
+		return snapshot
+	var runtime_template := Node3D.new()
+	var runtime_body := MeshInstance3D.new()
+	runtime_body.mesh = definition.runtime_mesh
+	runtime_body.transform = definition.runtime_transform
+	runtime_template.add_child(runtime_body)
+	var snapshot := stamp_mesh_builder.snapshot_build_inputs(
+		runtime_body,
+		definition.runtime_transform,
+		livery,
+		catalog,
+		stamp_visibility_masks_enabled,
+		stamp_visibility_mask_skip_layer)
+	runtime_template.free()
+	return snapshot
+
 func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
 	var mesh: Mesh = null
 	var material: Material = null
@@ -514,7 +605,11 @@ func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: 
 				catalog.custom_atlas_texture = custom_stamp_atlas_texture
 			_profile_add_usec("stamp_catalog_duplicate_usec", phase_start_usec)
 			phase_start_usec = Time.get_ticks_usec()
-			var stamp_build := stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
+			var stamp_build: Dictionary
+			if _prepared_stamp_builds.has(_active_archetype_key):
+				stamp_build = stamp_mesh_builder.install_prepared(_prepared_stamp_builds[_active_archetype_key])
+			else:
+				stamp_build = stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
 			_profile_add_usec("stamp_projection_upload_usec", phase_start_usec)
 			for field_value in (stamp_build.get("profile", {}) as Dictionary).keys():
 				var field := String(field_value)

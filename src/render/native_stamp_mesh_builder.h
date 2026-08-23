@@ -17,6 +17,15 @@ protected:
 	static void _bind_methods();
 
 public:
+	Dictionary snapshot_build_inputs(
+			MeshInstance3D *p_body_mesh,
+			const Transform3D &p_body_to_car,
+			Object *p_livery,
+			Object *p_catalog,
+			bool p_build_visibility_masks = true,
+			int p_visibility_mask_skip_layer = -1);
+	Dictionary prepare_snapshot(const Dictionary &p_snapshot);
+	Dictionary install_prepared(const Dictionary &p_prepared);
 	Dictionary build_for_body_mesh_with_masks(
 			MeshInstance3D *p_body_mesh,
 			const Transform3D &p_body_to_car,

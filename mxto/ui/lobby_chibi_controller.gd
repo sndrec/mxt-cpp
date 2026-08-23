@@ -3,6 +3,7 @@ extends Node
 
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const LOBBY_CHIBI_CAR_SCRIPT := "res://ui/lobby_chibi_car.gd"
 
@@ -58,6 +59,17 @@ var render_rebuild_count_total := 0
 var render_cars: Array = []
 var render_settings_by_id := {}
 var magnifier_render_signature := ""
+var render_build_thread: Thread
+var render_build_active_request: Dictionary = {}
+var render_build_queued_request: Dictionary = {}
+var render_build_generation := 0
+var render_build_latest_generation := 0
+var render_build_discard_count := 0
+var render_build_last_worker_usec := 0
+var render_build_last_handoff_usec := 0
+var render_build_last_queue_wait_usec := 0
+var render_build_peak_temporary_bytes := 0
+var render_build_worker := NativeStampMeshBuilder.new()
 
 func _ready() -> void:
 	render_manager = CarRenderManagerClass.new()
@@ -68,6 +80,10 @@ func _ready() -> void:
 	magnifier_root.add_child(magnifier_render_manager)
 	magnifier_texture.texture = magnifier_viewport.get_texture()
 	viewport_stack.gui_input.connect(_on_view_gui_input)
+
+
+func _exit_tree() -> void:
+	_finish_render_build_thread()
 
 func initialize(
 	in_game_manager,
@@ -100,6 +116,10 @@ func _accepts_network_state() -> bool:
 	return network_manager.is_server or is_active()
 
 func clear() -> void:
+	_finish_render_build_thread()
+	render_build_active_request.clear()
+	render_build_queued_request.clear()
+	render_build_latest_generation += 1
 	var had_state := (
 		!cars.is_empty()
 		or !pending_states.is_empty()
@@ -340,79 +360,13 @@ func _sample_stats(settings: Dictionary, definition: CarDefinition) -> Dictionar
 func _submit_render(roster: Array) -> void:
 	var signature := _render_source_signature(roster)
 	var now_msec := Time.get_ticks_msec()
+	_poll_render_build_thread(signature)
 	if signature != pending_render_signature:
 		pending_render_signature = signature
 		render_rebuild_due_msec = now_msec + RENDER_REBUILD_DEBOUNCE_MSEC
 	var renderer_empty := render_manager.archetypes.is_empty()
 	if signature != render_signature and (renderer_empty or now_msec >= render_rebuild_due_msec):
-		var rebuild_start_usec := Time.get_ticks_usec()
-		var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_render_rebuild", {
-			"renderer_was_empty": renderer_empty,
-			"roster_count": roster.size(),
-		})
-		render_indices.clear()
-		var definitions := []
-		var settings := []
-		var player_ids := []
-		var render_input_revisions := []
-		var next_render_cars := []
-		for id in roster:
-			var player_id := int(id)
-			var car = cars.get(player_id, null)
-			if car == null or !is_instance_valid(car):
-				continue
-			var definition: CarDefinition = car.get_render_definition()
-			if definition == null:
-				continue
-			definitions.append(definition)
-			settings.append(car.player_settings)
-			player_ids.append(player_id)
-			render_input_revisions.append("%d:%d:%d" % [
-				player_id,
-				network_manager.lobby_settings.get_player_settings_revision(player_id),
-				network_manager.custom_stamp_network.revision,
-			])
-			render_indices[player_id] = next_render_cars.size()
-			next_render_cars.append(car)
-		LoadTransitionProfilerClass.checkpoint(load_profile, "collect_render_roster", {
-			"definition_count": definitions.size(),
-		})
-		var stamp_render: Dictionary = vehicle_content_controller.prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
-		LoadTransitionProfilerClass.checkpoint(load_profile, "prepare_custom_stamp_atlas")
-		render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
-		var render_settings: Array = stamp_render.get("settings", settings)
-		render_manager.reconfigure_manual(definitions, render_settings, render_input_revisions)
-		LoadTransitionProfilerClass.checkpoint(load_profile, "configure_render_archetypes")
-		render_cars = next_render_cars
-		render_settings_by_id.clear()
-		for i in range(mini(player_ids.size(), render_settings.size())):
-			render_settings_by_id[int(player_ids[i])] = render_settings[i]
-		render_signature = signature
-		magnifier_render_signature = ""
-		render_rebuild_count_total += 1
-		var rebuild_duration_usec := Time.get_ticks_usec() - rebuild_start_usec
-		network_manager.telemetry.record_lobby_render_rebuild(rebuild_duration_usec)
-		game_manager.record_memory_sample("lobby_render_rebuild")
-		var rendered_vehicles := []
-		for entry_settings in settings:
-			rendered_vehicles.append({
-				"vehicle_content_id": String(entry_settings.get("vehicle_content_id", "")),
-				"vehicle_workshop_id": String(entry_settings.get("vehicle_workshop_id", "")),
-				"vehicle_gameplay_digest": String(entry_settings.get("vehicle_gameplay_digest", "")),
-				"vehicle_package_digest": String(entry_settings.get("vehicle_package_digest", "")),
-			})
-		vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_rebuild", {
-			"duration_usec": rebuild_duration_usec,
-			"signature": signature,
-			"renderer_was_empty": renderer_empty,
-			"roster": roster.duplicate(),
-			"rendered_vehicles": rendered_vehicles,
-		})
-		LoadTransitionProfilerClass.end_transition(load_profile, {
-			"definition_count": definitions.size(),
-			"rebuild_duration_usec_existing_counter": rebuild_duration_usec,
-			"signature": signature,
-		})
+		_request_render_build(roster, signature, renderer_empty)
 	render_manager.begin_manual_submit()
 	var render_root_inv := render_manager.global_transform.affine_inverse()
 	for i in range(render_cars.size()):
@@ -420,6 +374,252 @@ func _submit_render(roster: Array) -> void:
 		if car == null or !is_instance_valid(car):
 			continue
 		render_manager.submit_manual_car(i, render_root_inv * car.get_render_transform(), car.get_render_overlay(), car.get_render_outline_velocity(), car.get_render_outline_overlay(), car.get_render_thrust(), false)
+
+
+func _request_render_build(roster: Array, signature: String, renderer_empty: bool) -> void:
+	if String(render_build_active_request.get("signature", "")) == signature \
+			or String(render_build_queued_request.get("signature", "")) == signature:
+		return
+	var collect_start_usec := Time.get_ticks_usec()
+	var definitions := []
+	var settings := []
+	var player_ids := []
+	var render_input_revisions := []
+	var next_render_cars := []
+	var next_render_indices := {}
+	for id in roster:
+		var player_id := int(id)
+		var car = cars.get(player_id, null)
+		if car == null or !is_instance_valid(car):
+			continue
+		var definition: CarDefinition = car.get_render_definition()
+		if definition == null:
+			continue
+		definitions.append(definition)
+		settings.append(car.player_settings)
+		player_ids.append(player_id)
+		render_input_revisions.append("%d:%d:%d" % [
+			player_id,
+			network_manager.lobby_settings.get_player_settings_revision(player_id),
+			network_manager.custom_stamp_network.revision,
+		])
+		next_render_indices[player_id] = next_render_cars.size()
+		next_render_cars.append(car)
+	var stamp_render := vehicle_content_controller.prepare_custom_stamp_render_data(player_ids, settings, "lobby")
+	var render_settings: Array = stamp_render.get("settings", settings)
+	var preparation := render_manager.create_manual_reconfigure_preparation(definitions, render_settings, render_input_revisions)
+	render_build_generation += 1
+	render_build_latest_generation = render_build_generation
+	var request := {
+		"generation": render_build_generation,
+		"signature": signature,
+		"requested_usec": Time.get_ticks_usec(),
+		"collect_usec": Time.get_ticks_usec() - collect_start_usec,
+		"renderer_was_empty": renderer_empty,
+		"roster": roster.duplicate(),
+		"definitions": definitions,
+		"settings": settings,
+		"render_settings": render_settings,
+		"player_ids": player_ids,
+		"input_revisions": render_input_revisions,
+		"render_cars": next_render_cars,
+		"render_indices": next_render_indices,
+		"preparation": preparation,
+		"snapshots": preparation.get("snapshots", {}),
+		"atlas_records": stamp_render.get("player_records", []),
+		"stamp_data_ok": bool(stamp_render.get("ok", false)),
+	}
+	if render_build_thread != null:
+		render_build_queued_request = request
+		return
+	_start_render_build(request)
+
+
+func _start_render_build(request: Dictionary) -> void:
+	var worker_request := {
+		"generation": int(request.get("generation", 0)),
+		"signature": String(request.get("signature", "")),
+		"worker_start_usec": Time.get_ticks_usec(),
+		"snapshots": request.get("snapshots", {}),
+		"atlas_records": request.get("atlas_records", []),
+		"stamp_data_ok": bool(request.get("stamp_data_ok", false)),
+	}
+	request["worker_start_usec"] = worker_request["worker_start_usec"]
+	request["load_profile"] = LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_render_rebuild", {
+		"generation": request.get("generation", 0),
+		"renderer_was_empty": request.get("renderer_was_empty", false),
+		"roster_count": (request.get("roster", []) as Array).size(),
+		"collect_usec": request.get("collect_usec", 0),
+		"queue_wait_usec": int(worker_request["worker_start_usec"]) - int(request.get("requested_usec", worker_request["worker_start_usec"])),
+	})
+	render_build_active_request = request
+	render_build_thread = Thread.new()
+	var err := render_build_thread.start(_prepare_render_build_thread.bind(worker_request))
+	if err == OK:
+		return
+	push_warning("Failed to start lobby renderer worker: %s" % err)
+	var result := _prepare_render_build_thread(worker_request)
+	render_build_thread = null
+	_finish_render_build(result, _render_source_signature(_human_roster()))
+
+
+func _prepare_render_build_thread(request: Dictionary) -> Dictionary:
+	var start_usec := Time.get_ticks_usec()
+	var prepared_stamp_builds := {}
+	var temporary_bytes := 0
+	var snapshots: Dictionary = request.get("snapshots", {})
+	for key_value in snapshots.keys():
+		var prepared := render_build_worker.prepare_snapshot(snapshots[key_value])
+		if prepared.is_empty():
+			continue
+		prepared_stamp_builds[String(key_value)] = prepared
+		var profile: Dictionary = prepared.get("profile", {})
+		temporary_bytes += int(profile.get("temporary_bytes", 0))
+	var atlas_build := {"ok": true, "image": null}
+	var atlas_records: Array = request.get("atlas_records", [])
+	if !atlas_records.is_empty():
+		atlas_build = CustomStampAtlasBuilder.build_atlas_image(atlas_records)
+		var atlas_image := atlas_build.get("image", null) as Image
+		if atlas_image != null:
+			temporary_bytes += atlas_image.get_data_size()
+	return {
+		"ok": bool(request.get("stamp_data_ok", false)) and bool(atlas_build.get("ok", false)),
+		"error": atlas_build.get("error", ""),
+		"generation": request.get("generation", 0),
+		"signature": request.get("signature", ""),
+		"prepared_stamp_builds": prepared_stamp_builds,
+		"atlas_build": atlas_build,
+		"temporary_bytes": temporary_bytes,
+		"worker_usec": Time.get_ticks_usec() - start_usec,
+	}
+
+
+func _poll_render_build_thread(current_signature: String) -> void:
+	if render_build_thread == null or render_build_thread.is_alive():
+		return
+	var result = render_build_thread.wait_to_finish()
+	render_build_thread = null
+	if typeof(result) == TYPE_DICTIONARY:
+		_finish_render_build(result, current_signature)
+	else:
+		_discard_active_render_build("worker returned no result")
+	_start_queued_render_build()
+
+
+func _finish_render_build(result: Dictionary, current_signature: String) -> void:
+	var request := render_build_active_request
+	var generation := int(result.get("generation", 0))
+	var obsolete := (
+		generation != int(request.get("generation", -1))
+		or generation != render_build_latest_generation
+		or String(result.get("signature", "")) != current_signature)
+	if obsolete:
+		_discard_active_render_build("obsolete generation")
+		return
+	if !bool(result.get("ok", false)):
+		push_warning("Failed to prepare lobby renderer: %s" % String(result.get("error", "unknown error")))
+		_discard_active_render_build("worker preparation failed")
+		return
+	var handoff_start_usec := Time.get_ticks_usec()
+	var atlas_build: Dictionary = result.get("atlas_build", {})
+	var atlas_texture: Texture2D = null
+	var atlas_image := atlas_build.get("image", null) as Image
+	if atlas_image != null:
+		atlas_texture = CustomStampAtlasBuilder.texture_from_image(atlas_image)
+	render_manager.set_custom_stamp_atlas(atlas_texture)
+	var definitions: Array = request.get("definitions", [])
+	var render_settings: Array = request.get("render_settings", [])
+	render_manager.apply_manual_reconfigure_preparation(
+		definitions,
+		render_settings,
+		request.get("input_revisions", []),
+		request.get("preparation", {}),
+		result.get("prepared_stamp_builds", {}))
+	render_cars = request.get("render_cars", [])
+	render_indices = request.get("render_indices", {})
+	render_settings_by_id.clear()
+	var player_ids: Array = request.get("player_ids", [])
+	for i in range(mini(player_ids.size(), render_settings.size())):
+		render_settings_by_id[int(player_ids[i])] = render_settings[i]
+	render_signature = String(request.get("signature", ""))
+	magnifier_render_signature = ""
+	render_rebuild_count_total += 1
+	render_build_last_worker_usec = int(result.get("worker_usec", 0))
+	render_build_last_handoff_usec = Time.get_ticks_usec() - handoff_start_usec
+	render_build_last_queue_wait_usec = int(request.get("worker_start_usec", 0)) - int(request.get("requested_usec", 0))
+	render_build_peak_temporary_bytes = maxi(render_build_peak_temporary_bytes, int(result.get("temporary_bytes", 0)))
+	var total_usec := Time.get_ticks_usec() - int(request.get("requested_usec", Time.get_ticks_usec()))
+	network_manager.telemetry.record_lobby_render_rebuild(total_usec)
+	game_manager.record_memory_sample("lobby_render_rebuild")
+	var rendered_vehicles := []
+	for entry_settings in request.get("settings", []):
+		rendered_vehicles.append({
+			"vehicle_content_id": String(entry_settings.get("vehicle_content_id", "")),
+			"vehicle_workshop_id": String(entry_settings.get("vehicle_workshop_id", "")),
+			"vehicle_gameplay_digest": String(entry_settings.get("vehicle_gameplay_digest", "")),
+			"vehicle_package_digest": String(entry_settings.get("vehicle_package_digest", "")),
+		})
+	vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_rebuild", {
+		"duration_usec": total_usec,
+		"signature": render_signature,
+		"generation": generation,
+		"renderer_was_empty": request.get("renderer_was_empty", false),
+		"roster": request.get("roster", []),
+		"rendered_vehicles": rendered_vehicles,
+		"queue_wait_usec": render_build_last_queue_wait_usec,
+		"worker_usec": render_build_last_worker_usec,
+		"handoff_usec": render_build_last_handoff_usec,
+		"temporary_bytes": result.get("temporary_bytes", 0),
+		"discarded_build_count": render_build_discard_count,
+	})
+	LoadTransitionProfilerClass.end_transition(int(request.get("load_profile", 0)), {
+		"definition_count": definitions.size(),
+		"duration_usec": total_usec,
+		"signature": render_signature,
+		"generation": generation,
+		"queue_wait_usec": render_build_last_queue_wait_usec,
+		"worker_usec": render_build_last_worker_usec,
+		"handoff_usec": render_build_last_handoff_usec,
+		"temporary_bytes": result.get("temporary_bytes", 0),
+		"discarded": false,
+	})
+	render_build_active_request = {}
+
+
+func _discard_active_render_build(reason: String) -> void:
+	if render_build_active_request.is_empty():
+		return
+	render_build_discard_count += 1
+	LoadTransitionProfilerClass.end_transition(int(render_build_active_request.get("load_profile", 0)), {
+		"generation": render_build_active_request.get("generation", 0),
+		"signature": render_build_active_request.get("signature", ""),
+		"discarded": true,
+		"discard_reason": reason,
+	})
+	vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_build_discarded", {
+		"generation": render_build_active_request.get("generation", 0),
+		"signature": render_build_active_request.get("signature", ""),
+		"reason": reason,
+		"discarded_build_count": render_build_discard_count,
+	})
+	render_build_active_request = {}
+
+
+func _start_queued_render_build() -> void:
+	if render_build_queued_request.is_empty():
+		return
+	var request := render_build_queued_request
+	render_build_queued_request = {}
+	_start_render_build(request)
+
+
+func _finish_render_build_thread() -> void:
+	if render_build_thread == null:
+		return
+	var result = render_build_thread.wait_to_finish()
+	render_build_thread = null
+	if typeof(result) == TYPE_DICTIONARY:
+		_discard_active_render_build("controller cleared")
 
 func _render_source_signature(roster: Array) -> String:
 	var roster_ids := PackedStringArray()

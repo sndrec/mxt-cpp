@@ -146,6 +146,43 @@ static bool parse_stamp_spec(Object *stamp, Object *catalog, StampSpec &out)
 			out.atlas_rect.size.y > 0.0f;
 }
 
+static Dictionary stamp_spec_to_dictionary(const StampSpec &stamp)
+{
+	Dictionary out;
+	out["layer"] = stamp.layer;
+	out["projector"] = stamp.projector;
+	out["atlas_rect"] = stamp.atlas_rect;
+	out["source_flag"] = stamp.source_flag;
+	out["atlas_rotated"] = stamp.atlas_rotated;
+	out["flip_horizontal"] = stamp.flip_horizontal;
+	out["flip_vertical"] = stamp.flip_vertical;
+	out["mirror_local_x"] = stamp.mirror_local_x;
+	out["size"] = stamp.size;
+	out["projection_depth"] = stamp.projection_depth;
+	out["colour"] = stamp.colour;
+	out["opacity"] = stamp.opacity;
+	return out;
+}
+
+static StampSpec stamp_spec_from_dictionary(const Dictionary &source)
+{
+	StampSpec out;
+	out.layer = static_cast<int>(source.get("layer", 0));
+	out.projector = source.get("projector", Transform3D());
+	out.atlas_rect = source.get("atlas_rect", Rect2());
+	out.source_flag = static_cast<float>(source.get("source_flag", 0.0));
+	out.atlas_rotated = static_cast<bool>(source.get("atlas_rotated", false));
+	out.flip_horizontal = static_cast<bool>(source.get("flip_horizontal", false));
+	out.flip_vertical = static_cast<bool>(source.get("flip_vertical", false));
+	out.mirror_local_x = static_cast<bool>(source.get("mirror_local_x", false));
+	out.size = source.get("size", Vector2(1.0f, 1.0f));
+	out.projection_depth = static_cast<float>(source.get("projection_depth", 0.25));
+	out.colour = source.get("colour", Color(1.0f, 1.0f, 1.0f, 1.0f));
+	out.opacity = static_cast<float>(source.get("opacity", 1.0));
+	out.enabled = true;
+	return out;
+}
+
 static PackedVector3Array surface_vertices(const Array &arrays)
 {
 	if (arrays.size() <= Mesh::ARRAY_VERTEX) {
@@ -500,7 +537,7 @@ static void append_clipped_polygon(
 }
 
 static void append_stamp_projection(
-		Ref<Mesh> mesh,
+		const Array &surfaces,
 		const Transform3D &body_to_car,
 		const Transform3D &car_to_body,
 		const StampSpec &stamp,
@@ -537,8 +574,9 @@ static void append_stamp_projection(
 		depth_map.assign(OCCLUSION_MAP_SIZE * OCCLUSION_MAP_SIZE, OCCLUSION_DEPTH_EMPTY);
 	}
 	const uint64_t phase_start_usec = Time::get_singleton()->get_ticks_usec();
-	for (int surface_index = 0; surface_index < mesh->get_surface_count(); ++surface_index) {
-		const Array arrays = mesh->surface_get_arrays(surface_index);
+	for (int surface_index = 0; surface_index < surfaces.size(); ++surface_index) {
+		if (surfaces[surface_index].get_type() != Variant::ARRAY) continue;
+		const Array arrays = surfaces[surface_index];
 		const PackedVector3Array vertices = surface_vertices(arrays);
 		if (vertices.is_empty()) {
 			continue;
@@ -586,10 +624,13 @@ static Dictionary empty_build_result()
 
 void NativeStampMeshBuilder::_bind_methods()
 {
+	ClassDB::bind_method(D_METHOD("snapshot_build_inputs", "body_mesh", "body_to_car", "livery", "catalog", "build_visibility_masks", "visibility_mask_skip_layer"), &NativeStampMeshBuilder::snapshot_build_inputs, DEFVAL(true), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("prepare_snapshot", "snapshot"), &NativeStampMeshBuilder::prepare_snapshot);
+	ClassDB::bind_method(D_METHOD("install_prepared", "prepared"), &NativeStampMeshBuilder::install_prepared);
 	ClassDB::bind_method(D_METHOD("build_for_body_mesh_with_masks", "body_mesh", "body_to_car", "livery", "catalog", "build_visibility_masks", "visibility_mask_skip_layer"), &NativeStampMeshBuilder::build_for_body_mesh_with_masks, DEFVAL(true), DEFVAL(-1));
 }
 
-Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
+Dictionary NativeStampMeshBuilder::snapshot_build_inputs(
 		MeshInstance3D *p_body_mesh,
 		const Transform3D &p_body_to_car,
 		Object *p_livery,
@@ -597,25 +638,58 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 		bool p_build_visibility_masks,
 		int p_visibility_mask_skip_layer)
 {
-	const uint64_t total_start_usec = Time::get_singleton()->get_ticks_usec();
+	const uint64_t snapshot_start_usec = Time::get_singleton()->get_ticks_usec();
 	if (p_body_mesh == nullptr || p_livery == nullptr || p_catalog == nullptr) {
-		return empty_build_result();
+		return Dictionary();
 	}
 	Ref<Mesh> mesh = p_body_mesh->get_mesh();
 	if (mesh.is_null()) {
-		return empty_build_result();
+		return Dictionary();
 	}
 	const Variant sorted_stamps_var = p_livery->call("get_sorted_stamps");
 	if (sorted_stamps_var.get_type() != Variant::ARRAY) {
-		return empty_build_result();
+		return Dictionary();
 	}
 	const Array sorted_stamps = sorted_stamps_var;
 	if (sorted_stamps.is_empty()) {
-		return empty_build_result();
+		return Dictionary();
 	}
+	Array surfaces;
+	surfaces.resize(mesh->get_surface_count());
+	for (int i = 0; i < mesh->get_surface_count(); ++i) surfaces[i] = mesh->surface_get_arrays(i);
+	Array stamps;
+	uint64_t stamp_parse_usec = 0;
+	for (int i = 0; i < sorted_stamps.size(); ++i) {
+		Object *stamp_object = Object::cast_to<Object>(sorted_stamps[i]);
+		if (stamp_object == nullptr) continue;
+		StampSpec stamp;
+		const uint64_t parse_start_usec = Time::get_singleton()->get_ticks_usec();
+		const bool valid = parse_stamp_spec(stamp_object, p_catalog, stamp);
+		stamp_parse_usec += Time::get_singleton()->get_ticks_usec() - parse_start_usec;
+		if (valid) stamps.push_back(stamp_spec_to_dictionary(stamp));
+	}
+	if (stamps.is_empty()) return Dictionary();
+	Dictionary snapshot;
+	snapshot["surfaces"] = surfaces;
+	snapshot["stamps"] = stamps;
+	snapshot["body_to_car"] = p_body_to_car;
+	snapshot["build_visibility_masks"] = p_build_visibility_masks;
+	snapshot["visibility_mask_skip_layer"] = p_visibility_mask_skip_layer;
+	snapshot["snapshot_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - snapshot_start_usec);
+	snapshot["stamp_parse_usec"] = static_cast<int64_t>(stamp_parse_usec);
+	return snapshot;
+}
 
-	Ref<ArrayMesh> out_mesh;
-	out_mesh.instantiate();
+Dictionary NativeStampMeshBuilder::prepare_snapshot(const Dictionary &p_snapshot)
+{
+	const uint64_t total_start_usec = Time::get_singleton()->get_ticks_usec();
+	const Array surfaces = p_snapshot.get("surfaces", Array());
+	const Array stamp_values = p_snapshot.get("stamps", Array());
+	if (surfaces.is_empty() || stamp_values.is_empty()) return Dictionary();
+	const Transform3D body_to_car = p_snapshot.get("body_to_car", Transform3D());
+	const bool build_visibility_masks = static_cast<bool>(p_snapshot.get("build_visibility_masks", true));
+	const int visibility_mask_skip_layer = static_cast<int>(p_snapshot.get("visibility_mask_skip_layer", -1));
+
 	PackedVector3Array out_vertices;
 	PackedVector3Array out_normals;
 	PackedVector2Array out_body_uvs;
@@ -628,7 +702,7 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 	PackedByteArray mask_bytes;
 	float *mask_pixels = nullptr;
 	uint64_t mask_image_setup_usec = 0;
-	if (p_build_visibility_masks) {
+	if (build_visibility_masks) {
 		const uint64_t phase_start_usec = Time::get_singleton()->get_ticks_usec();
 		mask_bytes.resize(static_cast<int64_t>(OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE * OCCLUSION_ATLAS_ROWS * OCCLUSION_MAP_SIZE * 2 * sizeof(float)));
 		std::fill(mask_bytes.ptrw(), mask_bytes.ptrw() + mask_bytes.size(), static_cast<uint8_t>(0));
@@ -636,35 +710,25 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 		mask_image_setup_usec = Time::get_singleton()->get_ticks_usec() - phase_start_usec;
 	}
 
-	const Transform3D car_to_body = p_body_to_car.affine_inverse();
-	uint64_t stamp_parse_usec = 0;
+	const Transform3D car_to_body = body_to_car.affine_inverse();
 	uint64_t visibility_mask_usec = 0;
 	uint64_t geometry_projection_usec = 0;
 	int mask_slot = 0;
 	const int max_mask_slots = OCCLUSION_ATLAS_COLUMNS * OCCLUSION_ATLAS_ROWS;
-	for (int i = 0; i < sorted_stamps.size(); ++i) {
-		Object *stamp_object = Object::cast_to<Object>(sorted_stamps[i]);
-		if (stamp_object == nullptr) {
-			continue;
-		}
-		StampSpec stamp;
-		const uint64_t parse_start_usec = Time::get_singleton()->get_ticks_usec();
-		if (!parse_stamp_spec(stamp_object, p_catalog, stamp)) {
-			stamp_parse_usec += Time::get_singleton()->get_ticks_usec() - parse_start_usec;
-			continue;
-		}
-		stamp_parse_usec += Time::get_singleton()->get_ticks_usec() - parse_start_usec;
+	for (int i = 0; i < stamp_values.size(); ++i) {
+		if (stamp_values[i].get_type() != Variant::DICTIONARY) continue;
+		const StampSpec stamp = stamp_spec_from_dictionary(stamp_values[i]);
 		const int stamp_mask_slots = stamp.mirror_local_x ? 2 : 1;
 		if (mask_slot + stamp_mask_slots > max_mask_slots) {
 			break;
 		}
 		const int vertex_start = out_vertices.size();
-		const bool build_visibility_mask = p_build_visibility_masks && stamp.layer != p_visibility_mask_skip_layer;
-		append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot, mask_pixels, build_visibility_mask, stamp.projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
+		const bool build_visibility_mask = build_visibility_masks && stamp.layer != visibility_mask_skip_layer;
+		append_stamp_projection(surfaces, body_to_car, car_to_body, stamp, mask_slot, mask_pixels, build_visibility_mask, stamp.projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
 		if (stamp.mirror_local_x) {
 			const Basis mirror_basis(Vector3(-1.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f), Vector3(0.0f, 0.0f, 1.0f));
 			const Transform3D mirrored_projector = Transform3D(mirror_basis, Vector3()) * stamp.projector;
-			append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot + 1, mask_pixels, build_visibility_mask, mirrored_projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
+			append_stamp_projection(surfaces, body_to_car, car_to_body, stamp, mask_slot + 1, mask_pixels, build_visibility_mask, mirrored_projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
 		}
 		const int vertex_count = out_vertices.size() - vertex_start;
 		if (vertex_count > 0) {
@@ -679,21 +743,6 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 		}
 	}
 
-	Dictionary result;
-	if (out_vertices.is_empty()) {
-		result["mesh"] = out_mesh;
-		result["visibility_mask"] = Variant();
-		result["stamp_vertex_ranges"] = Dictionary();
-		Dictionary profile;
-		profile["total_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - total_start_usec);
-		profile["mask_image_setup_usec"] = static_cast<int64_t>(mask_image_setup_usec);
-		profile["stamp_parse_usec"] = static_cast<int64_t>(stamp_parse_usec);
-		profile["visibility_mask_usec"] = static_cast<int64_t>(visibility_mask_usec);
-		profile["geometry_projection_usec"] = static_cast<int64_t>(geometry_projection_usec);
-		result["profile"] = profile;
-		return result;
-	}
-
 	Array arrays;
 	arrays.resize(Mesh::ARRAY_MAX);
 	arrays[Mesh::ARRAY_VERTEX] = out_vertices;
@@ -703,16 +752,48 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 	arrays[Mesh::ARRAY_COLOR] = out_colours;
 	arrays[Mesh::ARRAY_CUSTOM0] = out_mask_data;
 	arrays[Mesh::ARRAY_CUSTOM1] = out_source_data;
-	const int64_t format_flags =
-			(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT)) |
-			(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT));
-	const uint64_t mesh_upload_start_usec = Time::get_singleton()->get_ticks_usec();
-	out_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), Dictionary(), BitField<Mesh::ArrayFormat>(format_flags));
-	const uint64_t mesh_upload_usec = Time::get_singleton()->get_ticks_usec() - mesh_upload_start_usec;
+	Dictionary result;
+	result["arrays"] = arrays;
+	result["mask_bytes"] = mask_bytes;
+	result["stamp_vertex_ranges"] = stamp_vertex_ranges;
+	Dictionary profile;
+	profile["total_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - total_start_usec);
+	profile["mask_image_setup_usec"] = static_cast<int64_t>(mask_image_setup_usec);
+	profile["snapshot_usec"] = static_cast<int64_t>(p_snapshot.get("snapshot_usec", 0));
+	profile["stamp_parse_usec"] = static_cast<int64_t>(p_snapshot.get("stamp_parse_usec", 0));
+	profile["visibility_mask_usec"] = static_cast<int64_t>(visibility_mask_usec);
+	profile["geometry_projection_usec"] = static_cast<int64_t>(geometry_projection_usec);
+	profile["temporary_bytes"] = static_cast<int64_t>(
+			out_vertices.size() * sizeof(float) * 3 +
+			out_normals.size() * sizeof(float) * 3 +
+			out_body_uvs.size() * sizeof(float) * 2 +
+			out_stamp_uvs.size() * sizeof(float) * 2 +
+			out_colours.size() * sizeof(float) * 4 +
+			out_mask_data.size() * sizeof(float) +
+			out_source_data.size() * sizeof(float) +
+			mask_bytes.size());
+	result["profile"] = profile;
+	return result;
+}
 
+Dictionary NativeStampMeshBuilder::install_prepared(const Dictionary &p_prepared)
+{
+	Ref<ArrayMesh> out_mesh;
+	out_mesh.instantiate();
+	Dictionary result;
+	Dictionary profile = p_prepared.get("profile", Dictionary());
+	const Array arrays = p_prepared.get("arrays", Array());
+	if (!arrays.is_empty() && arrays.size() > Mesh::ARRAY_VERTEX && static_cast<PackedVector3Array>(arrays[Mesh::ARRAY_VERTEX]).size() > 0) {
+		const int64_t format_flags =
+				(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT)) |
+				(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT));
+		const uint64_t mesh_upload_start_usec = Time::get_singleton()->get_ticks_usec();
+		out_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), Dictionary(), BitField<Mesh::ArrayFormat>(format_flags));
+		profile["mesh_upload_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - mesh_upload_start_usec);
+	}
 	Ref<Texture2D> visibility_mask;
-	uint64_t texture_upload_usec = 0;
-	if (!mask_bytes.is_empty()) {
+	const PackedByteArray mask_bytes = p_prepared.get("mask_bytes", PackedByteArray());
+	if (!mask_bytes.is_empty() && out_mesh->get_surface_count() > 0) {
 		const Ref<Image> mask_image = Image::create_from_data(
 				OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE,
 				OCCLUSION_ATLAS_ROWS * OCCLUSION_MAP_SIZE,
@@ -721,19 +802,26 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 				mask_bytes);
 		const uint64_t texture_upload_start_usec = Time::get_singleton()->get_ticks_usec();
 		visibility_mask = ImageTexture::create_from_image(mask_image);
-		texture_upload_usec = Time::get_singleton()->get_ticks_usec() - texture_upload_start_usec;
+		profile["texture_upload_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - texture_upload_start_usec);
 	}
 	result["mesh"] = out_mesh;
 	result["visibility_mask"] = visibility_mask;
-	result["stamp_vertex_ranges"] = stamp_vertex_ranges;
-	Dictionary profile;
-	profile["total_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - total_start_usec);
-	profile["mask_image_setup_usec"] = static_cast<int64_t>(mask_image_setup_usec);
-	profile["stamp_parse_usec"] = static_cast<int64_t>(stamp_parse_usec);
-	profile["visibility_mask_usec"] = static_cast<int64_t>(visibility_mask_usec);
-	profile["geometry_projection_usec"] = static_cast<int64_t>(geometry_projection_usec);
-	profile["mesh_upload_usec"] = static_cast<int64_t>(mesh_upload_usec);
-	profile["texture_upload_usec"] = static_cast<int64_t>(texture_upload_usec);
+	result["stamp_vertex_ranges"] = p_prepared.get("stamp_vertex_ranges", Dictionary());
 	result["profile"] = profile;
 	return result;
+}
+
+Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
+		MeshInstance3D *p_body_mesh,
+		const Transform3D &p_body_to_car,
+		Object *p_livery,
+		Object *p_catalog,
+		bool p_build_visibility_masks,
+		int p_visibility_mask_skip_layer)
+{
+	const Dictionary snapshot = snapshot_build_inputs(p_body_mesh, p_body_to_car, p_livery, p_catalog, p_build_visibility_masks, p_visibility_mask_skip_layer);
+	if (snapshot.is_empty()) return empty_build_result();
+	const Dictionary prepared = prepare_snapshot(snapshot);
+	if (prepared.is_empty()) return empty_build_result();
+	return install_prepared(prepared);
 }
