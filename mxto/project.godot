@@ -355,6 +355,7 @@ lights_and_shadows/positional_shadow/atlas_16_bits=false
 textures/default_filters/anisotropic_filtering_level=4
 anti_aliasing/quality/msaa_3d=3
 anti_aliasing/quality/use_debanding=true
+scaling_3d/scale=2.0
 textures/default_filters/texture_mipmap_bias=-1.0
 environment/glow/upscale_mode=0
 anti_aliasing/quality/screen_space_aa=1

@@ -2,7 +2,7 @@ class_name GameVersion extends RefCounted
 
 const MAJOR := 0
 const COMPATIBILITY := 3
-const PATCH := 00
+const PATCH := 01
 
 static func number_string() -> String:
 	return "%d.%d.%d" % [MAJOR, COMPATIBILITY, PATCH]

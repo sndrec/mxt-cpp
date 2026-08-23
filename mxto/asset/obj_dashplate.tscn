@@ -107,7 +107,7 @@ shader_parameter/boost_time = 0.0
 transform = Transform3D(1.6, 0, 0, 0, 1, 0, 0, 0, 1.8, 0, 0, 0)
 
 [node name="DashplateMesh" type="MeshInstance3D" parent="Visual" unique_id=705767714]
-transform = Transform3D(-2.1855695e-07, 5, 0, -5, -2.1855695e-07, 0, 0, 0, 15, 0.0618205, -1.94064e-08, 0)
+transform = Transform3D(-5.2453663e-07, 6, 0, -12, -2.6226832e-07, 0, 0, 0, 15, 0.0618205, -1.94064e-08, 0)
 mesh = SubResource("ArrayMesh_sbjm5")
 skeleton = NodePath("")
 blend_shapes/SurfaceCurvature = 0.0
