@@ -13,6 +13,7 @@ const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 const PracticeSetupClass = preload("res://practice/practice_setup.gd")
 const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 const PracticeInputEditorClass = preload("res://practice/practice_input_editor.gd")
+const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -179,6 +180,9 @@ func _disable_native_joypad_focus_navigation() -> void:
 				InputMap.action_erase_event(action, event)
 
 func _ready() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("startup", "game_manager_ready", {
+		"process_age_usec_at_ready": Time.get_ticks_usec(),
+	})
 	_load_gameplay_camera_settings()
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
@@ -192,6 +196,9 @@ func _ready() -> void:
 	leaderboard_client.entries_received.connect(_on_time_attack_rank_entries_received)
 	vehicle_content_controller.initialize(steam_service, network_manager.custom_stamp_network)
 	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "platform_and_vehicle_content", {
+		"vehicle_definition_count": vehicle_content_controller.definitions.size(),
+	})
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
 	car_render_manager = CarRenderManagerClass.new()
@@ -247,10 +254,12 @@ func _ready() -> void:
 		$Control,
 		lobby_control,
 		player_scene)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "race_and_lobby_controllers")
 	spectator_controller.notification_requested.connect(race_presentation_controller.show_notification)
 	randomize()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "main_menu_construction")
 	leaderboard_replay_service = LeaderboardReplayServiceClass.new()
 	leaderboard_replay_service.name = "LeaderboardReplayService"
 	add_child(leaderboard_replay_service)
@@ -286,6 +295,7 @@ func _ready() -> void:
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
 	replay_controller.initialize()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "replay_practice_and_leaderboards")
 	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
 	_on_leaderboard_replay_attachment_status_changed(leaderboard_replay_service.status())
 	memory_telemetry = SessionMemoryTelemetryClass.new()
@@ -294,6 +304,9 @@ func _ready() -> void:
 	_load_tracks()
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
 		car_settings.call("refresh_after_game_manager_loaded")
+	LoadTransitionProfilerClass.checkpoint(load_profile, "track_and_garage_catalogs", {
+		"track_count": track_content_controller.tracks.size(),
+	})
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_results.race_event.connect(_on_race_event)
@@ -375,6 +388,11 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"headless": headless_mode,
+		"track_count": track_content_controller.tracks.size(),
+		"vehicle_definition_count": vehicle_content_controller.definitions.size(),
+	})
 
 func _exit_tree() -> void:
 	if practice_controller != null:
@@ -390,7 +408,11 @@ func _parse_cpu_driver_count_arg(args: Array) -> int:
 	return int(clamp(float(args[cpu_idx + 1]), 0.0, 5000.0))
 
 func _load_tracks() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("catalog", "track_selector_reload")
 	track_content_controller.scan_catalog()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "scan_catalog", {
+		"track_count": track_content_controller.tracks.size(),
+	})
 	track_selector.clear()
 	for t in track_content_controller.tracks:
 		track_selector.add_item(t["name"])
@@ -399,21 +421,32 @@ func _load_tracks() -> void:
 	var command_line_track_index := track_content_controller.command_line_track_index()
 	if command_line_track_index >= 0:
 		track_selector.selected = command_line_track_index
+	LoadTransitionProfilerClass.checkpoint(load_profile, "populate_main_selector")
 	lobby_controller.reload_tracks(command_line_track_index)
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"track_count": track_content_controller.tracks.size(),
+	})
 
 func _on_vehicle_content_catalog_changed() -> void:
 	var refresh_start_usec := Time.get_ticks_usec()
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_catalog_consumers", {
+		"vehicle_definition_count": vehicle_content_controller.definitions.size(),
+	})
 	vehicle_content_controller.record_workshop_diagnostic_event("catalog_change_consumers_begin")
 	_load_tracks()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "track_catalog_consumers")
 	if lobby_chibi_controller != null:
 		lobby_chibi_controller.refresh_vehicle_content()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "lobby_vehicle_consumers")
 	if car_settings != null:
 		car_settings.call("refresh_after_game_manager_loaded")
+	LoadTransitionProfilerClass.checkpoint(load_profile, "garage_vehicle_consumers")
 	vehicle_content_controller.record_workshop_diagnostic_event("catalog_change_consumers_end", {
 		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
 		"lobby_chibi_active": lobby_chibi_controller != null,
 		"car_settings_active": car_settings != null,
 	})
+	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func build_cpu_player_settings(index: int) -> Dictionary:
 	var ps := PlayerSettings.new()
@@ -1840,6 +1873,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("navigation", "race_to_main_menu")
 	record_memory_sample("return_to_menu_begin")
 	communication_controller.close_race_chat()
 	practice_controller.end_session(preserve_practice_speed_for_retry)
@@ -1848,7 +1882,9 @@ func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
 	_close_race_pause_menu()
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.teardown_runtime()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "controllers_and_ghosts")
 	race_session_controller.destroy_world(true, true)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "destroy_race_world")
 	race_dnf_low_speed_ticks.clear()
 	singleplayer_mode = false
 	_singleplayer_tick = 0
@@ -1861,8 +1897,12 @@ func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
 	if vehicle_test_drive_active:
 		_finish_vehicle_test_drive_return()
 	record_memory_sample("return_to_menu_complete")
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"vehicle_test_drive": vehicle_test_drive_active,
+	})
 
 func _return_to_lobby() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("navigation", "race_to_lobby")
 	record_memory_sample("return_to_lobby_begin")
 	communication_controller.close_race_chat()
 	practice_controller.end_session()
@@ -1870,7 +1910,9 @@ func _return_to_lobby() -> void:
 	_close_race_pause_menu()
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.teardown_runtime()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "controllers_and_ghosts")
 	race_session_controller.destroy_world(false, false)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "destroy_race_world")
 	race_dnf_low_speed_ticks.clear()
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
@@ -1879,6 +1921,7 @@ func _return_to_lobby() -> void:
 	singleplayer_mode = false
 	_singleplayer_tick = 0
 	record_memory_sample("return_to_lobby_complete")
+	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func _teardown_race_world_for_transition() -> void:
 	record_memory_sample("race_transition_teardown_begin")

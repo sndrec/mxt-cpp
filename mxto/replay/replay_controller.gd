@@ -5,6 +5,7 @@ const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
 const RaceSessionControllerClass = preload("res://core/race_session_controller.gd")
+const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
@@ -807,14 +808,21 @@ func _replay_metadata_json_without_frames(text: String) -> String:
 		remove_end += 1
 	return text.substr(0, remove_start) + text.substr(remove_end)
 
-func _load_replay_metadata_file(path: String) -> Dictionary:
+func _load_replay_metadata_file(path: String, profile: Dictionary = {}) -> Dictionary:
 	if path == "" or !FileAccess.file_exists(path):
 		return {}
+	var read_start_usec := Time.get_ticks_usec()
 	var text := FileAccess.get_file_as_string(path)
+	profile["read_usec"] = Time.get_ticks_usec() - read_start_usec
+	profile["bytes"] = text.length()
 	if text == "":
 		return {}
+	var strip_start_usec := Time.get_ticks_usec()
 	var metadata_text := _replay_metadata_json_without_frames(text)
+	profile["strip_frames_usec"] = Time.get_ticks_usec() - strip_start_usec
+	var parse_start_usec := Time.get_ticks_usec()
 	var parsed = JSON.parse_string(metadata_text)
+	profile["parse_usec"] = Time.get_ticks_usec() - parse_start_usec
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	return parsed as Dictionary
@@ -1657,6 +1665,19 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		_capture_replay_seek_checkpoint(0)
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
+	LoadTransitionProfilerClass.instant("replay", "playback_load", {
+		"path": path,
+		"duration_usec": Time.get_ticks_usec() - profile_start_us,
+		"file_parse_usec": profile_load_us,
+		"validate_usec": profile_validate_us,
+		"frames_duplicate_usec": profile_frames_duplicate_us,
+		"setup_usec": profile_setup_us,
+		"race_start_usec": profile_race_start_us,
+		"timeline_usec": profile_timeline_us,
+		"seek_checkpoint_bake_usec": profile_bake_us,
+		"frame_count": replay_playback_frames.size(),
+		"racer_count": replay_playback_racer_ids.size(),
+	})
 	if replay_load_profile_requested:
 		var total_load_us := Time.get_ticks_usec() - profile_start_us
 		print("MXT_REPLAY_LOAD_PROFILE path=", path,
@@ -2199,14 +2220,22 @@ func _build_replay_catalog() -> void:
 	buttons.add_child(close_button)
 
 func _open_replay_catalog() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("replay", "catalog_open")
 	_build_replay_catalog()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "build_interface")
 	_refresh_replay_catalog()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "refresh_entries", {
+		"entry_count": replay_catalog_entries.size(),
+	})
 	game_manager.get_node("Control").visible = false
 	game_manager.lobby_control.visible = false
 	replay_catalog_root.visible = true
 	if replay_catalog_list.item_count > 0:
 		replay_catalog_list.select(0)
 		_on_replay_catalog_selected(0)
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"entry_count": replay_catalog_entries.size(),
+	})
 
 func _profile_replay_catalog_and_quit() -> void:
 	_build_replay_catalog()
@@ -2242,33 +2271,63 @@ func _close_replay_catalog() -> void:
 		game_manager.get_node("Control").visible = true
 
 func _refresh_replay_catalog() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("replay", "catalog_refresh")
 	replay_catalog_entries.clear()
 	if replay_catalog_list == null:
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "catalog_list_unavailable"})
 		return
 	replay_catalog_list.clear()
 	var replay_dir := _replay_dir()
 	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
 	if err != OK:
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": error_string(err)})
 		return
 	var dir := DirAccess.open(replay_dir)
 	if dir == null:
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "replay_directory_unavailable"})
 		return
+	var replay_profiles: Array = []
+	var invalid_count := 0
+	var total_bytes := 0
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
 		if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
 			var path := replay_dir.path_join(file_name)
-			var data := _load_replay_metadata_file(path)
+			var replay_profile := {"file": file_name}
+			var replay_start_usec := Time.get_ticks_usec()
+			var data := _load_replay_metadata_file(path, replay_profile)
+			replay_profile["duration_usec"] = Time.get_ticks_usec() - replay_start_usec
+			replay_profile["valid"] = !data.is_empty()
+			total_bytes += int(replay_profile.get("bytes", 0))
+			replay_profiles.append(replay_profile)
 			if !data.is_empty():
 				data["_path"] = path
 				replay_catalog_entries.append(data)
+			else:
+				invalid_count += 1
 		file_name = dir.get_next()
 	dir.list_dir_end()
+	replay_profiles.sort_custom(
+		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
+	LoadTransitionProfilerClass.checkpoint(load_profile, "enumerate_and_read_metadata", {
+		"file_count": replay_profiles.size(),
+		"valid_count": replay_catalog_entries.size(),
+		"invalid_count": invalid_count,
+		"total_bytes": total_bytes,
+	})
 	replay_catalog_entries.sort_custom(func(a, b): return float(a.get("created_unix", 0.0)) > float(b.get("created_unix", 0.0)))
+	LoadTransitionProfilerClass.checkpoint(load_profile, "sort_entries")
 	for entry in replay_catalog_entries:
 		var title := str(entry.get("name", entry.get("track_name", "Replay")))
 		replay_catalog_list.add_item(title)
 	_update_replay_catalog_buttons()
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"entry_count": replay_catalog_entries.size(),
+		"invalid_count": invalid_count,
+		"total_bytes": total_bytes,
+		"replay_profiles": replay_profiles,
+	})
 
 func _selected_replay_catalog_entry() -> Dictionary:
 	if replay_catalog_list == null:

@@ -12,6 +12,7 @@ const OUTLINE_SHADER: Shader = preload("res://vehicle/vehicle_outline.gdshader")
 const OUTLINE_MAIN_SHADER: Shader = preload("res://vehicle/vehicle_outline_main.gdshader")
 const SHADOW_SHADER: Shader = preload("res://vehicle/vehicle_shadow.gdshader")
 const THRUSTER_SCENE: PackedScene = preload("res://vehicle/particle/thruster.tscn")
+const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const HIDDEN_INSTANCE_TRANSFORM := Transform3D(Basis.IDENTITY, Vector3(0.0, -100000.0, 0.0))
 
 var archetypes: Array = []
@@ -26,6 +27,11 @@ var stamp_catalog: CarStampCatalog = null
 var custom_stamp_atlas_texture: Texture2D = null
 var stamp_mesh_builder: NativeStampMeshBuilder = NativeStampMeshBuilder.new()
 var force_unique_archetypes := false
+var _profile_archetype_builds: Array = []
+var _profile_new_archetype_count := 0
+var _profile_reused_archetype_count := 0
+var _profile_obsolete_archetype_count := 0
+var _profile_resize_usec := 0
 
 func _exit_tree() -> void:
 	archetypes.clear()
@@ -40,17 +46,70 @@ func clear_renderer() -> void:
 		child.queue_free()
 
 func configure(definitions: Array, player_settings: Array = []) -> void:
+	var load_profile := _begin_configuration_profile("configure", definitions)
 	clear_renderer()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderer")
 	force_unique_archetypes = false
 	_configure_archetypes(definitions, player_settings)
+	_end_configuration_profile(load_profile, definitions)
 
 func configure_manual(definitions: Array, player_settings: Array = [], unique_archetypes := false) -> void:
+	var load_profile := _begin_configuration_profile("configure_manual", definitions, {
+		"unique_archetypes": unique_archetypes,
+	})
 	clear_renderer()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderer")
 	force_unique_archetypes = unique_archetypes
 	_configure_archetypes(definitions, player_settings)
+	_end_configuration_profile(load_profile, definitions)
 
 func reconfigure_manual(definitions: Array, player_settings: Array = []) -> void:
+	var load_profile := _begin_configuration_profile("reconfigure_manual", definitions)
 	_reconfigure_archetypes(definitions, player_settings)
+	_end_configuration_profile(load_profile, definitions)
+
+
+func _begin_configuration_profile(mode: String, definitions: Array, fields: Dictionary = {}) -> int:
+	_profile_archetype_builds.clear()
+	_profile_new_archetype_count = 0
+	_profile_reused_archetype_count = 0
+	_profile_obsolete_archetype_count = 0
+	_profile_resize_usec = 0
+	var profile_fields := fields.duplicate(true)
+	profile_fields["mode"] = mode
+	profile_fields["definition_count"] = definitions.size()
+	profile_fields["existing_archetype_count"] = archetypes.size()
+	profile_fields["node"] = str(get_path()) if is_inside_tree() else name
+	profile_fields["stamp_only_mode"] = stamp_only_mode
+	return LoadTransitionProfilerClass.begin_transition("render", "car_archetype_configuration", profile_fields)
+
+
+func _end_configuration_profile(load_profile: int, definitions: Array) -> void:
+	_profile_archetype_builds.sort_custom(
+		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"definition_count": definitions.size(),
+		"archetype_count": archetypes.size(),
+		"new_archetype_count": _profile_new_archetype_count,
+		"reused_archetype_count": _profile_reused_archetype_count,
+		"obsolete_archetype_count": _profile_obsolete_archetype_count,
+		"resize_usec": _profile_resize_usec,
+		"archetype_builds": _profile_archetype_builds,
+	})
+
+
+func _build_profiled_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
+	var start_usec := Time.get_ticks_usec()
+	var archetype := _build_archetype(definition, livery, key)
+	_profile_new_archetype_count += 1
+	_profile_archetype_builds.append({
+		"content_id": definition.content_id if definition != null else "",
+		"name": definition.name if definition != null else "",
+		"runtime_mesh": definition != null and definition.car_scene == null,
+		"stamp_count": livery.stamps.size() if livery != null else 0,
+		"duration_usec": Time.get_ticks_usec() - start_usec,
+	})
+	return archetype
 
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
 	custom_stamp_atlas_texture = texture
@@ -97,7 +156,7 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		else:
 			archetype_index = archetypes.size()
 			archetype_map[key] = archetype_index
-			archetypes.append(_build_archetype(def, livery, key))
+			archetypes.append(_build_profiled_archetype(def, livery, key))
 		var archetype: Dictionary = archetypes[archetype_index]
 		var count: int = archetype["count"]
 		car_archetype_indices[i] = archetype_index
@@ -105,8 +164,10 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		archetype["indices"].append(i)
 		archetype["count"] = count + 1
 		archetypes[archetype_index] = archetype
+	var resize_start_usec := Time.get_ticks_usec()
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
+	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
 func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
@@ -142,8 +203,9 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) ->
 				reusable.erase(key)
 				archetype["indices"] = []
 				archetype["count"] = 0
+				_profile_reused_archetype_count += 1
 			else:
-				archetype = _build_archetype(definition, livery, key)
+				archetype = _build_profiled_archetype(definition, livery, key)
 			next_archetypes.append(archetype)
 		var target: Dictionary = next_archetypes[archetype_index]
 		var count := int(target["count"])
@@ -152,11 +214,14 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) ->
 		target["indices"].append(i)
 		target["count"] = count + 1
 		next_archetypes[archetype_index] = target
+	_profile_obsolete_archetype_count = reusable.size()
 	for obsolete in reusable.values():
 		_free_archetype_nodes(obsolete)
 	archetypes = next_archetypes
+	var resize_start_usec := Time.get_ticks_usec()
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
+	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
 func _free_archetype_nodes(archetype: Dictionary) -> void:
 	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP, "thruster"]:

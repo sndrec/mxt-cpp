@@ -16,6 +16,7 @@ const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crossh
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
+const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 var content_catalog: MxtContentCatalog = MxtContentCatalog.new()
 var definitions: Array = []
@@ -38,6 +39,7 @@ var workshop_validation_cache := {}
 var workshop_validator: MxtContentValidator = MxtContentValidator.new()
 
 func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_content_initialize")
 	steam_service = in_steam_service
 	custom_stamp_network = in_custom_stamp_network
 	_open_workshop_diagnostic_log()
@@ -53,13 +55,22 @@ func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: Cust
 		"os_version": OS.get_version(),
 	})
 	_scan_local_content_library()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
 	_scan_test_drive_snapshot_library()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "test_drive_snapshots_scanned")
 	var initial_workshop_items := steam_service.get_workshop_items()
 	if !initial_workshop_items.is_empty():
 		_on_workshop_items_changed(initial_workshop_items)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "initial_workshop_catalog", {
+		"workshop_item_count": initial_workshop_items.size(),
+	})
 	_scan_trusted_verifier_workshop_packages()
 	reload_definitions()
 	runtime_content_loaded = true
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"definition_count": definitions.size(),
+		"content_record_count": content_catalog.get_records("vehicle").size(),
+	})
 
 func get_vehicle_content_ids() -> Array:
 	var content_ids: Array = []
@@ -285,20 +296,39 @@ func evidence_matches(settings: PlayerSettings) -> bool:
 		and String(record.get("published_file_id", "")) == settings.vehicle_workshop_id)
 
 func reload_definitions() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_definition_reload")
 	definitions.clear()
 	definitions_by_content_id.clear()
 	var directory := DirAccess.open("res://vehicle/asset")
 	if directory == null:
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "official_vehicle_directory_unavailable"})
 		return
+	var official_profiles: Array = []
 	directory.list_dir_begin()
 	var folder := directory.get_next()
 	while folder != "":
 		if directory.current_is_dir() and !folder.begins_with(".") and folder != "bumper":
+			var definition_start_usec := Time.get_ticks_usec()
 			_register_official_definition("res://vehicle/asset/%s/definition.tres" % folder)
+			official_profiles.append({
+				"folder": folder,
+				"duration_usec": Time.get_ticks_usec() - definition_start_usec,
+			})
 		folder = directory.get_next()
 	directory.list_dir_end()
-	_load_packaged_definitions()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "official_definitions", {
+		"count": definitions.size(),
+	})
+	var packaged_profiles := _load_packaged_definitions()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "packaged_definitions", {
+		"count": packaged_profiles.size(),
+	})
 	definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"definition_count": definitions.size(),
+		"official_profiles": official_profiles,
+		"packaged_profiles": packaged_profiles,
+	})
 
 func _register_official_definition(definition_path: String) -> void:
 	if !ResourceLoader.exists(definition_path):
@@ -327,10 +357,17 @@ func _register_official_definition(definition_path: String) -> void:
 			definitions_by_content_id[definition.content_id] = definition
 
 func refresh_installed_content() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "installed_vehicle_refresh")
 	_scan_local_content_library()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
 	_scan_test_drive_snapshot_library()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "test_drive_snapshots_scanned")
 	reload_definitions()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "definitions_reloaded", {
+		"definition_count": definitions.size(),
+	})
 	catalog_changed.emit()
+	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func refresh_workshop_content() -> bool:
 	return steam_service != null and steam_service.refresh_workshop_items()
@@ -509,6 +546,10 @@ func _on_workshop_items_changed(items: Array) -> void:
 	workshop_refresh_sequence += 1
 	var sequence := workshop_refresh_sequence
 	var refresh_start_usec := Time.get_ticks_usec()
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "workshop_catalog_refresh", {
+		"sequence": sequence,
+		"item_count": items.size(),
+	})
 	record_workshop_diagnostic_event("catalog_refresh_begin", {
 		"sequence": sequence,
 		"item_count": items.size(),
@@ -545,6 +586,9 @@ func _on_workshop_items_changed(items: Array) -> void:
 				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
 				item["errors"] = errors
 		processed_items.append(item)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "validate_items", {
+		"candidate_count": candidates.size(),
+	})
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary): return int(a["published_file_id"]) < int(b["published_file_id"]))
 	var signature_parts := PackedStringArray()
 	for candidate in candidates:
@@ -557,6 +601,9 @@ func _on_workshop_items_changed(items: Array) -> void:
 		])
 	var next_catalog_signature := "\n".join(signature_parts)
 	var catalog_materially_changed := next_catalog_signature != workshop_catalog_signature
+	LoadTransitionProfilerClass.checkpoint(load_profile, "catalog_signature", {
+		"materially_changed": catalog_materially_changed,
+	})
 	if catalog_materially_changed:
 		content_catalog.clear_workshop_packages()
 		var registered_signature_parts := PackedStringArray()
@@ -584,6 +631,9 @@ func _on_workshop_items_changed(items: Array) -> void:
 				])
 		workshop_catalog_signature = "\n".join(registered_signature_parts)
 		lobby_ready_workshop_packages.clear()
+	LoadTransitionProfilerClass.checkpoint(load_profile, "register_packages", {
+		"registered_count": candidates.size() if catalog_materially_changed else 0,
+	})
 	for item in processed_items:
 		var published_file_id := int(item.get("published_file_id", 0))
 		var validation := _cached_workshop_validation(published_file_id)
@@ -594,6 +644,7 @@ func _on_workshop_items_changed(items: Array) -> void:
 			if !record.is_empty():
 				item["record"] = record
 	workshop_content_items = processed_items
+	LoadTransitionProfilerClass.checkpoint(load_profile, "resolve_catalog_records")
 	var definition_reload_duration_usec := 0
 	if runtime_content_loaded and catalog_materially_changed:
 		var definition_reload_start_usec := Time.get_ticks_usec()
@@ -609,6 +660,11 @@ func _on_workshop_items_changed(items: Array) -> void:
 		"workshop_item_count": workshop_content_items.size(),
 		"catalog_materially_changed": catalog_materially_changed,
 		"catalog_signature": workshop_catalog_signature,
+	})
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"catalog_materially_changed": catalog_materially_changed,
+		"definition_reload_duration_usec": definition_reload_duration_usec,
+		"definition_count": definitions.size(),
 	})
 
 func _workshop_validation_for_item(item: Dictionary) -> Dictionary:
@@ -681,13 +737,22 @@ func _on_workshop_request_completed_diagnostic(request_id: int, operation: Strin
 func _on_native_workshop_diagnostic(event: String, fields: Dictionary) -> void:
 	record_workshop_diagnostic_event("steam_native_%s" % event, fields)
 
-func _load_packaged_definitions() -> void:
+func _load_packaged_definitions() -> Array:
+	var profiles: Array = []
 	for record_value in content_catalog.get_records("vehicle"):
 		var record: Dictionary = record_value
 		var source := String(record.get("source", ""))
 		if source == "official" or source == "local_draft":
 			continue
+		var definition_start_usec := Time.get_ticks_usec()
 		var definition := _definition_from_package_record(record)
+		profiles.append({
+			"content_id": String(record.get("content_id", "")),
+			"source": source,
+			"visual_path": String(record.get("visual_path", "")),
+			"duration_usec": Time.get_ticks_usec() - definition_start_usec,
+			"valid": definition != null,
+		})
 		if definition == null:
 			continue
 		if definitions_by_content_id.has(definition.content_id):
@@ -695,6 +760,8 @@ func _load_packaged_definitions() -> void:
 			continue
 		definitions.append(definition)
 		definitions_by_content_id[definition.content_id] = definition
+	profiles.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
+	return profiles
 
 func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 	var visual_path := String(record.get("visual_path", ""))

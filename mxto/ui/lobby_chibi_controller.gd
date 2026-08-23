@@ -3,6 +3,7 @@ extends Node
 
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const LOBBY_CHIBI_CAR_SCRIPT := "res://ui/lobby_chibi_car.gd"
 
 const BROADCAST_INTERVAL_MSEC := 100
@@ -193,6 +194,9 @@ func _configure_car(car, player_id: int, settings: Dictionary, local_control: bo
 
 func refresh_vehicle_content() -> void:
 	var refresh_start_usec := Time.get_ticks_usec()
+	var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_content_refresh", {
+		"car_count": cars.size(),
+	})
 	var refreshed_players := []
 	var local_id: int = game_manager._local_player_id() if game_manager != null else -1
 	for id in cars.keys():
@@ -216,6 +220,9 @@ func refresh_vehicle_content() -> void:
 			network_manager.lobby_settings.get_player_settings_revision(player_id),
 			false,
 			true)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "reconfigure_lobby_cars", {
+		"refreshed_player_count": refreshed_players.size(),
+	})
 	applied_settings_revision = -1
 	render_signature = ""
 	pending_render_signature = ""
@@ -225,10 +232,14 @@ func refresh_vehicle_content() -> void:
 	if magnifier_render_manager != null:
 		magnifier_render_manager.clear_renderer()
 	magnifier_render_signature = ""
+	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderers")
 	vehicle_content_controller.record_workshop_diagnostic_event("lobby_vehicle_content_refresh", {
 		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
 		"players": refreshed_players,
 		"car_count": cars.size(),
+	})
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"refreshed_player_count": refreshed_players.size(),
 	})
 
 func _sample_stats(settings: Dictionary, definition: CarDefinition) -> Dictionary:
@@ -249,6 +260,10 @@ func _submit_render(roster: Array) -> void:
 	var renderer_empty := render_manager.archetypes.is_empty()
 	if signature != render_signature and (renderer_empty or now_msec >= render_rebuild_due_msec):
 		var rebuild_start_usec := Time.get_ticks_usec()
+		var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_render_rebuild", {
+			"renderer_was_empty": renderer_empty,
+			"roster_count": roster.size(),
+		})
 		render_indices.clear()
 		var definitions := []
 		var settings := []
@@ -267,10 +282,15 @@ func _submit_render(roster: Array) -> void:
 			player_ids.append(player_id)
 			render_indices[player_id] = next_render_cars.size()
 			next_render_cars.append(car)
+		LoadTransitionProfilerClass.checkpoint(load_profile, "collect_render_roster", {
+			"definition_count": definitions.size(),
+		})
 		var stamp_render: Dictionary = vehicle_content_controller.prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
+		LoadTransitionProfilerClass.checkpoint(load_profile, "prepare_custom_stamp_atlas")
 		render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
 		var render_settings: Array = stamp_render.get("settings", settings)
 		render_manager.reconfigure_manual(definitions, render_settings)
+		LoadTransitionProfilerClass.checkpoint(load_profile, "configure_render_archetypes")
 		render_cars = next_render_cars
 		render_settings_by_id.clear()
 		for i in range(mini(player_ids.size(), render_settings.size())):
@@ -295,6 +315,11 @@ func _submit_render(roster: Array) -> void:
 			"renderer_was_empty": renderer_empty,
 			"roster": roster.duplicate(),
 			"rendered_vehicles": rendered_vehicles,
+		})
+		LoadTransitionProfilerClass.end_transition(load_profile, {
+			"definition_count": definitions.size(),
+			"rebuild_duration_usec_existing_counter": rebuild_duration_usec,
+			"signature": signature,
 		})
 	render_manager.begin_manual_submit()
 	var render_root_inv := render_manager.global_transform.affine_inverse()
