@@ -3,6 +3,7 @@ extends Node
 
 signal workshop_content_changed(items: Array)
 signal catalog_changed
+signal catalog_delta(delta: Dictionary)
 
 const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
 const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
@@ -35,8 +36,6 @@ var workshop_diagnostic_log: FileAccess
 var workshop_diagnostic_path := ""
 var workshop_refresh_sequence := 0
 var workshop_catalog_signature := ""
-var workshop_validation_cache := {}
-var workshop_validator: MxtContentValidator = MxtContentValidator.new()
 
 func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
 	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_content_initialize")
@@ -544,9 +543,6 @@ func _on_workshop_items_changed(items: Array) -> void:
 		"item_count": items.size(),
 	})
 	var processed_items := []
-	var candidates := []
-	var validation_cache_hit_count := 0
-	var validation_cache_miss_count := 0
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
@@ -556,104 +552,77 @@ func _on_workshop_items_changed(items: Array) -> void:
 			"sequence": sequence,
 			"item": item,
 		})
-		var validation := _workshop_validation_for_item(item)
-		if bool(validation.get("_cache_hit", false)):
-			validation_cache_hit_count += 1
-		else:
-			validation_cache_miss_count += 1
-		if bool(validation.get("valid", false)):
-			var manifest: Dictionary = validation.get("manifest", {})
-			var content_type := String(manifest.get("content_type", ""))
-			candidates.append({
+	var synced: Dictionary = content_catalog.sync_workshop_packages(items)
+	var native_results_by_id := {}
+	var candidate_count := 0
+	for result_value in synced.get("items", []):
+		var result: Dictionary = result_value
+		var published_file_id := int(result.get("published_file_id", 0))
+		native_results_by_id[published_file_id] = result
+		if bool(result.get("valid", false)):
+			candidate_count += 1
+		if bool(result.get("eligible", false)) and !bool(result.get("cache_hit", false)):
+			record_workshop_diagnostic_event("catalog_package_validation", {
 				"published_file_id": published_file_id,
-				"install_path": String(item.get("install_path", "")),
-				"content_type": content_type,
-				"package_digest": String(validation.get("package_digest", "")),
-				"gameplay_digest": String(validation.get("gameplay_digest", "")),
+				"install_path": String(result.get("install_path", "")),
+				"valid": bool(result.get("valid", false)),
+				"package_digest": String(result.get("package_digest", "")),
+				"gameplay_digest": String(result.get("gameplay_digest", "")),
+				"errors": result.get("errors", []),
+				"validation_profile": result.get("validation_profile", {}),
 			})
+			record_workshop_diagnostic_event("catalog_package_registration", {
+				"published_file_id": published_file_id,
+				"duration_usec": int(result.get("registration_usec", 0)),
+				"valid": bool(result.get("valid", false)),
+				"errors": result.get("errors", []),
+				"record": result.get("record", {}),
+			})
+	for value in items:
+		var item: Dictionary = value.duplicate(true)
+		var published_file_id := int(item.get("published_file_id", 0))
+		var validation: Dictionary = native_results_by_id.get(published_file_id, {})
+		if bool(validation.get("valid", false)):
 			item["status"] = "ready_update_pending" if (
 				bool(item.get("needs_update", false))
 				or bool(item.get("downloading", false))
 				or bool(item.get("download_pending", false))) else "ready"
+			item["record"] = validation.get("record", {})
 		else:
 			var errors = validation.get("errors", [])
 			if bool(item.get("installed", false)) and !errors.is_empty():
 				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
 				item["errors"] = errors
 		processed_items.append(item)
+	var validation_cache_hit_count := int(synced.get("validation_cache_hit_count", 0))
+	var validation_cache_miss_count := int(synced.get("validation_cache_miss_count", 0))
 	LoadTransitionProfilerClass.checkpoint(load_profile, "validate_items", {
-		"candidate_count": candidates.size(),
+		"candidate_count": candidate_count,
 		"validation_cache_hit_count": validation_cache_hit_count,
 		"validation_cache_miss_count": validation_cache_miss_count,
 	})
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary): return int(a["published_file_id"]) < int(b["published_file_id"]))
-	var signature_parts := PackedStringArray()
-	for candidate in candidates:
-		signature_parts.append("%d|%s|%s|%s|%s" % [
-			int(candidate["published_file_id"]),
-			String(candidate["content_type"]),
-			String(candidate["package_digest"]),
-			String(candidate["gameplay_digest"]),
-			String(candidate["install_path"]),
-		])
-	var next_catalog_signature := "\n".join(signature_parts)
-	var catalog_materially_changed := next_catalog_signature != workshop_catalog_signature
+	var catalog_materially_changed := bool(synced.get("catalog_changed", false))
+	var delta: Dictionary = synced.get("delta", {})
+	workshop_catalog_signature = String(synced.get("catalog_signature", ""))
 	LoadTransitionProfilerClass.checkpoint(load_profile, "catalog_signature", {
 		"materially_changed": catalog_materially_changed,
 	})
-	var invalidated_content_ids: Array[String] = []
-	if catalog_materially_changed:
-		for record_value in content_catalog.get_records("vehicle"):
-			var existing_record: Dictionary = record_value
-			if String(existing_record.get("source", "")) == "workshop":
-				invalidated_content_ids.append(String(existing_record.get("content_id", "")))
-		content_catalog.clear_workshop_packages()
-		var registered_signature_parts := PackedStringArray()
-		for candidate in candidates:
-			var registration_start_usec := Time.get_ticks_usec()
-			var registered: Dictionary = content_catalog.add_workshop_package(
-				String(candidate["install_path"]), int(candidate["published_file_id"]))
-			record_workshop_diagnostic_event("catalog_package_registration", {
-				"sequence": sequence,
-				"published_file_id": int(candidate["published_file_id"]),
-				"install_path": String(candidate["install_path"]),
-				"duration_usec": Time.get_ticks_usec() - registration_start_usec,
-				"valid": bool(registered.get("valid", false)),
-				"errors": registered.get("errors", []),
-				"record": registered.get("record", {}),
-				"validation_profile": registered.get("validation_profile", {}),
-			})
-			if bool(registered.get("valid", false)):
-				var record: Dictionary = registered.get("record", {})
-				registered_signature_parts.append("%d|%s|%s|%s|%s" % [
-					int(candidate["published_file_id"]),
-					String(record.get("content_type", "")),
-					String(record.get("package_digest", "")),
-					String(record.get("gameplay_digest", "")),
-					String(record.get("root_path", "")),
-				])
-		workshop_catalog_signature = "\n".join(registered_signature_parts)
-		lobby_ready_workshop_packages.clear()
+	for published_file_id in delta.get("changed_item_ids", []):
+		lobby_ready_workshop_packages.erase(int(published_file_id))
+	for published_file_id in delta.get("removed_item_ids", []):
+		lobby_ready_workshop_packages.erase(int(published_file_id))
 	LoadTransitionProfilerClass.checkpoint(load_profile, "register_packages", {
-		"registered_count": candidates.size() if catalog_materially_changed else 0,
+		"registered_count": validation_cache_miss_count,
 	})
-	for item in processed_items:
-		var published_file_id := int(item.get("published_file_id", 0))
-		var validation := _cached_workshop_validation(published_file_id)
-		if bool(validation.get("valid", false)):
-			var content_type := String((validation.get("manifest", {}) as Dictionary).get("content_type", ""))
-			var content_id := "mxt:%s:workshop:%d" % [content_type, published_file_id]
-			var record: Dictionary = content_catalog.resolve_content(content_id)
-			if !record.is_empty():
-				item["record"] = record
 	workshop_content_items = processed_items
 	LoadTransitionProfilerClass.checkpoint(load_profile, "resolve_catalog_records")
 	var definition_reload_duration_usec := 0
 	if runtime_content_loaded and catalog_materially_changed:
 		var definition_reload_start_usec := Time.get_ticks_usec()
-		reload_definitions()
+		var definition_profiles := _apply_workshop_content_delta(delta)
 		definition_reload_duration_usec = Time.get_ticks_usec() - definition_reload_start_usec
-		catalog_changed.emit()
+		delta["definition_profiles"] = definition_profiles
+		catalog_delta.emit(delta)
 	workshop_content_changed.emit(get_workshop_content_items())
 	record_workshop_diagnostic_event("catalog_refresh_end", {
 		"sequence": sequence,
@@ -665,7 +634,9 @@ func _on_workshop_items_changed(items: Array) -> void:
 		"catalog_signature": workshop_catalog_signature,
 		"validation_cache_hit_count": validation_cache_hit_count,
 		"validation_cache_miss_count": validation_cache_miss_count,
-		"invalidated_content_ids": invalidated_content_ids,
+		"added_content_ids": delta.get("added_content_ids", []),
+		"changed_content_ids": delta.get("changed_content_ids", []),
+		"removed_content_ids": delta.get("removed_content_ids", []),
 	})
 	LoadTransitionProfilerClass.end_transition(load_profile, {
 		"catalog_materially_changed": catalog_materially_changed,
@@ -673,47 +644,6 @@ func _on_workshop_items_changed(items: Array) -> void:
 		"definition_count": definitions.size(),
 	})
 
-func _workshop_validation_for_item(item: Dictionary) -> Dictionary:
-	var published_file_id := int(item.get("published_file_id", 0))
-	var install_path := String(item.get("install_path", ""))
-	if published_file_id <= 0 \
-			or !bool(item.get("installed", false)) \
-			or bool(item.get("locally_disabled", false)) \
-			or install_path.is_empty():
-		workshop_validation_cache.erase(published_file_id)
-		return {}
-	var manifest_path := install_path.path_join("manifest.json")
-	var cache_key := "%s|%d|%d|%d|%d" % [
-		install_path,
-		int(item.get("install_timestamp", 0)),
-		int(item.get("size_on_disk", 0)),
-		int(item.get("item_state_bits", 0)),
-		int(FileAccess.get_modified_time(manifest_path)) if FileAccess.file_exists(manifest_path) else 0,
-	]
-	var cached: Dictionary = workshop_validation_cache.get(published_file_id, {})
-	if String(cached.get("key", "")) == cache_key:
-		var cached_result := (cached.get("result", {}) as Dictionary).duplicate(true)
-		cached_result["_cache_hit"] = true
-		return cached_result
-	var validation_start_usec := Time.get_ticks_usec()
-	var result: Dictionary = workshop_validator.validate_package_directory(install_path)
-	result["_cache_hit"] = false
-	workshop_validation_cache[published_file_id] = {"key": cache_key, "result": result.duplicate(true)}
-	record_workshop_diagnostic_event("catalog_package_validation", {
-		"published_file_id": published_file_id,
-		"install_path": install_path,
-		"duration_usec": Time.get_ticks_usec() - validation_start_usec,
-		"valid": bool(result.get("valid", false)),
-		"package_digest": String(result.get("package_digest", "")),
-		"gameplay_digest": String(result.get("gameplay_digest", "")),
-		"errors": result.get("errors", []),
-		"validation_profile": result.get("validation_profile", {}),
-	})
-	return result
-
-func _cached_workshop_validation(published_file_id: int) -> Dictionary:
-	var cached: Dictionary = workshop_validation_cache.get(published_file_id, {})
-	return (cached.get("result", {}) as Dictionary).duplicate(true)
 
 func _open_workshop_diagnostic_log() -> void:
 	var absolute_directory := ProjectSettings.globalize_path(WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY)
@@ -747,6 +677,7 @@ func _on_workshop_request_completed_diagnostic(request_id: int, operation: Strin
 func _on_native_workshop_diagnostic(event: String, fields: Dictionary) -> void:
 	record_workshop_diagnostic_event("steam_native_%s" % event, fields)
 
+
 func _load_packaged_definitions() -> Array:
 	var profiles: Array = []
 	for record_value in content_catalog.get_records("vehicle"):
@@ -773,6 +704,42 @@ func _load_packaged_definitions() -> Array:
 		definitions_by_content_id[definition.content_id] = definition
 	profiles.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
 	return profiles
+
+
+func _apply_workshop_content_delta(delta: Dictionary) -> Array:
+	var remove_ids: Array = []
+	remove_ids.append_array(delta.get("removed_content_ids", []))
+	remove_ids.append_array(delta.get("changed_content_ids", []))
+	for content_id_value in remove_ids:
+		var content_id := String(content_id_value)
+		definitions_by_content_id.erase(content_id)
+	definitions = definitions.filter(
+		func(definition): return definition is CarDefinition and !remove_ids.has(definition.content_id))
+	var profiles: Array = []
+	var load_ids: Array = []
+	load_ids.append_array(delta.get("added_content_ids", []))
+	load_ids.append_array(delta.get("changed_content_ids", []))
+	for content_id_value in load_ids:
+		var content_id := String(content_id_value)
+		var record: Dictionary = content_catalog.resolve_content(content_id)
+		if String(record.get("content_type", "")) != "vehicle":
+			continue
+		var profile := {
+			"content_id": content_id,
+			"source": String(record.get("source", "")),
+			"visual_path": String(record.get("visual_path", "")),
+		}
+		var start_usec := Time.get_ticks_usec()
+		var definition := _definition_from_package_record(record, profile)
+		profile["duration_usec"] = Time.get_ticks_usec() - start_usec
+		profile["valid"] = definition != null
+		profiles.append(profile)
+		if definition != null:
+			definitions.append(definition)
+			definitions_by_content_id[content_id] = definition
+	definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
+	return profiles
+
 
 func _definition_from_package_record(record: Dictionary, profile: Dictionary = {}) -> CarDefinition:
 	var visual_path := String(record.get("visual_path", ""))

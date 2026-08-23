@@ -31,6 +31,29 @@ func _initialize() -> void:
 	_add_vehicle_texture_payloads(vehicle_root)
 	var textured_vehicle_result: Dictionary = validator.validate_package_directory(vehicle_root)
 	_expect(bool(textured_vehicle_result.get("valid", false)), "vehicle package with standalone material PNGs should validate: %s" % [textured_vehicle_result.get("errors", [])])
+	var workshop_catalog := MxtContentCatalog.new()
+	var workshop_item := {
+		"published_file_id": 987654,
+		"installed": true,
+		"locally_disabled": false,
+		"install_path": vehicle_root,
+		"install_timestamp": 1234,
+		"size_on_disk": 5678,
+		"item_state_bits": 5,
+	}
+	var workshop_first: Dictionary = workshop_catalog.sync_workshop_packages([workshop_item])
+	_expect(bool(workshop_first.get("catalog_changed", false)), "first Workshop catalog sync should add its validated record")
+	_expect(int(workshop_first.get("validation_cache_miss_count", 0)) == 1, "first Workshop catalog sync should validate once")
+	var transient_item := workshop_item.duplicate(true)
+	transient_item["item_state_bits"] = 13
+	transient_item["downloading"] = true
+	var workshop_transient: Dictionary = workshop_catalog.sync_workshop_packages([transient_item])
+	_expect(!bool(workshop_transient.get("catalog_changed", true)), "transient Steam item state should not rebuild unchanged Workshop content")
+	_expect(int(workshop_transient.get("validation_cache_hit_count", 0)) == 1, "transient Steam item state should reuse native validation")
+	var workshop_removed: Dictionary = workshop_catalog.sync_workshop_packages([])
+	_expect(bool(workshop_removed.get("catalog_changed", false)), "missing Workshop item should remove only its prior record")
+	_expect((workshop_removed.get("delta", {}) as Dictionary).get("removed_content_ids", []).size() == 1, "Workshop removal should emit one exact content ID")
+	workshop_catalog = null
 	var snapshot_library := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_snapshot_library")
 	_remove_tree(snapshot_library)
 	var snapshot_catalog := MxtContentCatalog.new()

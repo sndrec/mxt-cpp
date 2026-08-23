@@ -1,7 +1,7 @@
 #ifndef MXT_CONTENT_CATALOG_H
 #define MXT_CONTENT_CATALOG_H
 
-#include "content/content_manifest.h"
+#include "content/content_validator.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -55,14 +55,26 @@ class MxtContentCatalog : public RefCounted {
 	GDCLASS(MxtContentCatalog, RefCounted)
 
 private:
+	struct WorkshopPackageState {
+		uint64_t published_file_id = 0;
+		String install_path;
+		String install_identity;
+		bool valid = false;
+		uint64_t registration_usec = 0;
+		mxt::content::ValidatedPackage package;
+		mxt::content::ContentRecord record;
+		std::vector<String> errors;
+	};
+
 	std::vector<mxt::content::ContentRecord> records;
+	std::vector<WorkshopPackageState> workshop_packages;
 	uint64_t generation = 0;
 
 	Dictionary add_package_internal(
 			const String &package_root,
 			mxt::content::ContentSource source,
 			uint64_t published_file_id);
-	void replace_record(const mxt::content::ContentRecord &record);
+	void replace_record(const mxt::content::ContentRecord &record, bool publish = true);
 	void publish_change();
 
 protected:
@@ -91,8 +103,8 @@ public:
 	Dictionary add_draft_package(const String &package_root);
 	Dictionary snapshot_draft_package(const String &package_root, const String &library_root);
 	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);
+	Dictionary sync_workshop_packages(const Array &items);
 	Dictionary scan_local_library(const String &library_root);
-	void clear_workshop_packages();
 	bool remove_content(const String &content_id);
 	void clear();
 

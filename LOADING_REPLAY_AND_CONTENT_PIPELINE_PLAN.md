@@ -332,6 +332,30 @@ Replace clear-and-repopulate refreshes with an item delta.
 - Removal or invalidation swaps affected players to the existing safe native vehicle
   policy without disturbing other players.
 
+### Phase D results
+
+- Workshop package state now lives in the native catalog and is retained by published
+  file ID, stable install identity, validated package, digests, record, and errors.
+  Transient Steam state bits such as downloading/update-pending no longer invalidate
+  that identity or trigger another package walk.
+- Each added or materially changed install is validated once. The resulting native
+  `ValidatedPackage` is registered directly, removing the former GDScript validation
+  followed by a second native validation.
+- Catalog mutation is an exact added/changed/removed item and content delta. Only
+  affected Workshop definitions are reparsed, and unchanged definition objects remain
+  live.
+- Workshop deltas no longer run the full track/content consumer refresh. Lobby content
+  refresh targets only players selecting an affected content ID and retains completed
+  renderer managers so their unchanged archetypes can be reused.
+- The focused content-package smoke observed one validation on first installation,
+  then one native cache hit, zero validation, and zero catalog mutation when only
+  transient Steam state changed. Exact removal emitted one removed content ID.
+- The 48-player lobby smoke still sampled one changed player and early-outed the other
+  47; the changed-player render rebuild remained approximately 76.4 ms and is the
+  measured cost owned by Phases E and F.
+- Release compilation, the focused content-package smoke, the 48-player lobby smoke,
+  and a headless main-scene launch completed successfully.
+
 ## Phase E: Optimize renderer construction synchronously
 
 Use the Phase A profiles to remove root costs before adding concurrency.

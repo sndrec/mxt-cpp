@@ -196,6 +196,7 @@ func _ready() -> void:
 	leaderboard_client.entries_received.connect(_on_time_attack_rank_entries_received)
 	vehicle_content_controller.initialize(steam_service, network_manager.custom_stamp_network)
 	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
+	vehicle_content_controller.catalog_delta.connect(_on_vehicle_content_catalog_delta)
 	LoadTransitionProfilerClass.checkpoint(load_profile, "platform_and_vehicle_content", {
 		"vehicle_definition_count": vehicle_content_controller.definitions.size(),
 	})
@@ -446,6 +447,24 @@ func _on_vehicle_content_catalog_changed() -> void:
 		"lobby_chibi_active": lobby_chibi_controller != null,
 		"car_settings_active": car_settings != null,
 	})
+	LoadTransitionProfilerClass.end_transition(load_profile)
+
+func _on_vehicle_content_catalog_delta(delta: Dictionary) -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_catalog_delta_consumers", {
+		"added_content_ids": delta.get("added_content_ids", []),
+		"changed_content_ids": delta.get("changed_content_ids", []),
+		"removed_content_ids": delta.get("removed_content_ids", []),
+	})
+	var affected_content_ids: Array = []
+	affected_content_ids.append_array(delta.get("added_content_ids", []))
+	affected_content_ids.append_array(delta.get("changed_content_ids", []))
+	affected_content_ids.append_array(delta.get("removed_content_ids", []))
+	if lobby_chibi_controller != null and !affected_content_ids.is_empty():
+		lobby_chibi_controller.refresh_vehicle_content(affected_content_ids)
+	LoadTransitionProfilerClass.checkpoint(load_profile, "lobby_vehicle_consumers")
+	if car_settings != null:
+		car_settings.call("refresh_after_game_manager_loaded")
+	LoadTransitionProfilerClass.checkpoint(load_profile, "garage_vehicle_consumers")
 	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func build_cpu_player_settings(index: int) -> Dictionary:

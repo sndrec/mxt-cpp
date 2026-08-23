@@ -260,6 +260,24 @@ static bool decimal_u64(int64_t input, uint64_t &output)
 	return true;
 }
 
+static bool records_match(
+		const mxt::content::ContentRecord &a,
+		const mxt::content::ContentRecord &b)
+{
+	return a.content_type == b.content_type &&
+			a.source == b.source &&
+			a.content_id == b.content_id &&
+			a.package_digest == b.package_digest &&
+			a.gameplay_digest == b.gameplay_digest &&
+			a.root_path == b.root_path &&
+			a.published_file_id == b.published_file_id;
+}
+
+static void append_unique(Array &values, const Variant &value)
+{
+	if (!values.has(value)) values.push_back(value);
+}
+
 static bool valid_official_slug(const String &slug)
 {
 	if (slug.is_empty() || slug.length() > 64) return false;
@@ -290,8 +308,8 @@ void MxtContentCatalog::_bind_methods()
 			D_METHOD("snapshot_draft_package", "package_root", "library_root"),
 			&MxtContentCatalog::snapshot_draft_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
+	ClassDB::bind_method(D_METHOD("sync_workshop_packages", "items"), &MxtContentCatalog::sync_workshop_packages);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
-	ClassDB::bind_method(D_METHOD("clear_workshop_packages"), &MxtContentCatalog::clear_workshop_packages);
 	ClassDB::bind_method(D_METHOD("remove_content", "content_id"), &MxtContentCatalog::remove_content);
 	ClassDB::bind_method(D_METHOD("clear"), &MxtContentCatalog::clear);
 	ClassDB::bind_method(D_METHOD("has_content", "content_id"), &MxtContentCatalog::has_content);
@@ -496,7 +514,7 @@ void MxtContentCatalog::publish_change()
 	emit_signal("catalog_changed", static_cast<int64_t>(generation));
 }
 
-void MxtContentCatalog::replace_record(const mxt::content::ContentRecord &record)
+void MxtContentCatalog::replace_record(const mxt::content::ContentRecord &record, bool publish)
 {
 	for (mxt::content::ContentRecord &existing : records) {
 		if (existing.content_id == record.content_id) {
@@ -504,7 +522,7 @@ void MxtContentCatalog::replace_record(const mxt::content::ContentRecord &record
 			std::sort(records.begin(), records.end(), [](const auto &a, const auto &b) {
 				return a.content_id < b.content_id;
 			});
-			publish_change();
+			if (publish) publish_change();
 			return;
 		}
 	}
@@ -512,7 +530,7 @@ void MxtContentCatalog::replace_record(const mxt::content::ContentRecord &record
 	std::sort(records.begin(), records.end(), [](const auto &a, const auto &b) {
 		return a.content_id < b.content_id;
 	});
-	publish_change();
+	if (publish) publish_change();
 }
 
 Dictionary MxtContentCatalog::add_package_internal(
@@ -624,6 +642,197 @@ Dictionary MxtContentCatalog::add_workshop_package(const String &package_root, i
 	return add_package_internal(package_root, mxt::content::ContentSource::WORKSHOP, item_id);
 }
 
+Dictionary MxtContentCatalog::sync_workshop_packages(const Array &items)
+{
+	struct IncomingItem {
+		uint64_t published_file_id = 0;
+		String install_path;
+		String install_identity;
+		bool eligible = false;
+	};
+	std::vector<IncomingItem> incoming;
+	incoming.reserve(static_cast<size_t>(items.size()));
+	for (int64_t i = 0; i < items.size(); ++i) {
+		if (items[i].get_type() != Variant::DICTIONARY) continue;
+		const Dictionary item = items[i];
+		uint64_t published_file_id = 0;
+		if (!decimal_u64(static_cast<int64_t>(item.get("published_file_id", 0)), published_file_id)) continue;
+		if (std::any_of(incoming.begin(), incoming.end(), [&](const IncomingItem &value) {
+			return value.published_file_id == published_file_id;
+		})) continue;
+		IncomingItem value;
+		value.published_file_id = published_file_id;
+		value.install_path = static_cast<String>(item.get("install_path", String()));
+		value.eligible = static_cast<bool>(item.get("installed", false)) &&
+				!static_cast<bool>(item.get("locally_disabled", false)) &&
+				!value.install_path.is_empty();
+		const String manifest_path = value.install_path.path_join("manifest.json");
+		const uint64_t manifest_modified = FileAccess::file_exists(manifest_path)
+				? FileAccess::get_modified_time(manifest_path)
+				: 0;
+		value.install_identity = value.install_path + String("|") +
+				String::num_int64(static_cast<int64_t>(item.get("install_timestamp", 0))) + String("|") +
+				String::num_int64(static_cast<int64_t>(item.get("size_on_disk", 0))) + String("|") +
+				String::num_uint64(manifest_modified);
+		incoming.push_back(std::move(value));
+	}
+	std::sort(incoming.begin(), incoming.end(), [](const IncomingItem &a, const IncomingItem &b) {
+		return a.published_file_id < b.published_file_id;
+	});
+
+	Array result_items;
+	Array added_item_ids;
+	Array changed_item_ids;
+	Array removed_item_ids;
+	Array added_content_ids;
+	Array changed_content_ids;
+	Array removed_content_ids;
+	int64_t cache_hits = 0;
+	int64_t cache_misses = 0;
+	bool catalog_changed = false;
+
+	auto erase_record = [&](const String &content_id) {
+		const size_t previous_size = records.size();
+		records.erase(std::remove_if(records.begin(), records.end(), [&](const auto &record) {
+			return record.content_id == content_id;
+		}), records.end());
+		return records.size() != previous_size;
+	};
+	auto state_result = [&](const WorkshopPackageState &state, bool cache_hit, bool eligible) {
+		Dictionary item_result;
+		item_result["published_file_id"] = static_cast<int64_t>(state.published_file_id);
+		item_result["install_path"] = state.install_path;
+		item_result["eligible"] = eligible;
+		item_result["cache_hit"] = cache_hit;
+		item_result["valid"] = state.valid;
+		item_result["registration_usec"] = static_cast<int64_t>(state.registration_usec);
+		item_result["errors"] = error_array(state.errors);
+		item_result["validation_profile"] = state.package.validation_profile;
+		if (state.package.manifest.content_type != mxt::content::ContentType::INVALID) {
+			item_result["manifest"] = mxt::content::manifest_to_dictionary(state.package.manifest);
+		}
+		if (state.valid) {
+			item_result["package_digest"] = state.package.package_digest;
+			item_result["gameplay_digest"] = state.package.gameplay_digest;
+			item_result["record"] = mxt::content::content_record_to_dictionary(state.record);
+		}
+		return item_result;
+	};
+
+	for (const IncomingItem &item : incoming) {
+		auto state_it = std::find_if(workshop_packages.begin(), workshop_packages.end(), [&](const auto &state) {
+			return state.published_file_id == item.published_file_id;
+		});
+		if (!item.eligible) {
+			WorkshopPackageState empty_state;
+			empty_state.published_file_id = item.published_file_id;
+			empty_state.install_path = item.install_path;
+			if (state_it != workshop_packages.end()) {
+				if (state_it->valid && erase_record(state_it->record.content_id)) {
+					append_unique(removed_content_ids, state_it->record.content_id);
+					catalog_changed = true;
+				}
+				append_unique(removed_item_ids, static_cast<int64_t>(item.published_file_id));
+				workshop_packages.erase(state_it);
+			}
+			result_items.push_back(state_result(empty_state, false, false));
+			continue;
+		}
+		if (state_it != workshop_packages.end() && state_it->install_identity == item.install_identity) {
+			++cache_hits;
+			result_items.push_back(state_result(*state_it, true, true));
+			continue;
+		}
+
+		++cache_misses;
+		WorkshopPackageState next;
+		next.published_file_id = item.published_file_id;
+		next.install_path = item.install_path;
+		next.install_identity = item.install_identity;
+		next.valid = mxt::content::validate_package_directory_internal(
+				item.install_path, next.package, next.errors);
+		if (next.valid) {
+			const uint64_t registration_start_usec = Time::get_singleton()->get_ticks_usec();
+			next.record = make_record(next.package, mxt::content::ContentSource::WORKSHOP, item.published_file_id);
+			next.registration_usec = Time::get_singleton()->get_ticks_usec() - registration_start_usec;
+		}
+
+		const bool had_state = state_it != workshop_packages.end();
+		const bool had_valid_record = had_state && state_it->valid;
+		const String previous_content_id = had_valid_record ? state_it->record.content_id : String();
+		const bool same_record = had_valid_record && next.valid && records_match(state_it->record, next.record);
+		if (!same_record && had_valid_record && erase_record(previous_content_id)) {
+			append_unique(removed_content_ids, previous_content_id);
+			catalog_changed = true;
+		}
+		if (!same_record && next.valid) {
+			replace_record(next.record, false);
+			catalog_changed = true;
+			if (had_valid_record && previous_content_id == next.record.content_id) {
+				removed_content_ids.erase(previous_content_id);
+				append_unique(changed_content_ids, next.record.content_id);
+			} else {
+				append_unique(added_content_ids, next.record.content_id);
+			}
+		}
+		if (had_state) {
+			append_unique(changed_item_ids, static_cast<int64_t>(item.published_file_id));
+			*state_it = std::move(next);
+			result_items.push_back(state_result(*state_it, false, true));
+		} else {
+			append_unique(added_item_ids, static_cast<int64_t>(item.published_file_id));
+			workshop_packages.push_back(std::move(next));
+			result_items.push_back(state_result(workshop_packages.back(), false, true));
+		}
+	}
+
+	for (size_t i = workshop_packages.size(); i-- > 0;) {
+		const bool present = std::any_of(incoming.begin(), incoming.end(), [&](const IncomingItem &item) {
+			return item.published_file_id == workshop_packages[i].published_file_id;
+		});
+		if (present) continue;
+		append_unique(removed_item_ids, static_cast<int64_t>(workshop_packages[i].published_file_id));
+		if (workshop_packages[i].valid && erase_record(workshop_packages[i].record.content_id)) {
+			append_unique(removed_content_ids, workshop_packages[i].record.content_id);
+			catalog_changed = true;
+		}
+		workshop_packages.erase(workshop_packages.begin() + static_cast<int64_t>(i));
+	}
+	std::sort(workshop_packages.begin(), workshop_packages.end(), [](const auto &a, const auto &b) {
+		return a.published_file_id < b.published_file_id;
+	});
+	std::sort(records.begin(), records.end(), [](const auto &a, const auto &b) {
+		return a.content_id < b.content_id;
+	});
+	if (catalog_changed) publish_change();
+
+	PackedStringArray signature_parts;
+	for (const WorkshopPackageState &state : workshop_packages) {
+		if (!state.valid) continue;
+		signature_parts.push_back(
+				String::num_uint64(state.published_file_id) + String("|") +
+				mxt::content::content_type_name(state.package.manifest.content_type) + String("|") +
+				state.package.package_digest + String("|") + state.package.gameplay_digest + String("|") +
+				state.package.root_path);
+	}
+	Dictionary delta;
+	delta["added_item_ids"] = added_item_ids;
+	delta["changed_item_ids"] = changed_item_ids;
+	delta["removed_item_ids"] = removed_item_ids;
+	delta["added_content_ids"] = added_content_ids;
+	delta["changed_content_ids"] = changed_content_ids;
+	delta["removed_content_ids"] = removed_content_ids;
+	Dictionary result;
+	result["valid"] = true;
+	result["items"] = result_items;
+	result["delta"] = delta;
+	result["catalog_changed"] = catalog_changed;
+	result["validation_cache_hit_count"] = cache_hits;
+	result["validation_cache_miss_count"] = cache_misses;
+	result["catalog_signature"] = String("\n").join(signature_parts);
+	return result;
+}
+
 Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
 {
 	const String root = global_path(library_root);
@@ -688,21 +897,18 @@ Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
 	return result;
 }
 
-void MxtContentCatalog::clear_workshop_packages()
-{
-	const size_t previous_size = records.size();
-	records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
-		return record.source == mxt::content::ContentSource::WORKSHOP;
-	}), records.end());
-	if (records.size() != previous_size) publish_change();
-}
-
 bool MxtContentCatalog::remove_content(const String &content_id)
 {
 	const auto found = std::find_if(records.begin(), records.end(), [&](const auto &record) {
 		return record.content_id == content_id;
 	});
 	if (found == records.end()) return false;
+	if (found->source == mxt::content::ContentSource::WORKSHOP) {
+		const uint64_t published_file_id = found->published_file_id;
+		workshop_packages.erase(std::remove_if(workshop_packages.begin(), workshop_packages.end(), [&](const auto &state) {
+			return state.published_file_id == published_file_id;
+		}), workshop_packages.end());
+	}
 	records.erase(found);
 	publish_change();
 	return true;
@@ -710,8 +916,9 @@ bool MxtContentCatalog::remove_content(const String &content_id)
 
 void MxtContentCatalog::clear()
 {
-	if (records.empty()) return;
+	if (records.empty() && workshop_packages.empty()) return;
 	records.clear();
+	workshop_packages.clear();
 	publish_change();
 }
 

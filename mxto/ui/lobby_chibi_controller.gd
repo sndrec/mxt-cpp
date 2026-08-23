@@ -272,10 +272,12 @@ func _configure_car(car, player_id: int, settings: Dictionary, local_control: bo
 		"duration_usec": Time.get_ticks_usec() - start_usec,
 	}
 
-func refresh_vehicle_content() -> void:
+func refresh_vehicle_content(affected_content_ids: Array = []) -> void:
 	var refresh_start_usec := Time.get_ticks_usec()
+	var targeted_refresh := !affected_content_ids.is_empty()
 	var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_content_refresh", {
 		"car_count": cars.size(),
+		"affected_content_ids": affected_content_ids,
 	})
 	var refreshed_players := []
 	var player_profiles: Array = []
@@ -286,6 +288,8 @@ func refresh_vehicle_content() -> void:
 		if car == null or !is_instance_valid(car):
 			continue
 		var player_settings: Dictionary = network_manager.lobby_settings.player_settings.get(player_id, {})
+		if targeted_refresh and !affected_content_ids.has(String(player_settings.get("vehicle_content_id", ""))):
+			continue
 		refreshed_players.append({
 			"player_id": player_id,
 			"vehicle_content_id": String(player_settings.get("vehicle_content_id", "")),
@@ -306,15 +310,14 @@ func refresh_vehicle_content() -> void:
 	})
 	applied_settings_revision = network_manager.lobby_settings.revision
 	applied_local_player_id = local_id
-	render_signature = ""
-	pending_render_signature = ""
-	render_rebuild_due_msec = 0
-	if render_manager != null:
-		render_manager.clear_renderer()
-	if magnifier_render_manager != null:
-		magnifier_render_manager.clear_renderer()
-	magnifier_render_signature = ""
-	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderers")
+	if !refreshed_players.is_empty():
+		render_signature = ""
+		pending_render_signature = ""
+		render_rebuild_due_msec = 0
+		magnifier_render_signature = ""
+	LoadTransitionProfilerClass.checkpoint(load_profile, "invalidate_affected_renderers", {
+		"renderer_invalidated": !refreshed_players.is_empty(),
+	})
 	vehicle_content_controller.record_workshop_diagnostic_event("lobby_vehicle_content_refresh", {
 		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
 		"players": refreshed_players,
