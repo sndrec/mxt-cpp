@@ -3,8 +3,8 @@
 ## Status
 
 Planned. This document is the implementation contract for the loading-performance,
-binary-replay, lobby-rendering, Workshop-refresh, and leaderboard-cutover work
-described below. No implementation work is authorized by this document alone.
+binary-replay, lobby-rendering, and Workshop-refresh work described below. No
+implementation work is authorized by this document alone.
 
 Execute it with a short goal such as:
 
@@ -13,11 +13,6 @@ Execute it with a short goal such as:
 Keep this document updated while implementing it. Record measurements, completed
 phases, and material design changes in the document instead of silently changing
 the contract.
-
-`CUSTOM_LEADERBOARD_SERVICE_PLAN.md` remains the detailed contract for the custom
-leaderboard database, verification boundary, read API, object storage, moderation,
-and deployment. This document owns the sequencing between that service, the replay
-format replacement, and the client/content performance work.
 
 ## Objectives
 
@@ -35,9 +30,6 @@ format replacement, and the client/content performance work.
   remaining work should run asynchronously.
 - Keep the current completed lobby render visible while replacement content is
   prepared, then swap atomically.
-- Move verified Time Attack authority from Steam Leaderboards to the custom service
-  in `CUSTOM_LEADERBOARD_SERVICE_PLAN.md`, retaining Steam only as an optional
-  overall-best mirror.
 
 ## Locked Decisions
 
@@ -59,13 +51,12 @@ format replacement, and the client/content performance work.
 
 - Replace `.replay.json` gameplay replays with a new compact binary format.
 - The shipped game writes only the new binary format.
-- Until the custom leaderboard migration is audited complete, retain a narrowly
-  scoped read-only legacy JSON reader for replay attachments obtained through the
-  trusted leaderboard replay service.
+- Retain a narrowly scoped read-only legacy JSON reader for replay attachments
+  obtained through the trusted Steam leaderboard replay service.
 - Do not expose the legacy reader to the local replay browser, arbitrary file-open
   paths, new recordings, Practice exports, or multiplayer host saves.
-- Delete this leaderboard-only reader after the custom database/object-store cutover
-  has preserved every recoverable historical Steam replay.
+- Retiring this leaderboard-only reader belongs to a separate future plan and is
+  not part of this plan's completion criteria.
 - Recording storage and binary serialization belong in native C++, not an Array of
   per-frame GDScript Dictionaries.
 - Replay metadata is stored at the front of the file and can be read without
@@ -75,10 +66,9 @@ format replacement, and the client/content performance work.
 - Frame data is divided into independently compressed, indexed blocks so playback,
   verification, ghosts, practice continuation, and seeking do not require one
   monolithic parse.
-- Format conversion for historical data is primarily an offline migration concern.
-  The temporary runtime exception is limited to watching or using ghosts from
-  trusted legacy Steam leaderboard attachments; it must not become a general
-  compatibility layer.
+- Historical leaderboard conversion is outside this plan. The runtime
+  exception is limited to watching or using ghosts from trusted legacy Steam
+  leaderboard attachments; it must not become a general compatibility layer.
 - Game, verifier, submission service, leaderboard replay storage, replay browser,
   ghosts, multiplayer host recording, local saving, and Practice/TAS continuation
   cut over together.
@@ -109,16 +99,21 @@ format replacement, and the client/content performance work.
 - Stamp-atlas threading is deferred until profiling shows it is worthwhile. The
   measured atlas build is not currently the dominant cost.
 
-### Leaderboards
+### Existing Steam leaderboard boundary
 
-- The custom leaderboard service becomes authoritative for verified runs and replay
-  objects.
-- Steam Leaderboards may remain as an asynchronous overall-best mirror, but Steam
-  rank rows and UGC attachments are no longer the source of truth.
-- Backfill every provable Steam entry and downloadable replay before removing the
-  old-format migration tooling.
-- Historical entries that cannot be recovered remain explicitly marked as having
-  unavailable replay or machine-setting evidence. Never invent missing data.
+- This plan does not replace Steam Leaderboards, change leaderboard identity, or
+  migrate historical rows.
+- New replay submissions use the binary format after its coordinated cutover.
+- Existing trusted Steam leaderboard attachments may remain in legacy JSON and stay
+  watchable/selectable as ghosts through the dedicated read-only legacy boundary.
+- Separate future work owns historical migration and eventual removal of the legacy
+  reader.
+
+## Explicit Non-Goals
+
+- Leaderboard backend replacement, historical migration, or deployment.
+- Changing per-vehicle, overall-best, ranking, pagination, or retention semantics.
+- Removing the trusted leaderboard-only legacy JSON reader.
 
 ## Baseline Measurements
 
@@ -411,8 +406,8 @@ be independently blockable and bounded; do not wrap the entire file in one strea
 - Remove the general runtime `.replay.json` reader and the JSON writer in the same
   completed phase.
 - Route trusted leaderboard attachments through a separate, read-only legacy decode
-  boundary until Phase I migration is complete. Validate attachment identity,
-  schema, counts, sizes, and decoded input bounds before allocation or playback.
+  boundary. Validate attachment identity, schema, counts, sizes, and decoded input
+  bounds before allocation or playback.
 - Old local JSON files may remain on disk but are not listed as playable current
   replays and cannot reach the leaderboard-only decode boundary.
 
@@ -430,61 +425,6 @@ be independently blockable and bounded; do not wrap the entire file in one strea
 - A binary replay produces the same deterministic verification result as its source
   input stream.
 
-## Phase H: Historical Steam extraction before service cutover
-
-This phase uses the current Steam-backed system, the temporary offline migration
-tool, and the narrowly scoped shipped-game leaderboard reader. The shipped reader is
-temporary continuity for watching and ghosting trusted historical entries, not the
-authoritative migration mechanism.
-
-- Freeze an executable/verifier artifact capable of validating the currently
-  attached legacy JSON replay generation.
-- Enumerate every retained Steam leaderboard entry for every current board.
-- Download every accessible attached replay.
-- Record entries with missing or inaccessible attachments explicitly.
-- Verify each recoverable replay with the compatible verifier artifact.
-- Extract authenticated identity, board/track identity, vehicle evidence, machine
-  setting when present, finish time, ruleset, and replay digest.
-- Convert compatible input streams to the new binary container without changing
-  their canonical inputs.
-- Reverify converted current-compatible replays using the new parser/verifier.
-- Store migration reports with exact success/failure reasons and provenance.
-
-Do this before deleting the offline JSON migration utility. Steam rows whose replay
-was never attached, whose metadata was never stored, or whose physics version can no
-longer verify cannot be repaired by inference.
-
-## Phase I: Custom leaderboard dual-write and authority cutover
-
-Execute the backend details in `CUSTOM_LEADERBOARD_SERVICE_PLAN.md` with the binary
-replay as the canonical stored object.
-
-- Provision development database and object storage.
-- Store immutable verified runs and retained binary replay objects by SHA-256.
-- Dual-write new verified submissions to the custom store and the existing Steam
-  overall board.
-- Compare custom overall rankings and retained replay availability against Steam.
-- Backfill the verified historical extraction from Phase H.
-- Switch in-game leaderboard reads, replay watching, and ghost selection to the
-  custom read API.
-- Keep Steam writes as an asynchronous, retryable mirror that cannot invalidate a
-  successful custom submission.
-- Once stable, remove Steam UGC replay attachment as a required production path.
-- After the migration report shows that every recoverable Steam attachment is stored
-  and readable from authoritative object storage, remove the shipped leaderboard-only
-  legacy JSON reader and its routing/tests.
-
-### Acceptance
-
-- Every new verified retained time has a queryable database row and downloadable,
-  hash-matching binary replay object.
-- Operators can correct, moderate, remove, annotate, backfill, and audit records
-  without being constrained by immutable Steam details or UGC attachment handles.
-- Vehicle-filtered bests and overall bests follow the semantics locked in the custom
-  leaderboard plan.
-- Steam outages do not lose authoritative submissions.
-- Existing recoverable entries are visible with explicit migration provenance.
-
 ## Verification Strategy
 
 During implementation, keep feedback proportional:
@@ -495,7 +435,7 @@ During implementation, keep feedback proportional:
 - Do not repeatedly run the full suite during every phase.
 - After all implementation phases are complete, run the relevant full automated
   suite, replay determinism matrix, content validation matrix, lobby scale smoke,
-  Workshop update scenarios, leaderboard service tests, and final interactive
+  Workshop update scenarios, leaderboard replay regressions, and final interactive
   checks. Fix failures at that point.
 
 Performance comparisons must use the same machine, build target, content corpus,
@@ -529,10 +469,6 @@ profiles when results determine architecture.
   use the native binary container.
 - New local, multiplayer, Practice, submission, and authoritative leaderboard replay
   paths use only the binary format.
-- Legacy JSON playback is temporarily possible only for trusted Steam leaderboard
-  attachments, and that reader is removed after the custom migration is audited
-  complete.
-- Every recoverable historical Steam replay is extracted before migration tooling is
-  retired.
-- The custom leaderboard database and replay object store are authoritative; Steam
-  is optional mirrored presentation rather than an operational limitation.
+- Legacy JSON playback is possible only for trusted Steam leaderboard attachments;
+  ordinary local replay paths cannot invoke it.
+- Existing Steam leaderboard behavior otherwise remains unchanged by this plan.
