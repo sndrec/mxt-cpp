@@ -87,6 +87,20 @@ func _run() -> void:
 		game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var steady_usec := Time.get_ticks_usec() - steady_start
 	var steady_avg_usec := float(steady_usec) / float(STEADY_FRAMES)
+	var changed_player_id := int(roster[0])
+	var changed_settings: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[changed_player_id] as Dictionary).duplicate(true)
+	var replacement_definition: CarDefinition = game_manager.vehicle_content_controller.definitions[1]
+	changed_settings["vehicle_content_id"] = replacement_definition.content_id
+	changed_settings["car_livery"] = _synthetic_livery(replacement_definition.content_id, 0)
+	changed_settings.merge(game_manager.vehicle_content_controller.get_evidence(replacement_definition.content_id), true)
+	game_manager.network_manager.lobby_settings._store_player_settings(changed_player_id, changed_settings)
+	var change_schedule_start := Time.get_ticks_usec()
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	var change_schedule_usec := Time.get_ticks_usec() - change_schedule_start
+	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
+	var change_rebuild_start := Time.get_ticks_usec()
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
+	var change_rebuild_usec := Time.get_ticks_usec() - change_rebuild_start
 	var sample_state := [1000, 120.0, Vector3(1.0, 0.0, -1.0), 3.0, Vector3(4.0, 0.05, -2.0), Vector3(0.0, 1.5, 0.1)]
 	var variant_state_bytes := var_to_bytes(sample_state).size()
 	print(
@@ -94,6 +108,8 @@ func _run() -> void:
 		" stamps_per_livery=", STAMPS_PER_LIVERY,
 		" initial_ms=", snappedf(float(initial_usec) * 0.001, 0.001),
 		" steady_avg_us=", snappedf(steady_avg_usec, 0.1),
+		" one_player_change_schedule_ms=", snappedf(float(change_schedule_usec) * 0.001, 0.001),
+		" one_player_change_rebuild_ms=", snappedf(float(change_rebuild_usec) * 0.001, 0.001),
 		" archetypes=", game_manager.lobby_chibi_controller.render_manager.archetypes.size(),
 		" variant_state_bytes=", variant_state_bytes,
 		" draw_calls=", int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))

@@ -493,33 +493,58 @@ func request_lobby_vehicle_content(settings: Dictionary) -> bool:
 	return false
 
 func _scan_local_content_library() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "local_package_scan")
 	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
 	var directory_error := DirAccess.make_dir_recursive_absolute(library_path)
 	if directory_error != OK:
 		push_error("Could not create the local content library: %s" % error_string(directory_error))
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": error_string(directory_error)})
 		return
 	var result: Dictionary = content_catalog.scan_local_library(library_path)
 	for diagnostic_value in result.get("diagnostics", []):
 		var diagnostic: Dictionary = diagnostic_value
 		push_warning("Skipped local content package %s: %s" % [String(diagnostic.get("path", "")), str(diagnostic.get("errors", []))])
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"library_path": library_path,
+		"diagnostic_count": (result.get("diagnostics", []) as Array).size(),
+		"vehicle_record_count": content_catalog.get_records("vehicle").size(),
+	})
 
 func _scan_test_drive_snapshot_library() -> void:
+	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "test_drive_snapshot_scan")
 	var library_path := ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH)
 	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
 		push_error("Could not create the test-drive snapshot library")
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "could_not_create_library"})
 		return
 	var directory := DirAccess.open(library_path)
 	if directory == null:
+		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "library_unavailable"})
 		return
+	var snapshot_profiles: Array = []
 	directory.list_dir_begin()
 	var folder := directory.get_next()
 	while !folder.is_empty():
 		if directory.current_is_dir() and !directory.is_link(folder) and !folder.begins_with("."):
+			var snapshot_start_usec := Time.get_ticks_usec()
 			var result: Dictionary = content_catalog.add_draft_package(library_path.path_join(folder))
+			snapshot_profiles.append({
+				"folder": folder,
+				"duration_usec": Time.get_ticks_usec() - snapshot_start_usec,
+				"valid": bool(result.get("valid", false)),
+				"errors": result.get("errors", []),
+			})
 			if !bool(result.get("valid", false)):
 				push_warning("Skipped test-drive snapshot %s: %s" % [folder, str(result.get("errors", []))])
 		folder = directory.get_next()
 	directory.list_dir_end()
+	snapshot_profiles.sort_custom(
+		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
+	LoadTransitionProfilerClass.end_transition(load_profile, {
+		"library_path": library_path,
+		"snapshot_count": snapshot_profiles.size(),
+		"snapshot_profiles": snapshot_profiles,
+	})
 
 func _scan_trusted_verifier_workshop_packages() -> void:
 	var args := OS.get_cmdline_args()

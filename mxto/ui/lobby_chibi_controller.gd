@@ -170,27 +170,68 @@ func process_lobby(_delta: float) -> void:
 		roster_cache = roster.duplicate()
 	var settings_revision := network_manager.lobby_settings.revision
 	if roster_changed or settings_revision != applied_settings_revision:
+		var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "settings_revision_apply", {
+			"roster_count": roster.size(),
+			"roster_changed": roster_changed,
+			"previous_revision": applied_settings_revision,
+			"next_revision": settings_revision,
+		})
 		var local_id: int = game_manager._local_player_id()
+		var player_profiles: Array = []
 		for id in roster:
 			var player_id := int(id)
 			var existing_car = cars.get(player_id, null)
 			if existing_car == null or !is_instance_valid(existing_car):
 				continue
-			_configure_car(existing_car, player_id, network_manager.lobby_settings.player_settings.get(player_id, {}), player_id == local_id, network_manager.lobby_settings.get_player_settings_revision(player_id), false)
+			player_profiles.append(_configure_car(
+				existing_car,
+				player_id,
+				network_manager.lobby_settings.player_settings.get(player_id, {}),
+				player_id == local_id,
+				network_manager.lobby_settings.get_player_settings_revision(player_id),
+				false))
 		applied_settings_revision = settings_revision
+		player_profiles.sort_custom(
+			func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
+		LoadTransitionProfilerClass.end_transition(load_profile, {
+			"player_profiles": player_profiles,
+			"already_current_count": player_profiles.filter(
+				func(profile: Dictionary): return bool(profile.get("already_current", false))).size(),
+		})
 	_submit_render(roster)
 	_update_hover_and_magnifier()
 	if network_manager.is_server:
 		_broadcast_states_if_needed()
 
-func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool, force_content_refresh := false) -> void:
+func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool, force_content_refresh := false) -> Dictionary:
+	var start_usec := Time.get_ticks_usec()
+	var previous_revision := int(car.settings_revision) if car != null else -1
+	var definition_start_usec := Time.get_ticks_usec()
 	var definition: CarDefinition = vehicle_content_controller.get_definition(str(settings.get("vehicle_content_id", "")))
+	var definition_usec := Time.get_ticks_usec() - definition_start_usec
+	var stats_start_usec := Time.get_ticks_usec()
 	var sampled_stats := _sample_stats(settings, definition)
+	var stats_usec := Time.get_ticks_usec() - stats_start_usec
+	var apply_start_usec := Time.get_ticks_usec()
 	if initial:
 		car.setup(player_id, settings, self, camera, nameplates, local_control, settings_revision, definition, sampled_stats)
 	else:
 		car.update_settings(settings, definition, sampled_stats, settings_revision, force_content_refresh)
 		car.set_local_control(local_control)
+	var apply_usec := Time.get_ticks_usec() - apply_start_usec
+	return {
+		"player_id": player_id,
+		"content_id": String(settings.get("vehicle_content_id", "")),
+		"settings_revision": settings_revision,
+		"previous_revision": previous_revision,
+		"already_current": !initial and !force_content_refresh and settings_revision >= 0 and settings_revision == previous_revision,
+		"initial": initial,
+		"force_content_refresh": force_content_refresh,
+		"definition_usec": definition_usec,
+		"sample_stats_usec": stats_usec,
+		"apply_usec": apply_usec,
+		"duration_usec": Time.get_ticks_usec() - start_usec,
+	}
 
 func refresh_vehicle_content() -> void:
 	var refresh_start_usec := Time.get_ticks_usec()
@@ -198,6 +239,7 @@ func refresh_vehicle_content() -> void:
 		"car_count": cars.size(),
 	})
 	var refreshed_players := []
+	var player_profiles: Array = []
 	var local_id: int = game_manager._local_player_id() if game_manager != null else -1
 	for id in cars.keys():
 		var player_id := int(id)
@@ -212,14 +254,14 @@ func refresh_vehicle_content() -> void:
 			"vehicle_gameplay_digest": String(player_settings.get("vehicle_gameplay_digest", "")),
 			"vehicle_package_digest": String(player_settings.get("vehicle_package_digest", "")),
 		})
-		_configure_car(
+		player_profiles.append(_configure_car(
 			car,
 			player_id,
 			player_settings,
 			player_id == local_id,
 			network_manager.lobby_settings.get_player_settings_revision(player_id),
 			false,
-			true)
+			true))
 	LoadTransitionProfilerClass.checkpoint(load_profile, "reconfigure_lobby_cars", {
 		"refreshed_player_count": refreshed_players.size(),
 	})
@@ -240,6 +282,7 @@ func refresh_vehicle_content() -> void:
 	})
 	LoadTransitionProfilerClass.end_transition(load_profile, {
 		"refreshed_player_count": refreshed_players.size(),
+		"player_profiles": player_profiles,
 	})
 
 func _sample_stats(settings: Dictionary, definition: CarDefinition) -> Dictionary:
