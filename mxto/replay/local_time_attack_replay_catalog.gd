@@ -1,8 +1,8 @@
 class_name LocalTimeAttackReplayCatalog extends RefCounted
 
 const GameVersionData = preload("res://core/game_version.gd")
-const REPLAY_SCHEMA_VERSION := 4
-const REPLAY_SUFFIX := ".replay.json"
+const REPLAY_SCHEMA_VERSION := 5
+const REPLAY_SUFFIX := ".mxt_replay"
 const PHYSICS_TICKS_PER_SECOND := 60.0
 
 var replay_root := "user://replays"
@@ -36,15 +36,14 @@ func prepare_entry(game_manager: GameManager, entry: Dictionary, track_index: in
 	var path := String(entry.get("_local_path", ""))
 	if path.is_empty() or !FileAccess.file_exists(path):
 		return _failure("local_replay_missing", "That local replay file no longer exists.")
-	var replay_value = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(replay_value) != TYPE_DICTIONARY:
+	var replay_stream := MxtReplayStream.new()
+	if !replay_stream.load_file(path):
 		return _failure("local_replay_invalid", "That local replay could not be parsed.")
-	var replay: Dictionary = replay_value
+	var replay: Dictionary = replay_stream.get_metadata()
 	var expected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
 	if !_is_local_time_attack(replay, expected_track_digest):
 		return _failure("local_replay_incompatible", "That replay is not a compatible single-player Time Attack run for this track.")
-	var frames_value = replay.get("frames", [])
-	if typeof(frames_value) != TYPE_ARRAY or (frames_value as Array).is_empty():
+	if replay_stream.frame_count() <= 0:
 		return _failure("local_replay_invalid", "That local replay contains no race input.")
 	var digest := _file_digest(path)
 	if digest.is_empty():
@@ -128,32 +127,8 @@ func _is_local_time_attack(metadata: Dictionary, expected_track_digest: String) 
 func _load_metadata(path: String) -> Dictionary:
 	if path.is_empty() or !FileAccess.file_exists(path):
 		return {}
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return {}
-	var lines := PackedStringArray()
-	var found_frames := false
-	while !file.eof_reached():
-		var line := file.get_line()
-		if line.strip_edges().begins_with("\"frames\""):
-			found_frames = true
-			break
-		lines.append(line)
-	file.close()
-	if lines.is_empty():
-		return {}
-	if found_frames:
-		for line_index in range(lines.size() - 1, -1, -1):
-			var trimmed := lines[line_index].strip_edges()
-			if trimmed.is_empty():
-				continue
-			if trimmed.ends_with(","):
-				lines[line_index] = lines[line_index].trim_suffix(",")
-			break
-		lines.append("}")
-	var text := "\n".join(lines)
-	var parsed = JSON.parse_string(text)
-	return parsed as Dictionary if typeof(parsed) == TYPE_DICTIONARY else {}
+	var stream := MxtReplayStream.new()
+	return stream.get_metadata() if stream.load_file(path, true) else {}
 
 
 func _file_digest(path: String) -> String:

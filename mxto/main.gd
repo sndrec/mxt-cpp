@@ -745,13 +745,15 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	var track_index := int(payload.get("track_index", -1))
 	var cursor := int(payload.get("cursor", -1))
 	var full_state: PackedByteArray = payload.get("full_state", PackedByteArray())
-	var canonical_prefix_value = payload.get("canonical_prefix", [])
+	var replay_stream_value = payload.get("replay_stream")
+	var canonical_prefix_count := int(payload.get("canonical_prefix_count", -1))
 	if focus_index < 0 or settings.size() != racer_ids.size() \
 			or track_index < 0 or track_index >= track_content_controller.tracks.size() \
 			or cursor < 0 or cursor != _singleplayer_tick or full_state.is_empty() \
 			or !replay_controller.replay_playback_active or !game_sim.sim_started \
 			or race_session_controller.current_racer_ids != racer_ids \
-			or typeof(canonical_prefix_value) != TYPE_ARRAY:
+			or !(replay_stream_value is MxtReplayStream) \
+			or canonical_prefix_count != cursor:
 		race_presentation_controller.show_notification("Replay resume failed: the captured frame is incomplete.", 4500)
 		return
 	var practice_cpu_flags: Array = []
@@ -783,10 +785,9 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	time_attack_ghost_descriptors.clear()
 	var keep_original := bool(payload.get("keep_original_as_ghost", false))
 	if keep_original:
-		var source_frames_value = payload.get("source_frames", [])
 		var ghost_prepare := time_attack_ghost_controller.prepare_original_replay(
 			metadata,
-			(source_frames_value as Array) if typeof(source_frames_value) == TYPE_ARRAY else [],
+			replay_stream_value as MxtReplayStream,
 			focused_player_id,
 			track_index)
 		if !bool(ghost_prepare.get("success", false)):
@@ -824,7 +825,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		_return_to_menu()
 		return
 	replay_controller.start_recording(track_index, settings, racer_ids, practice_cpu_flags, exact_grid)
-	if !practice_controller.begin_resumed_session(options, focused_player_id, canonical_prefix_value as Array, transition_start_usec):
+	if !practice_controller.begin_resumed_session(options, focused_player_id, replay_stream_value as MxtReplayStream, canonical_prefix_count, transition_start_usec):
 		race_presentation_controller.show_notification("Replay resume failed while restoring its canonical timeline.", 5000)
 		_return_to_menu()
 		return

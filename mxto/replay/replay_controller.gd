@@ -17,7 +17,8 @@ const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
 const DEBUG_REPLAY_VERSION := 2
-const REPLAY_SCHEMA_VERSION := 4
+const REPLAY_SCHEMA_VERSION := 5
+const REPLAY_FILE_SUFFIX := ".mxt_replay"
 const REPLAY_COMPATIBILITY_WARNING := "This replay was recorded on an older version of the game, and may desync."
 const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
 const GameVersionData = preload("res://core/game_version.gd")
@@ -60,13 +61,11 @@ var replay_recording_source: String = ""
 var replay_recording_metadata: Dictionary = {}
 var replay_recording_racer_ids: Array = []
 var replay_recording_cpu_flags: Array = []
-var replay_recording_frames: Array = []
-var replay_recording_input_bytes: int = 0
+var replay_recording_stream: MxtReplayStream = MxtReplayStream.new()
 var replay_recording_staged_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
-var replay_playback_frames: Array = []
-var replay_playback_decoded_frames: Array = []
+var replay_playback_stream: MxtReplayStream
 var replay_playback_source_metadata: Dictionary = {}
 var replay_playback_compatible := false
 var replay_playback_track_index := -1
@@ -282,13 +281,13 @@ func record_debug_input(input_bytes: PackedByteArray) -> void:
 		debug_replay_inputs.append(input_bytes.duplicate())
 
 func record_singleplayer_frame(tick: int) -> void:
-	if !replay_recording_active or !game_manager.game_sim.has_method("get_input_frame_as_dictionary"):
+	if !replay_recording_active:
 		return
-	var frame_inputs: Dictionary = game_manager.game_sim.get_input_frame_as_dictionary(tick)
 	if game_manager.practice_controller.session_active:
-		game_manager.practice_controller.append_canonical_frame(tick, frame_inputs)
+		game_manager.practice_controller.append_canonical_game_sim_frame(game_manager.game_sim, tick)
 		return
-	record_frame(tick, frame_inputs)
+	if !replay_recording_stream.append_game_sim_frame(game_manager.game_sim, tick):
+		push_error("Replay recording rejected native frame %d: %s" % [tick, replay_recording_stream.get_last_error()])
 
 func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	if debug_replay_recording:
@@ -353,12 +352,10 @@ func _clear_recording_payload() -> void:
 	replay_recording_metadata.clear()
 	replay_recording_racer_ids.clear()
 	replay_recording_cpu_flags.clear()
-	replay_recording_frames.clear()
-	replay_recording_input_bytes = 0
+	replay_recording_stream = MxtReplayStream.new()
 
 func _clear_playback_payload() -> void:
-	replay_playback_frames.clear()
-	replay_playback_decoded_frames.clear()
+	replay_playback_stream = null
 	replay_playback_source_metadata.clear()
 	replay_playback_compatible = false
 	replay_playback_track_index = -1
@@ -375,9 +372,9 @@ func get_memory_usage_stats() -> Dictionary:
 	var practice_recording := game_manager.practice_controller.session_active \
 		and game_manager.practice_controller.timeline_enabled
 	return {
-		"recording_frames": game_manager.practice_controller.canonical_frame_count() if practice_recording else replay_recording_frames.size(),
-		"recording_input_bytes": game_manager.practice_controller.canonical_input_byte_count() if practice_recording else replay_recording_input_bytes,
-		"playback_frames": replay_playback_frames.size(),
+		"recording_frames": game_manager.practice_controller.canonical_frame_count() if practice_recording else replay_recording_stream.frame_count(),
+		"recording_input_bytes": game_manager.practice_controller.canonical_input_byte_count() if practice_recording else replay_recording_stream.input_byte_count(),
+		"playback_frames": _playback_frame_count(),
 		"playback_source_bytes": replay_playback_source_bytes,
 		"seek_checkpoint_count": replay_seek_checkpoints.size(),
 		"seek_checkpoint_bytes": replay_seek_checkpoint_bytes,
@@ -407,7 +404,7 @@ func can_save_replay_locally() -> bool:
 	if game_manager.practice_controller.session_active:
 		return game_manager.practice_controller.timeline_enabled \
 			and game_manager.practice_controller.canonical_frame_count() > 0
-	return !replay_recording_saved and !replay_recording_frames.is_empty()
+	return !replay_recording_saved and replay_recording_stream.frame_count() > 0
 
 func save_replay_locally() -> String:
 	if !can_save_replay_locally():
@@ -527,8 +524,14 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 	replay_recording_source = "practice" if session_kind == "practice" else ("singleplayer" if game_manager.singleplayer_mode else "server")
 	replay_recording_racer_ids = racer_ids.duplicate(true)
 	replay_recording_cpu_flags = cpu_flags.duplicate(true)
-	replay_recording_frames.clear()
-	replay_recording_input_bytes = 0
+	replay_recording_stream = MxtReplayStream.new()
+	replay_recording_stream.begin_recording(replay_recording_racer_ids, replay_recording_cpu_flags)
+	if !replay_recording_stream.get_last_error().is_empty():
+		push_error("Replay recording roster rejected: %s" % replay_recording_stream.get_last_error())
+		replay_recording_active = false
+		return
+	if session_kind == "practice":
+		game_manager.practice_controller.configure_timeline_roster(replay_recording_racer_ids, replay_recording_cpu_flags)
 	var start_grid_slot_array := []
 	for slot in start_grid_slots:
 		start_grid_slot_array.append(int(slot))
@@ -626,33 +629,15 @@ func refresh_pause_button() -> void:
 	race_pause_save_replay_button.visible = can_save
 	race_pause_save_replay_button.disabled = !can_save
 
-func _encoded_replay_frame(tick: int, frame_inputs: Dictionary) -> Dictionary:
-	var encoded := {}
-	for id_value in frame_inputs.keys():
-		if typeof(frame_inputs[id_value]) != TYPE_PACKED_BYTE_ARRAY:
-			continue
-		var bytes: PackedByteArray = frame_inputs[id_value]
-		encoded[str(int(id_value))] = Marshalls.raw_to_base64(bytes)
-	return {"tick": tick, "inputs": encoded}
-
-func _raw_replay_frame(tick: int, frame_inputs: Dictionary) -> Dictionary:
-	var copied := {}
-	for id_value in frame_inputs.keys():
-		if typeof(frame_inputs[id_value]) != TYPE_PACKED_BYTE_ARRAY:
-			continue
-		var bytes: PackedByteArray = frame_inputs[id_value]
-		copied[int(id_value)] = bytes.duplicate()
-		replay_recording_input_bytes += bytes.size()
-	return {"tick": tick, "inputs": copied}
-
 func record_frame(tick: int, frame_inputs: Dictionary) -> void:
 	if !replay_recording_active or replay_recording_saved or frame_inputs.is_empty():
 		return
-	replay_recording_frames.append(_raw_replay_frame(tick, frame_inputs))
+	if !replay_recording_stream.append_frame_inputs(tick, frame_inputs):
+		push_error("Replay recording rejected authoritative frame %d." % tick)
 
 func _write_replay_recording(reason: String, replay_dir: String) -> String:
-	var export_frames := _recording_frames_for_export()
-	if export_frames.is_empty():
+	var export_stream := _recording_stream_for_export()
+	if export_stream == null or export_stream.frame_count() <= 0:
 		return ""
 	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
 	if err != OK:
@@ -660,56 +645,39 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 		return ""
 	var metadata := replay_recording_metadata.duplicate(true)
 	metadata["saved_reason"] = reason
-	metadata["duration_ticks"] = export_frames.size()
+	metadata["duration_ticks"] = export_stream.frame_count()
 	metadata["finish_times"] = game_manager.network_manager.race_results.player_finish_times.duplicate(true)
 	metadata["finish_placements"] = game_manager.network_manager.race_results.player_finish_placements.duplicate(true)
 	metadata["eliminations"] = game_manager.network_manager.race_results.player_eliminations.duplicate(true)
 	var safe_track := str(metadata.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
 	var path := _unique_replay_path(replay_dir, safe_track)
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		push_warning("Replay save failed: %s" % str(FileAccess.get_open_error()))
-		return ""
+	var temporary_path := path + ".tmp"
 	game_manager.record_memory_sample("replay_save_begin")
-	file.store_string("{\n")
-	var metadata_keys := metadata.keys()
-	for key_index in range(metadata_keys.size()):
-		var key = metadata_keys[key_index]
-		file.store_string("\t%s: %s,\n" % [JSON.stringify(str(key)), JSON.stringify(metadata[key])])
-	file.store_string("\t\"frames\": [\n")
-	var encoded_frame_index := 0
-	for raw_frame in export_frames:
-		if typeof(raw_frame) != TYPE_DICTIONARY:
-			continue
-		var frame_dict: Dictionary = raw_frame
-		var raw_inputs = frame_dict.get("inputs", {})
-		if typeof(raw_inputs) != TYPE_DICTIONARY:
-			continue
-		if encoded_frame_index > 0:
-			file.store_string(",\n")
-		var encoded_frame := _encoded_replay_frame(int(frame_dict.get("tick", encoded_frame_index)), raw_inputs as Dictionary)
-		file.store_string("\t\t" + JSON.stringify(encoded_frame))
-		encoded_frame_index += 1
-	file.store_string("\n\t]\n}\n")
-	file.close()
-	var saved_frame_count := export_frames.size()
+	if !export_stream.write_file(temporary_path, metadata):
+		push_warning("Replay save failed: %s" % export_stream.get_last_error())
+		return ""
+	if DirAccess.rename_absolute(temporary_path, path) != OK:
+		DirAccess.remove_absolute(temporary_path)
+		push_warning("Replay save failed while committing %s" % path)
+		return ""
+	var saved_frame_count := export_stream.frame_count()
 	print("MXT_REPLAY saved ", path, " frames=", saved_frame_count)
 	game_manager.record_memory_sample("replay_save_complete")
 	return path
 
 
-func _recording_frames_for_export() -> Array:
+func _recording_stream_for_export() -> MxtReplayStream:
 	if game_manager.practice_controller.session_active and game_manager.practice_controller.timeline_enabled:
-		return game_manager.practice_controller.flatten_canonical_frames()
-	return replay_recording_frames
+		return game_manager.practice_controller.canonical_stream()
+	return replay_recording_stream
 
 
 func _unique_replay_path(replay_dir: String, safe_track: String) -> String:
 	var basename := "mxt_%s_%s" % [safe_track, _replay_make_stamp()]
-	var path := replay_dir.path_join(basename + ".replay.json")
+	var path := replay_dir.path_join(basename + REPLAY_FILE_SUFFIX)
 	var suffix := 2
 	while FileAccess.file_exists(path):
-		path = replay_dir.path_join("%s_%d.replay.json" % [basename, suffix])
+		path = replay_dir.path_join("%s_%d%s" % [basename, suffix, REPLAY_FILE_SUFFIX])
 		suffix += 1
 	return path
 
@@ -717,18 +685,13 @@ func _load_replay_file(path: String) -> Dictionary:
 	if !FileAccess.file_exists(path):
 		push_warning("Replay load failed: file not found: %s" % path)
 		return {}
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		push_warning("Replay load failed: %s" % str(FileAccess.get_open_error()))
-		return {}
-	replay_playback_source_bytes = file.get_length()
 	game_manager.record_memory_sample("replay_load_begin")
-	var text := file.get_as_text()
-	file.close()
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("Replay load failed: JSON root is not a dictionary.")
+	var stream := MxtReplayStream.new()
+	if !stream.load_file(path):
+		push_warning("Replay load failed: %s" % stream.get_last_error())
 		return {}
+	var parsed: Dictionary = stream.get_metadata()
+	replay_playback_source_bytes = int(stream.get_stats().get("source_bytes", 0))
 	if !_replay_schema_is_supported(parsed):
 		push_warning("Replay load refused: unsupported schema %s; expected schema %d." % [
 			str(parsed.get("schema_version", -1)),
@@ -745,6 +708,7 @@ func _load_replay_file(path: String) -> Dictionary:
 		])
 		return {}
 	game_manager.record_memory_sample("replay_load_parsed")
+	parsed["_replay_stream"] = stream
 	return parsed
 
 func _request_replay_playback_from_path(path: String) -> void:
@@ -785,90 +749,36 @@ func _on_replay_compatibility_confirmed() -> void:
 func _on_replay_compatibility_canceled() -> void:
 	pending_incompatible_replay_path = ""
 
-func _replay_metadata_json_without_frames(text: String) -> String:
-	var key_pos := text.find("\n\t\"frames\"")
-	if key_pos < 0:
-		key_pos = text.find("\"frames\"")
-	if key_pos < 0:
-		return text
-	var colon_pos := text.find(":", key_pos)
-	if colon_pos < 0:
-		return text
-	var array_start := text.find("[", colon_pos)
-	if array_start < 0:
-		return text
-	var array_end := text.find("\n\t]", array_start)
-	if array_end < 0:
-		return text
-	var remove_start := key_pos
-	var remove_end := array_end + 3
-	if remove_start > 0 and text.substr(remove_start - 1, 1) == ",":
-		remove_start -= 1
-	elif remove_end < text.length() and text.substr(remove_end, 1) == ",":
-		remove_end += 1
-	return text.substr(0, remove_start) + text.substr(remove_end)
-
 func _load_replay_metadata_file(path: String, profile: Dictionary = {}) -> Dictionary:
 	if path == "" or !FileAccess.file_exists(path):
 		return {}
 	var read_start_usec := Time.get_ticks_usec()
-	var text := FileAccess.get_file_as_string(path)
+	var stream := MxtReplayStream.new()
+	var loaded := stream.load_file(path, true)
 	profile["read_usec"] = Time.get_ticks_usec() - read_start_usec
-	profile["bytes"] = text.length()
-	if text == "":
+	var source_file := FileAccess.open(path, FileAccess.READ)
+	profile["bytes"] = source_file.get_length() if source_file != null else 0
+	profile["strip_frames_usec"] = 0
+	profile["parse_usec"] = 0
+	if !loaded:
 		return {}
-	var strip_start_usec := Time.get_ticks_usec()
-	var metadata_text := _replay_metadata_json_without_frames(text)
-	profile["strip_frames_usec"] = Time.get_ticks_usec() - strip_start_usec
-	var parse_start_usec := Time.get_ticks_usec()
-	var parsed = JSON.parse_string(metadata_text)
-	profile["parse_usec"] = Time.get_ticks_usec() - parse_start_usec
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return {}
-	return parsed as Dictionary
-
-func _decode_replay_frame(frame: Dictionary) -> Dictionary:
-	var out := {}
-	var raw_inputs = frame.get("inputs", {})
-	if typeof(raw_inputs) != TYPE_DICTIONARY:
-		return out
-	for id_value in (raw_inputs as Dictionary).keys():
-		out[int(id_value)] = Marshalls.base64_to_raw(str(raw_inputs[id_value]))
-	return out
+	return stream.get_metadata()
 
 
 func _decoded_replay_frame_at(frame_index: int) -> Dictionary:
-	if frame_index < 0 or frame_index >= replay_playback_frames.size():
+	if replay_playback_stream == null or frame_index < 0 or frame_index >= replay_playback_stream.frame_count():
 		return {}
-	if frame_index < replay_playback_decoded_frames.size() \
-			and typeof(replay_playback_decoded_frames[frame_index]) == TYPE_DICTIONARY:
-		return replay_playback_decoded_frames[frame_index] as Dictionary
-	var encoded_value = replay_playback_frames[frame_index]
-	if typeof(encoded_value) != TYPE_DICTIONARY:
-		return {}
-	var encoded: Dictionary = encoded_value
-	if int(encoded.get("tick", -1)) != frame_index:
-		return {}
-	var decoded := {
-		"tick": frame_index,
-		"inputs": _decode_replay_frame(encoded),
-	}
-	if frame_index < replay_playback_decoded_frames.size():
-		replay_playback_decoded_frames[frame_index] = decoded
-	return decoded
+	return replay_playback_stream.read_frame(frame_index)
 
 
 func _decoded_replay_frame_range(begin_index: int, end_index: int) -> Array:
 	var output: Array = []
-	begin_index = clampi(begin_index, 0, replay_playback_frames.size())
-	end_index = clampi(end_index, begin_index, replay_playback_frames.size())
-	output.resize(end_index - begin_index)
-	for frame_index in range(begin_index, end_index):
-		var frame := _decoded_replay_frame_at(frame_index)
-		if frame.is_empty():
-			return []
-		output[frame_index - begin_index] = frame
-	return output
+	if replay_playback_stream == null:
+		return output
+	return replay_playback_stream.read_frame_range(begin_index, end_index)
+
+func _playback_frame_count() -> int:
+	return replay_playback_stream.frame_count() if replay_playback_stream != null else 0
 
 func _replay_int_dictionary(source: Dictionary) -> Dictionary:
 	var out := {}
@@ -1074,7 +984,7 @@ func _replay_resume_eligibility() -> Dictionary:
 		return {"eligible": false, "reason": "The replay does not contain a complete recorded roster."}
 	if typeof(options_value) != TYPE_DICTIONARY:
 		return {"eligible": false, "reason": "The replay does not contain resumable race settings."}
-	if game_manager._singleplayer_tick < 0 or game_manager._singleplayer_tick > replay_playback_frames.size():
+	if game_manager._singleplayer_tick < 0 or game_manager._singleplayer_tick > _playback_frame_count():
 		return {"eligible": false, "reason": "The current replay cursor is unavailable."}
 	return {"eligible": true, "reason": "Continue from this exact frame as an unranked Practice session."}
 
@@ -1098,7 +1008,7 @@ func _on_replay_resume_practice_pressed() -> void:
 		replay_resume_keep_original_checkbox.custom_minimum_size = Vector2(0.0, 30.0)
 		replay_resume_dialog.add_child(replay_resume_keep_original_checkbox)
 		add_child(replay_resume_dialog)
-	var has_future := game_manager._singleplayer_tick < replay_playback_frames.size()
+	var has_future := game_manager._singleplayer_tick < _playback_frame_count()
 	replay_resume_keep_original_checkbox.button_pressed = has_future
 	replay_resume_keep_original_checkbox.disabled = !has_future
 	replay_resume_dialog.popup_centered(Vector2i(650, 210))
@@ -1126,14 +1036,6 @@ func _capture_replay_resume_payload(keep_original: bool) -> Dictionary:
 	var full_state: PackedByteArray = game_manager.game_sim.get_full_state_data(cursor)
 	if full_state.is_empty():
 		return {}
-	var prefix := _decoded_replay_frame_range(0, cursor)
-	if prefix.size() != cursor:
-		return {}
-	var source_frames: Array = []
-	if keep_original:
-		source_frames = _decoded_replay_frame_range(0, replay_playback_frames.size())
-		if source_frames.size() != replay_playback_frames.size():
-			return {}
 	return {
 		"transition_start_usec": transition_start_usec,
 		"cursor": cursor,
@@ -1143,8 +1045,8 @@ func _capture_replay_resume_payload(keep_original: bool) -> Dictionary:
 		"focused_player_id": _focused_replay_player_id(),
 		"track_index": replay_playback_track_index,
 		"metadata": replay_playback_source_metadata.duplicate(true),
-		"canonical_prefix": prefix,
-		"source_frames": source_frames,
+		"replay_stream": replay_playback_stream,
+		"canonical_prefix_count": cursor,
 		"keep_original_as_ghost": keep_original,
 	}
 
@@ -1188,7 +1090,7 @@ func _replay_marker_bucket(player_id: int) -> Dictionary:
 	return replay_timeline_markers[player_id]
 
 func _add_replay_timeline_marker(player_id: int, marker_type: String, tick_value: int) -> void:
-	tick_value = clampi(tick_value, 0, maxi(replay_playback_frames.size(), 1))
+	tick_value = clampi(tick_value, 0, maxi(_playback_frame_count(), 1))
 	var bucket := _replay_marker_bucket(player_id)
 	var key := marker_type
 	if !bucket.has(key):
@@ -1313,7 +1215,7 @@ func _reset_replay_timeline_markers() -> void:
 	_clear_replay_timeline_marker_nodes()
 
 func _timeline_marker_x(tick_value: int) -> float:
-	var total_ticks := maxf(float(maxi(replay_playback_frames.size(), 1)), 1.0)
+	var total_ticks := maxf(float(maxi(_playback_frame_count(), 1)), 1.0)
 	return replay_timeline_track.size.x * clampf(float(tick_value) / total_ticks, 0.0, 1.0)
 
 func _add_timeline_line_marker(x: float, width: float, height: float, bottom: float, color: Color) -> void:
@@ -1466,7 +1368,7 @@ func _on_replay_timeline_track_input(event: InputEvent) -> void:
 		return
 	var width := maxf(replay_timeline_track.size.x, 1.0)
 	var ratio := clampf(mouse_event.position.x / width, 0.0, 1.0)
-	_seek_replay_to_tick(roundi(ratio * float(maxi(replay_playback_frames.size(), 1))))
+	_seek_replay_to_tick(roundi(ratio * float(maxi(_playback_frame_count(), 1))))
 	_update_replay_timeline_controls()
 	get_viewport().set_input_as_handled()
 
@@ -1477,14 +1379,14 @@ func _step_replay_by_ticks(delta_ticks: int) -> void:
 		return
 	replay_playback_paused = true
 	_apply_replay_playback_clock()
-	var target_tick := clampi(game_manager._singleplayer_tick + delta_ticks, 0, replay_playback_frames.size())
+	var target_tick := clampi(game_manager._singleplayer_tick + delta_ticks, 0, _playback_frame_count())
 	if target_tick == game_manager._singleplayer_tick:
 		_update_replay_timeline_controls()
 		return
 	if target_tick < game_manager._singleplayer_tick:
 		_seek_replay_to_tick(target_tick, false)
 	else:
-		while game_manager._singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
+		while game_manager._singleplayer_tick < target_tick and replay_playback_index < _playback_frame_count():
 			if !simulate_playback(false, false, false):
 				break
 		_apply_replay_focus_to_local_visual()
@@ -1504,7 +1406,7 @@ func _update_replay_timeline_controls() -> void:
 		if replay_timeline_panel != null:
 			should_show = should_show or replay_timeline_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
 	replay_timeline_root.visible = should_show
-	var total_ticks := maxi(replay_playback_frames.size(), 1)
+	var total_ticks := maxi(_playback_frame_count(), 1)
 	var current_tick := clampi(game_manager._singleplayer_tick, 0, total_ticks)
 	var ratio := float(current_tick) / float(total_ticks)
 	if replay_timeline_fill != null and replay_timeline_track != null:
@@ -1550,7 +1452,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			_show_replay_compatibility_warning(path)
 			return
 	if replay_leaderboard_verify_requested:
-		replay_leaderboard_validation = LeaderboardReplayValidatorClass.validate(game_manager, replay)
+		replay_leaderboard_validation = LeaderboardReplayValidatorClass.validate(game_manager, replay, replay.get("_replay_stream"))
 		if !bool(replay_leaderboard_validation.get("valid", false)):
 			print("MXT_LEADERBOARD_VERIFY_FAIL ", JSON.stringify(replay_leaderboard_validation))
 			if game_manager.headless_mode:
@@ -1564,8 +1466,8 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		if game_manager.headless_mode:
 			get_tree().quit(1)
 		return
-	var frames = replay.get("frames", [])
-	if typeof(frames) != TYPE_ARRAY or (frames as Array).is_empty():
+	var loaded_stream = replay.get("_replay_stream")
+	if !(loaded_stream is MxtReplayStream) or (loaded_stream as MxtReplayStream).frame_count() <= 0:
 		push_warning("Replay load failed: replay has no frames.")
 		if game_manager.headless_mode:
 			get_tree().quit(1)
@@ -1589,11 +1491,9 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			cpu_flags.append(false)
 	var profile_validate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us
 	replay_playback_active = true
-	replay_playback_frames = frames as Array
-	replay_playback_decoded_frames.resize(replay_playback_frames.size())
-	replay_playback_decoded_frames.fill(null)
+	replay_playback_stream = loaded_stream as MxtReplayStream
 	replay_playback_source_metadata = replay.duplicate(true)
-	replay_playback_source_metadata.erase("frames")
+	replay_playback_source_metadata.erase("_replay_stream")
 	replay_playback_compatible = _replay_is_compatible(replay)
 	replay_playback_track_index = track_index
 	replay_playback_source_bytes = loaded_source_bytes
@@ -1675,7 +1575,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		"race_start_usec": profile_race_start_us,
 		"timeline_usec": profile_timeline_us,
 		"seek_checkpoint_bake_usec": profile_bake_us,
-		"frame_count": replay_playback_frames.size(),
+		"frame_count": _playback_frame_count(),
 		"racer_count": replay_playback_racer_ids.size(),
 	})
 	if replay_load_profile_requested:
@@ -1689,21 +1589,21 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			" race_start_us=", profile_race_start_us,
 			" timeline_us=", profile_timeline_us,
 			" bake_us=", profile_bake_us,
-			" frames=", replay_playback_frames.size(),
+			" frames=", _playback_frame_count(),
 			" racers=", replay_playback_racer_ids.size(),
 			" skip_bake=", replay_skip_seek_bake_requested)
-	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
+	print("MXT_REPLAY playback started ", path, " frames=", _playback_frame_count())
 	game_manager.record_memory_sample("replay_load_complete")
 	if game_manager.headless_mode:
 		var replay_fast_forward_start_us := Time.get_ticks_usec()
-		while replay_playback_active and replay_playback_index < replay_playback_frames.size():
+		while replay_playback_active and replay_playback_index < _playback_frame_count():
 			if !simulate_playback(false, false, false):
 				get_tree().quit(1)
 				return
 			if replay_strict_verify_requested:
 				game_manager._check_race_finished()
 		var replay_fast_forward_elapsed_us := Time.get_ticks_usec() - replay_fast_forward_start_us
-		var replay_frame_count := replay_playback_frames.size()
+		var replay_frame_count := _playback_frame_count()
 		print("MXT_REPLAY playback complete ", replay_playback_loaded_path,
 			" frames=", replay_frame_count,
 			" avg_tick_us=", int(float(replay_fast_forward_elapsed_us) / float(maxi(replay_frame_count, 1))))
@@ -1783,7 +1683,7 @@ func _bake_replay_seek_checkpoints() -> void:
 	_update_replay_placement_timeline_markers()
 	_update_replay_death_timeline_markers()
 	_capture_replay_seek_checkpoint(0)
-	while replay_playback_index < replay_playback_frames.size():
+	while replay_playback_index < _playback_frame_count():
 		if !simulate_playback(false, false, false):
 			break
 		if (game_manager._singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
@@ -1796,7 +1696,7 @@ func _bake_replay_seek_checkpoints() -> void:
 func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 	if !replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.has_method("load_full_state_data"):
 		return false
-	target_tick = clampi(target_tick, 0, replay_playback_frames.size())
+	target_tick = clampi(target_tick, 0, _playback_frame_count())
 	var checkpoint := _find_replay_seek_checkpoint(target_tick)
 	if checkpoint.is_empty():
 		return false
@@ -1811,7 +1711,7 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 	replay_playback_index = int(checkpoint.get("index", checkpoint_tick))
 	replay_input_display_frame_inputs = {}
 	replay_seeking_active = true
-	while game_manager._singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
+	while game_manager._singleplayer_tick < target_tick and replay_playback_index < _playback_frame_count():
 		if !simulate_playback(false, false, false):
 			break
 	replay_seeking_active = false
@@ -1831,7 +1731,7 @@ func should_enqueue_replay_race_notification() -> bool:
 func simulate_playback(handle_terminal_state: bool = true, respect_pause: bool = true, enqueue_event_notifications: bool = true) -> bool:
 	if respect_pause and replay_playback_paused:
 		return true
-	if replay_playback_index >= replay_playback_frames.size():
+	if replay_playback_index >= _playback_frame_count():
 		if handle_terminal_state:
 			print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
 			if game_manager.headless_mode:
@@ -2250,10 +2150,10 @@ func _profile_replay_catalog_and_quit() -> void:
 		dir.list_dir_begin()
 		var file_name := dir.get_next()
 		while file_name != "":
-			if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
+			if !dir.current_is_dir() and file_name.ends_with(REPLAY_FILE_SUFFIX):
 				var path := replay_dir.path_join(file_name)
-				var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-				if typeof(parsed) == TYPE_DICTIONARY:
+				var parsed := _load_replay_metadata_file(path)
+				if !parsed.is_empty():
 					full_parse_count += 1
 			file_name = dir.get_next()
 		dir.list_dir_end()
@@ -2292,7 +2192,7 @@ func _refresh_replay_catalog() -> void:
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
-		if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
+		if !dir.current_is_dir() and file_name.ends_with(REPLAY_FILE_SUFFIX):
 			var path := replay_dir.path_join(file_name)
 			var replay_profile := {"file": file_name}
 			var replay_start_usec := Time.get_ticks_usec()
@@ -2406,18 +2306,16 @@ func _on_replay_catalog_rename_pressed() -> void:
 	if entry.is_empty():
 		return
 	var path := str(entry.get("_path", ""))
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(parsed) != TYPE_DICTIONARY:
+	var stream := MxtReplayStream.new()
+	if !stream.load_file(path, true):
 		return
-	var data: Dictionary = parsed
+	var data: Dictionary = stream.get_metadata()
 	data["name"] = replay_catalog_name_edit.text.strip_edges()
 	if str(data["name"]) == "":
 		data["name"] = str(data.get("track_name", "Replay"))
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
+	if !stream.rewrite_metadata(path, data):
+		push_warning("Replay rename failed: %s" % stream.get_last_error())
 		return
-	file.store_string(JSON.stringify(data, "\t"))
-	file.close()
 	_refresh_replay_catalog()
 
 func _on_replay_catalog_delete_pressed() -> void:

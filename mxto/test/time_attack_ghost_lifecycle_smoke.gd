@@ -14,11 +14,11 @@ func _run() -> void:
 	if replay_path.is_empty() or !FileAccess.file_exists(replay_path):
 		_fail("--ghost-replay-path must identify a cached leaderboard replay")
 		return
-	var replay_value = JSON.parse_string(FileAccess.get_file_as_string(replay_path))
-	if typeof(replay_value) != TYPE_DICTIONARY:
+	var replay_stream := MxtReplayStream.new()
+	if !replay_stream.load_file(replay_path):
 		_fail("cached replay did not parse")
 		return
-	var replay: Dictionary = replay_value
+	var replay: Dictionary = replay_stream.get_metadata()
 	var packed := load("res://main.tscn") as PackedScene
 	if packed == null:
 		_fail("could not load main scene")
@@ -29,9 +29,15 @@ func _run() -> void:
 	for child in game_manager.get_children():
 		if child is Timer:
 			(child as Timer).stop()
-	var validation: Dictionary = ReplayValidatorClass.validate(game_manager, replay)
+	var validation: Dictionary = ReplayValidatorClass.validate(game_manager, replay, replay_stream)
 	if !bool(validation.get("valid", false)):
-		_fail("fixture replay is not canonical: %s" % String(validation.get("reason", "unknown")))
+		_fail("fixture replay is not canonical: %s metadata_ids=%s stream_ids=%s metadata_cpu=%s stream_cpu=%s" % [
+			String(validation.get("reason", "unknown")),
+			str(replay.get("racer_ids", [])),
+			str(replay_stream.get_roster_ids()),
+			str(replay.get("cpu_flags", [])),
+			str(replay_stream.get_cpu_flags()),
+		])
 		return
 	var track_index := game_manager.track_content_controller.track_index_for_id(String(replay.get("track_content_id", "")))
 	if track_index < 0:
@@ -43,7 +49,7 @@ func _run() -> void:
 		return
 	if !(await _exercise_practice_cpu_lifecycle(track_index, descriptor)):
 		return
-	if !_exercise_ranked_recording_matrix(track_index, descriptor, replay):
+	if !_exercise_ranked_recording_matrix(track_index, descriptor, replay, replay_stream):
 		return
 	if !_catalog_excludes_cache_files():
 		return
@@ -214,7 +220,7 @@ func _exercise_practice_cpu_lifecycle(track_index: int, descriptor: Dictionary) 
 	return true
 
 
-func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary, replay: Dictionary) -> bool:
+func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary, replay: Dictionary, replay_stream: MxtReplayStream) -> bool:
 	var racer_ids: Array = replay.get("racer_ids", [])
 	var settings: Array = replay.get("settings", [])
 	var grid_values: Array = replay.get("start_grid_slots", [])
@@ -239,12 +245,11 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 		game_manager.replay_controller.start_recording(track_index, settings, racer_ids, [false], grid_slots)
 		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.duplicate(true)
 		candidate["saved_reason"] = "time_attack_submission"
-		candidate["frames"] = (replay.get("frames", []) as Array).duplicate(true)
 		candidate["duration_ticks"] = int(replay.get("duration_ticks", 0))
 		candidate["finish_times"] = (replay.get("finish_times", {}) as Dictionary).duplicate(true)
 		candidate["finish_placements"] = (replay.get("finish_placements", {}) as Dictionary).duplicate(true)
 		candidate["eliminations"] = (replay.get("eliminations", {}) as Dictionary).duplicate(true)
-		var candidate_validation: Dictionary = ReplayValidatorClass.validate(game_manager, candidate)
+		var candidate_validation: Dictionary = ReplayValidatorClass.validate(game_manager, candidate, replay_stream)
 		if !bool(candidate_validation.get("valid", false)):
 			_fail("%d-ghost ranked replay is noncanonical: %s" % [ghost_count, String(candidate_validation.get("reason", "unknown"))])
 			return false

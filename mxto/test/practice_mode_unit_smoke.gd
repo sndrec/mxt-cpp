@@ -1,6 +1,5 @@
 extends SceneTree
 
-const TimelineClass = preload("res://practice/practice_replay_timeline.gd")
 const PlayerInputClass = preload("res://player/player_input.gd")
 const TRACK_RELATIVE := "../export-bin/track/surface_slide/track.mxt_track"
 const CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
@@ -23,34 +22,30 @@ func _run() -> void:
 
 
 func _exercise_timeline_branches() -> bool:
-	var timeline = TimelineClass.new()
-	timeline.begin()
+	var timeline := MxtReplayStream.new()
+	timeline.begin_recording([4], [false])
 	for tick in range(70):
-		if !timeline.append_frame(tick, {4: PackedByteArray([tick & 0xff])}):
+		if !timeline.append_frame_inputs(tick, {4: PackedByteArray([1, tick & 0xff])}):
 			return _fail("canonical timeline rejected prefix tick %d" % tick)
 	var branch_a := timeline.retain_head()
 	for tick in range(70, 150):
-		timeline.append_frame(tick, {4: PackedByteArray([tick & 0xff])})
+		timeline.append_frame_inputs(tick, {4: PackedByteArray([1, tick & 0xff])})
 	var branch_b := timeline.retain_head()
 	if !timeline.restore_head(branch_a):
 		return _fail("canonical timeline could not restore the first retained head")
 	for tick in range(70, 91):
-		timeline.append_frame(tick, {4: PackedByteArray([(255 - tick) & 0xff])})
-	var authored := timeline.flatten_frames()
-	if authored.size() != 91 or int(((authored[90] as Dictionary)["inputs"] as Dictionary)[4][0]) != 165:
+		timeline.append_frame_inputs(tick, {4: PackedByteArray([1, (255 - tick) & 0xff])})
+	var authored := timeline.read_frame_range(0, timeline.frame_count())
+	if authored.size() != 91 or int(((authored[90] as Dictionary)["inputs"] as Dictionary)[4][1]) != 165:
 		return _fail("canonical branch extension did not preserve its independent suffix")
 	if !timeline.restore_head(branch_b):
 		return _fail("canonical timeline lost the second retained branch")
-	var original := timeline.flatten_frames()
-	if original.size() != 150 or int(((original[90] as Dictionary)["inputs"] as Dictionary)[4][0]) != 90:
+	var original := timeline.read_frame_range(0, timeline.frame_count())
+	if original.size() != 150 or int(((original[90] as Dictionary)["inputs"] as Dictionary)[4][1]) != 90:
 		return _fail("restoring one branch mutated another retained branch")
-	var seeded := TimelineClass.new()
-	if !seeded.seed_frames(original) or seeded.frame_count() != 150 or seeded.input_byte_count() != 150:
+	var seeded := MxtReplayStream.new()
+	if !seeded.copy_prefix_from(timeline, 150) or seeded.frame_count() != 150 or seeded.input_byte_count() != 300:
 		return _fail("decoded replay prefix did not seed the canonical timeline exactly")
-	var invalid := original.duplicate(true)
-	(invalid[12] as Dictionary)["tick"] = 99
-	if seeded.seed_frames(invalid) or seeded.frame_count() != 0:
-		return _fail("noncanonical replay prefix was accepted")
 	return true
 
 

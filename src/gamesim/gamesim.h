@@ -32,6 +32,7 @@
 namespace godot {
 
 	class NetcodeSession;
+	class MxtReplayStream;
 	class MxtSpatialAudioManager;
 	class FinishLineDisplay;
 	struct CollisionSparkRuntime;
@@ -40,6 +41,7 @@ namespace godot {
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
 		friend class NetcodeSession;
+		friend class MxtReplayStream;
 
 	private:
 		int tick;

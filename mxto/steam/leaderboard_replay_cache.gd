@@ -3,6 +3,7 @@ class_name LeaderboardReplayCache extends Node
 signal request_completed(token: int, result: Dictionary)
 
 const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
+const LegacyLeaderboardReplayReaderClass = preload("res://steam/legacy_leaderboard_replay_reader.gd")
 const CACHE_ROOT := "user://leaderboard_replays"
 const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 
@@ -82,7 +83,8 @@ func _build_request(board_name: String, entry: Dictionary) -> Dictionary:
 		"trusted_details": details,
 		"replay_sha256": replay_digest,
 		"digest_hex": digest_hex,
-		"cache_path": cache_root.path_join(digest_hex + ".replay.json"),
+		"source_path": cache_root.path_join(digest_hex + ".attachment"),
+		"cache_path": cache_root.path_join(digest_hex + ".mxt_replay"),
 		"validation_key": _validation_key(board_name, details),
 	}
 
@@ -118,14 +120,17 @@ func _pump_queue() -> void:
 			continue
 		active_digest = digest
 		active_download_context = _first_waiting_request(digest)
-		var cache_path := String(active_download_context.get("cache_path", ""))
-		if FileAccess.file_exists(cache_path):
-			var cached_bytes := FileAccess.get_file_as_bytes(cache_path)
+		var source_path := String(active_download_context.get("source_path", ""))
+		if FileAccess.file_exists(source_path):
+			var cached_bytes := FileAccess.get_file_as_bytes(source_path)
 			var retry_download := _complete_waiters_from_bytes(digest, cached_bytes, true)
 			if !retry_download:
 				_finish_active_digest()
 				return
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(source_path))
+			var stale_cache_path := String(active_download_context.get("cache_path", ""))
+			if FileAccess.file_exists(stale_cache_path):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(stale_cache_path))
 		if steam_service == null or !steam_service.is_initialized():
 			_fail_waiters(digest, _failure("steam_offline"))
 			_finish_active_digest()
@@ -173,14 +178,19 @@ func _complete_waiters_from_bytes(digest: String, bytes: PackedByteArray, cache_
 		var request: Dictionary = request_value
 		var validation := _validate_replay(bytes, request)
 		if bool(validation.get("valid", false)):
-			validated_session_requests[String(request.get("validation_key", ""))] = validation.duplicate(true)
+			if !_materialize_binary_cache(request, bytes, validation):
+				_complete_request(token, _failure("cache_write_failed"))
+				_remove_waiter(digest, token)
+				continue
+			var public_validation := _public_validation(validation)
+			validated_session_requests[String(request.get("validation_key", ""))] = public_validation
 			if cache_hit:
 				cache_hit_count += 1
 			_complete_request(token, _success(
 				request,
 				String(request.get("cache_path", "")),
 				cache_hit,
-				validation))
+				public_validation))
 			_remove_waiter(digest, token)
 		elif cache_hit and _cache_failure_can_redownload(String(validation.get("reason", ""))):
 			retry_download = true
@@ -194,6 +204,7 @@ func _complete_downloaded_waiters(digest: String, bytes: PackedByteArray) -> voi
 	var waiter_tokens := _waiter_tokens(digest)
 	var validations: Dictionary = {}
 	var has_valid_request := false
+	var warm_validation: Dictionary = {}
 	for token in waiter_tokens:
 		var request_value = requests_by_token.get(token, {})
 		if typeof(request_value) != TYPE_DICTIONARY or (request_value as Dictionary).is_empty():
@@ -206,11 +217,15 @@ func _complete_downloaded_waiters(digest: String, bytes: PackedByteArray) -> voi
 	# flight. Validate against the captured request so the completed transfer can
 	# still warm the digest cache without re-selecting or notifying that row.
 	if waiter_tokens.is_empty() and !active_download_context.is_empty():
-		has_valid_request = bool(_validate_replay(bytes, active_download_context).get("valid", false))
+		warm_validation = _validate_replay(bytes, active_download_context)
+		has_valid_request = bool(warm_validation.get("valid", false))
 
-	var cache_path := String(active_download_context.get("cache_path", ""))
-	if has_valid_request and !_write_cache_atomically(cache_path, bytes):
+	var source_path := String(active_download_context.get("source_path", ""))
+	if has_valid_request and !_write_cache_atomically(source_path, bytes):
 		_fail_waiters(digest, _failure("cache_write_failed"))
+		return
+	if waiter_tokens.is_empty() and has_valid_request \
+			and !_materialize_binary_cache(active_download_context, bytes, warm_validation):
 		return
 	for token in waiter_tokens:
 		var request_value = requests_by_token.get(token, {})
@@ -221,8 +236,13 @@ func _complete_downloaded_waiters(digest: String, bytes: PackedByteArray) -> voi
 		var validation_value = validations.get(token, {})
 		var validation: Dictionary = validation_value if typeof(validation_value) == TYPE_DICTIONARY else {}
 		if bool(validation.get("valid", false)):
-			validated_session_requests[String(request.get("validation_key", ""))] = validation.duplicate(true)
-			_complete_request(token, _success(request, cache_path, false, validation))
+			if !_materialize_binary_cache(request, bytes, validation):
+				_complete_request(token, _failure("cache_write_failed"))
+				_remove_waiter(digest, token)
+				continue
+			var public_validation := _public_validation(validation)
+			validated_session_requests[String(request.get("validation_key", ""))] = public_validation
+			_complete_request(token, _success(request, String(request.get("cache_path", "")), false, public_validation))
 		else:
 			_complete_request(token, _validation_failure(validation))
 		_remove_waiter(digest, token)
@@ -237,10 +257,11 @@ func _validate_replay(bytes: PackedByteArray, request: Dictionary) -> Dictionary
 	var details: Dictionary = details_value
 	if _sha256(bytes) != String(details.get("replay_sha256", "")):
 		return {"valid": false, "reason": "replay_digest_mismatch"}
-	var replay_value = JSON.parse_string(bytes.get_string_from_utf8())
-	if typeof(replay_value) != TYPE_DICTIONARY:
-		return {"valid": false, "reason": "invalid_replay_json"}
-	var validation: Dictionary = ReplayValidatorClass.validate(game_manager, replay_value as Dictionary)
+	var validation: Dictionary
+	if _has_binary_magic(bytes):
+		validation = _validate_binary_attachment(bytes)
+	else:
+		validation = LegacyLeaderboardReplayReaderClass.convert(game_manager, bytes)
 	if !bool(validation.get("valid", false)):
 		return validation
 	if String(validation.get("board_name", "")) != String(request.get("board_name", "")) \
@@ -254,6 +275,62 @@ func _validate_replay(bytes: PackedByteArray, request: Dictionary) -> Dictionary
 			and int(validation.get("machine_setting_percent", -2)) != trusted_machine_setting:
 		return {"valid": false, "reason": "trusted_metadata_mismatch"}
 	return validation
+
+
+func _has_binary_magic(bytes: PackedByteArray) -> bool:
+	return bytes.size() >= 8 and bytes[0] == 77 and bytes[1] == 88 and bytes[2] == 84 \
+		and bytes[3] == 82 and bytes[4] == 80 and bytes[5] == 76 and bytes[6] == 89 and bytes[7] == 0
+
+
+func _validate_binary_attachment(bytes: PackedByteArray) -> Dictionary:
+	if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cache_root)) != OK:
+		return {"valid": false, "reason": "cache_write_failed"}
+	var temporary_path := cache_root.path_join("validate_%d_%d.tmp" % [Time.get_ticks_usec(), randi()])
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		return {"valid": false, "reason": "cache_write_failed"}
+	file.store_buffer(bytes)
+	file.close()
+	var stream := MxtReplayStream.new()
+	var loaded := stream.load_file(temporary_path)
+	var metadata := stream.get_metadata() if loaded else {}
+	var validation := ReplayValidatorClass.validate(game_manager, metadata, stream) if loaded else {
+		"valid": false,
+		"reason": "invalid_binary_replay",
+	}
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary_path))
+	if bool(validation.get("valid", false)):
+		validation["_legacy_attachment"] = false
+	return validation
+
+
+func _materialize_binary_cache(request: Dictionary, source_bytes: PackedByteArray, validation: Dictionary) -> bool:
+	var cache_path := String(request.get("cache_path", ""))
+	if FileAccess.file_exists(cache_path) and MxtReplayStream.path_has_binary_magic(cache_path):
+		var cached_stream := MxtReplayStream.new()
+		if cached_stream.load_file(cache_path):
+			return true
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
+	if bool(validation.get("_legacy_attachment", false)):
+		var stream: MxtReplayStream = validation.get("_native_stream")
+		var metadata_value = validation.get("_native_metadata", {})
+		if stream == null or typeof(metadata_value) != TYPE_DICTIONARY:
+			return false
+		var temporary_path := cache_path + ".tmp"
+		if !stream.write_file(temporary_path, metadata_value as Dictionary):
+			return false
+		if FileAccess.file_exists(cache_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
+		return DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary_path), ProjectSettings.globalize_path(cache_path)) == OK
+	return _write_cache_atomically(cache_path, source_bytes)
+
+
+func _public_validation(validation: Dictionary) -> Dictionary:
+	var output := validation.duplicate(false)
+	output.erase("_native_stream")
+	output.erase("_native_metadata")
+	output.erase("_legacy_attachment")
+	return output
 
 
 func _write_cache_atomically(path: String, bytes: PackedByteArray) -> bool:
@@ -332,7 +409,8 @@ func _first_waiting_request(digest: String) -> Dictionary:
 func _cache_failure_can_redownload(reason: String) -> bool:
 	return reason == "invalid_replay_size" \
 		or reason == "replay_digest_mismatch" \
-		or reason == "invalid_replay_json"
+		or reason == "invalid_legacy_leaderboard_replay" \
+		or reason == "invalid_binary_replay"
 
 
 func _success(request: Dictionary, cache_path: String, cache_hit: bool, validation: Dictionary) -> Dictionary:

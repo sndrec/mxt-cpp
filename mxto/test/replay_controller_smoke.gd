@@ -37,10 +37,10 @@ func _run() -> void:
 	var replay := game_manager.replay_controller as ReplayController
 	replay._start_replay_playback_from_path(replay_path)
 	replay.replay_playback_paused = true
-	if !replay.replay_playback_active or replay.replay_playback_frames.is_empty():
+	if !replay.replay_playback_active or replay._playback_frame_count() <= 0:
 		_fail("playback did not start")
 		return
-	var total_ticks := replay.replay_playback_frames.size()
+	var total_ticks := replay._playback_frame_count()
 	var seek_tick := maxi(1, total_ticks / 2)
 	if !replay._seek_replay_to_tick(seek_tick, false):
 		_fail("seek failed")
@@ -71,12 +71,13 @@ func _run() -> void:
 	if replay.replay_catalog_entries.is_empty():
 		_fail("catalog did not discover replay metadata")
 		return
-	replay.replay_recording_frames.clear()
+	replay.replay_recording_stream = MxtReplayStream.new()
+	replay.replay_recording_stream.begin_recording([77], [false])
 	replay.replay_recording_active = true
 	replay.replay_recording_saved = false
-	var frame_input := PackedByteArray([1, 2, 3, 4])
-	replay.record_frame(123, {77: frame_input})
-	if replay.replay_recording_frames.size() != 1:
+	var frame_input := PackedByteArray([0])
+	replay.record_frame(0, {77: frame_input})
+	if replay.replay_recording_stream.frame_count() != 1:
 		_fail("authoritative frame was not recorded")
 		return
 	replay.replay_recording_active = false

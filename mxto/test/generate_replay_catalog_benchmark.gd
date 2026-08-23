@@ -50,7 +50,7 @@ func _existing_suite_samples(replay_controller) -> Dictionary:
 	directory.list_dir_begin()
 	var file_name := directory.get_next()
 	while !file_name.is_empty():
-		if !directory.current_is_dir() and file_name.ends_with(".replay.json"):
+		if !directory.current_is_dir() and file_name.ends_with(".mxt_replay"):
 			var path := replay_dir.path_join(file_name)
 			var metadata: Dictionary = replay_controller._load_replay_metadata_file(path)
 			if String(metadata.get("benchmark_suite", "")) == SUITE_ID:

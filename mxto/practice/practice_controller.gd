@@ -1,7 +1,6 @@
 class_name PracticeController
 extends Node
 
-const TimelineClass = preload("res://practice/practice_replay_timeline.gd")
 const InputEditorClass = preload("res://practice/practice_input_editor.gd")
 
 signal session_started(options: Dictionary)
@@ -85,7 +84,9 @@ var hud_root: CanvasLayer
 var hud_label: Label
 var input_editor_root: CanvasLayer
 var input_editor: InputEditorClass
-var timeline: TimelineClass = TimelineClass.new()
+var timeline: MxtReplayStream = MxtReplayStream.new()
+var timeline_racer_ids: Array = []
+var timeline_cpu_flags: Array = []
 var timeline_enabled := false
 var manual_input_mode := false
 var input_editor_visible := false
@@ -143,7 +144,6 @@ func initialize(
 		input_editor.capture_live_requested.connect(capture_current_live_input)
 		input_editor.rewind_requested.connect(request_frame_rewind)
 		input_editor.step_requested.connect(request_frame_advance)
-	timeline.begin()
 	_update_game_speed_button()
 	_update_input_controls()
 	_reset_session_storage()
@@ -163,7 +163,12 @@ func begin_session(options: Dictionary) -> bool:
 	session_options = options.duplicate(true)
 	local_player_id_override = int(options.get("practice_local_player_id", -1))
 	timeline_enabled = int(options.get("lap_count", 3)) > 0
-	timeline.begin()
+	timeline = MxtReplayStream.new()
+	if timeline_enabled:
+		timeline.begin_recording(timeline_racer_ids, timeline_cpu_flags)
+		if !timeline.get_last_error().is_empty():
+			push_error("Practice timeline rejected its replay roster: %s" % timeline.get_last_error())
+			return false
 	session_active = true
 	session_completed = false
 	pause_freeze_active = false
@@ -217,7 +222,7 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	frame_stick_direction = 0
 	pause_speed_stick_direction = 0
 	_reset_session_storage()
-	timeline.begin()
+	timeline = MxtReplayStream.new()
 	manual_input_mode = false
 	input_editor_visible = false
 	telemetry_mode = TelemetryMode.OFF
@@ -256,13 +261,18 @@ func finish_replay_resume_transition(transition_start_usec: int) -> void:
 	replay_resume_transition_usec = maxi(Time.get_ticks_usec() - transition_start_usec, 0)
 
 
-func begin_resumed_session(options: Dictionary, focused_player_id: int, canonical_prefix: Array, transition_start_usec: int) -> bool:
+func configure_timeline_roster(racer_ids: Array, cpu_flags: Array) -> void:
+	timeline_racer_ids = racer_ids.duplicate(true)
+	timeline_cpu_flags = cpu_flags.duplicate(true)
+
+
+func begin_resumed_session(options: Dictionary, focused_player_id: int, source_stream: MxtReplayStream, canonical_prefix_count: int, transition_start_usec: int) -> bool:
 	var resumed_options := options.duplicate(true)
 	resumed_options["practice_local_player_id"] = focused_player_id
 	resumed_options["resumed_from_replay"] = true
 	if !begin_session(resumed_options):
 		return false
-	if timeline_enabled and !timeline.seed_frames(canonical_prefix):
+	if timeline_enabled and (source_stream == null or !timeline.copy_prefix_from(source_stream, canonical_prefix_count)):
 		end_session()
 		return false
 	game_speed_index = 0
@@ -275,8 +285,8 @@ func begin_resumed_session(options: Dictionary, focused_player_id: int, canonica
 	return true
 
 
-func append_canonical_frame(tick: int, frame_inputs: Dictionary) -> bool:
-	return session_active and timeline_enabled and timeline.append_frame(tick, frame_inputs)
+func append_canonical_game_sim_frame(game_sim: GameSim, tick: int) -> bool:
+	return session_active and timeline_enabled and timeline.append_game_sim_frame(game_sim, tick)
 
 
 func canonical_frame_count() -> int:
@@ -287,8 +297,8 @@ func canonical_input_byte_count() -> int:
 	return timeline.input_byte_count() if session_active and timeline_enabled else 0
 
 
-func flatten_canonical_frames() -> Array:
-	return timeline.flatten_frames() if session_active and timeline_enabled else []
+func canonical_stream() -> MxtReplayStream:
+	return timeline if session_active and timeline_enabled else null
 
 
 func resolve_local_input(live_input_bytes: PackedByteArray) -> PackedByteArray:
@@ -556,7 +566,7 @@ func diagnostic_snapshot() -> Dictionary:
 		"engine_time_scale": Engine.time_scale,
 		"engine_physics_ticks_per_second": Engine.physics_ticks_per_second,
 	}
-	output["timeline"] = timeline.diagnostic_snapshot()
+	output["timeline"] = timeline.get_stats()
 	output["manual_input"] = manual_input_mode
 	output["manual_round_trip_valid"] = input_editor.last_round_trip_valid if input_editor != null else true
 	output["telemetry_mode"] = telemetry_mode

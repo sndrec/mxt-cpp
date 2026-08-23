@@ -28,13 +28,13 @@ func _run() -> void:
 	game_manager.replay_controller.replay_skip_seek_bake_requested = true
 	game_manager.replay_controller._start_replay_playback_from_path(replay_path)
 	var replay := game_manager.replay_controller
-	if !replay.replay_playback_active or replay.replay_playback_frames.size() < 4:
+	if !replay.replay_playback_active or replay._playback_frame_count() < 4:
 		_fail("replay playback did not start")
 		return
 	var requested_focus := int(_argument_value("--focus-index")) if !_argument_value("--focus-index").is_empty() else 0
 	replay.replay_playback_focus_index = clampi(requested_focus, 0, replay.replay_playback_racer_ids.size() - 1)
 	replay._apply_replay_focus_to_local_visual()
-	var source_frame_count := replay.replay_playback_frames.size()
+	var source_frame_count := replay._playback_frame_count()
 	if _argument_value("--expect-completed-disabled") == "true":
 		if !replay._seek_replay_to_tick(source_frame_count, false):
 			_fail("completed replay could not seek to its terminal cursor")
@@ -54,8 +54,11 @@ func _run() -> void:
 		_fail("replay could not seek to the resume cursor")
 		return
 	if partial_end:
-		replay.replay_playback_frames.resize(cursor)
-		replay.replay_playback_decoded_frames.resize(cursor)
+		var partial_stream := MxtReplayStream.new()
+		if !partial_stream.copy_prefix_from(replay.replay_playback_stream, cursor):
+			_fail("partial replay stream could not be constructed")
+			return
+		replay.replay_playback_stream = partial_stream
 		replay.replay_playback_index = cursor
 	var eligibility: Dictionary = replay._replay_resume_eligibility()
 	if !bool(eligibility.get("eligible", false)):

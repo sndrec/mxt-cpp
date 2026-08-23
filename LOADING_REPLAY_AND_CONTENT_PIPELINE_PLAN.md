@@ -2,9 +2,9 @@
 
 ## Status
 
-In progress. Phases A through F are complete; Phase G is next. This document is the implementation
-contract for the loading-performance, binary-replay, lobby-rendering, and
-Workshop-refresh work described below.
+In progress. Phases A through G are complete; final integrated verification is in
+progress. This document is the implementation contract for the loading-performance,
+binary-replay, lobby-rendering, and Workshop-refresh work described below.
 
 Execute it with a short goal such as:
 
@@ -535,7 +535,9 @@ be independently blockable and bounded; do not wrap the entire file in one strea
 - Update local save/watch, multiplayer host autosave, staged Time Attack replay,
   leaderboard submission, leaderboard download/cache, ghosts, replay catalog,
   strict verifier, debug tooling where appropriate, and Practice continuation.
-- Bump replay format/schema and the relevant Time Attack ruleset identity.
+- Bump replay format/schema. The schema already participates in trusted leaderboard
+  details; do not create new Steam boards by bumping the Time Attack ruleset when
+  gameplay and ranked rules are unchanged.
 - Remove the general runtime `.replay.json` reader and the JSON writer in the same
   completed phase.
 - Route trusted leaderboard attachments through a separate, read-only legacy decode
@@ -557,6 +559,44 @@ be independently blockable and bounded; do not wrap the entire file in one strea
   fail safely before unsafe allocation or playback.
 - A binary replay produces the same deterministic verification result as its source
   input stream.
+
+### Phase G results
+
+- Added the native `MxtReplayStream` container and cut recording, local saves,
+  multiplayer host autosaves, playback, seeking, ghosts, Practice branching and
+  continuation, replay catalogs, Time Attack submission, download caching, and
+  authoritative game-side verification over together to `.mxt_replay`.
+- Files use a fixed little-endian header, roster-slot input encoding, independently
+  checksummed 256-tick zstd blocks, a checksummed block index, and bounded section
+  validation before allocation. Metadata capacity is an implicit bounded power of
+  two from 16 KiB through 16 MiB, allowing in-place renames without imposing the
+  100-racer failure or a large fixed overhead on small files.
+- Removed the general JSON/base64 replay writer and reader. Old local JSON files are
+  ignored. A dedicated `LegacyLeaderboardReplayReader` is the sole legacy boundary:
+  it accepts only digest-authenticated Steam attachments supplied by the leaderboard
+  cache, validates their ranked identity and canonical inputs, then materializes a
+  current binary cache file. New leaderboard submissions are binary.
+- Practice branches retain shared native timeline heads and replay continuation
+  copies native prefixes. Ghost input extraction is native and no longer constructs
+  one Dictionary or decodes one base64 string per stored tick.
+- Corruption smokes rejected invalid magic, truncation, section bounds, metadata,
+  roster, index, frame-section and compressed-block checksums. Binary deterministic
+  playback, leaderboard validation, 0/1/2/4-ghost lifecycle, legacy attachment
+  conversion, and Practice continuation all completed successfully.
+- Ten headless Twist Road samples at each roster size produced these medians:
+
+  | Racers | Simulation | Save | File size |
+  | ---: | ---: | ---: | ---: |
+  | 6 | 198.91 ms | 5.33 ms | 124,821 bytes |
+  | 15 | 383.68 ms | 10.15 ms | 215,440 bytes |
+  | 30 | 404.80 ms | 16.81 ms | 372,439 bytes |
+  | 100 | 921.20 ms | 51.71 ms | 1,259,312 bytes |
+
+- The complete 40-file binary corpus occupies 19,753,286 bytes. Its measured catalog
+  refresh was 88.114 ms, below the 100 ms acceptance target and far below the
+  0.53-0.56 second metadata scan / 7.35 second full parse of the former JSON corpus.
+  Catalog reads stop after each bounded metadata section and never decompress frame
+  blocks.
 
 ## Verification Strategy
 

@@ -26,6 +26,16 @@ static func _is_empty_dictionary(value) -> bool:
 static func _is_empty_array(value) -> bool:
 	return typeof(value) == TYPE_ARRAY and (value as Array).is_empty()
 
+static func _native_roster_matches(stream: MxtReplayStream, racer_ids: Array, cpu_flags: Array) -> bool:
+	var native_ids := stream.get_roster_ids()
+	var native_cpu_flags := stream.get_cpu_flags()
+	if native_ids.size() != racer_ids.size() or native_cpu_flags.size() != cpu_flags.size():
+		return false
+	for index in range(racer_ids.size()):
+		if int(native_ids[index]) != int(racer_ids[index]) or bool(native_cpu_flags[index]) != bool(cpu_flags[index]):
+			return false
+	return true
+
 static func _runtime_flags_are_clean(replay: Dictionary) -> bool:
 	var flags_value = replay.get("runtime_flags", {})
 	if typeof(flags_value) != TYPE_DICTIONARY:
@@ -37,7 +47,7 @@ static func _runtime_flags_are_clean(replay: Dictionary) -> bool:
 		and !bool(flags.get("debug_bumper_smoke", true)) \
 		and !bool(flags.get("debug_rail_trace", true))
 
-static func _frames_are_canonical(frames: Array, racer_id: int) -> bool:
+static func legacy_frames_are_canonical(frames: Array, racer_id: int) -> bool:
 	if frames.is_empty():
 		return false
 	var string_id := str(racer_id)
@@ -55,7 +65,7 @@ static func _frames_are_canonical(frames: Array, racer_id: int) -> bool:
 			return false
 	return true
 
-static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionary:
+static func validate(game_manager: GameManager, replay: Dictionary, replay_stream: MxtReplayStream = null) -> Dictionary:
 	if String(replay.get("source", "")) != "singleplayer" or String(replay.get("mode", "")) != "Time Attack":
 		return reject("not_singleplayer_time_attack")
 	if String(replay.get("saved_reason", "")) != "time_attack_submission":
@@ -141,21 +151,28 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		or String(player.get("vehicle_gameplay_digest", "")) != vehicle_digest:
 		return reject("vehicle_identity_mismatch")
 
-	var frames_value = replay.get("frames", [])
-	if typeof(frames_value) != TYPE_ARRAY:
-		return reject("noncanonical_frames")
-	var frames: Array = frames_value
-	if frames.size() > MAX_REPLAY_TICKS:
+	var frame_count := 0
+	if replay_stream != null:
+		if !_native_roster_matches(replay_stream, racer_ids, cpu_flags):
+			return reject("invalid_roster")
+		frame_count = replay_stream.frame_count()
+	else:
+		var frames_value = replay.get("frames", [])
+		if typeof(frames_value) != TYPE_ARRAY:
+			return reject("noncanonical_frames")
+		var frames: Array = frames_value
+		if !legacy_frames_are_canonical(frames, racer_id):
+			return reject("noncanonical_frames")
+		frame_count = frames.size()
+	if frame_count > MAX_REPLAY_TICKS:
 		return reject("replay_too_long")
-	if !_frames_are_canonical(frames, racer_id):
-		return reject("noncanonical_frames")
-	if int(replay.get("duration_ticks", -1)) != frames.size():
+	if frame_count <= 0 or int(replay.get("duration_ticks", -1)) != frame_count:
 		return reject("duration_mismatch")
 	var finish_times_value = replay.get("finish_times", {})
 	if typeof(finish_times_value) != TYPE_DICTIONARY:
 		return reject("invalid_finish_result")
 	var finish_tick := _dictionary_int(finish_times_value as Dictionary, racer_id)
-	if finish_tick <= 0 or finish_tick > frames.size():
+	if finish_tick <= 0 or finish_tick > frame_count:
 		return reject("invalid_finish_tick")
 	if !_single_id_dictionary_matches(replay.get("finish_times", {}), racer_id, finish_tick) \
 		or !_single_id_dictionary_matches(replay.get("finish_placements", {}), racer_id, 1):

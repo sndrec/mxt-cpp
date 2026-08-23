@@ -82,7 +82,7 @@ class ReplayVerifier:
         try:
             with tempfile.NamedTemporaryFile(
                 mode="wb",
-                suffix=".replay.json",
+                suffix=".mxt_replay",
                 prefix="mxt_leaderboard_",
                 dir=self.temporary_directory,
                 delete=False,

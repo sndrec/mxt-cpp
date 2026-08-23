@@ -2,7 +2,6 @@ class_name TimeAttackGhostController extends Node
 
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const MAX_GHOSTS := 4
-const MAX_ENCODED_INPUT_BYTES := 8
 const FADE_SECONDS := 0.75
 const BASE_TRANSPARENCY := 0.48
 const TINT_STRENGTH := 0.32
@@ -76,7 +75,7 @@ func prepare(descriptors: Array, track_index: int) -> Dictionary:
 	return {"success": true, "ghost_count": prepared_slots.size()}
 
 
-func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_player_id: int, track_index: int) -> Dictionary:
+func prepare_original_replay(metadata: Dictionary, replay_stream: MxtReplayStream, focused_player_id: int, track_index: int) -> Dictionary:
 	teardown_runtime()
 	prepared_slots.clear()
 	prepared_track_index = -1
@@ -89,7 +88,7 @@ func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_pl
 	if typeof(racer_ids_value) != TYPE_ARRAY or typeof(settings_value) != TYPE_ARRAY \
 			or (racer_ids_value as Array).is_empty() \
 			or (racer_ids_value as Array).size() != (settings_value as Array).size() \
-			or raw_frames.is_empty():
+			or replay_stream == null or replay_stream.frame_count() <= 0:
 		return _prepare_failure("original_replay_invalid", "The original replay cannot be continued as a ghost.")
 	var racer_ids: Array = []
 	for id_value in racer_ids_value as Array:
@@ -116,16 +115,11 @@ func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_pl
 		definitions.append(definition)
 		car_properties.append(properties)
 		machine_settings.append(float(racer_settings.get("accel_setting", 0.5)))
-	for frame_index in raw_frames.size():
-		var frame_value = raw_frames[frame_index]
-		if typeof(frame_value) != TYPE_DICTIONARY or int((frame_value as Dictionary).get("tick", -1)) != frame_index:
-			return _prepare_failure("original_replay_noncanonical", "The original replay input stream is discontinuous.")
-		var inputs_value = (frame_value as Dictionary).get("inputs", {})
-		if typeof(inputs_value) != TYPE_DICTIONARY:
-			return _prepare_failure("original_replay_noncanonical", "The original replay input stream is invalid.")
-		for id_value in racer_ids:
-			if !(inputs_value as Dictionary).has(int(id_value)):
-				return _prepare_failure("original_replay_noncanonical", "The original replay is missing racer input at tick %d." % frame_index)
+	var native_racer_ids: Array = []
+	for id_value in replay_stream.get_roster_ids():
+		native_racer_ids.append(int(id_value))
+	if native_racer_ids != racer_ids:
+		return _prepare_failure("original_replay_noncanonical", "The original replay roster does not match its metadata.")
 	var focus_index := racer_ids.find(focused_player_id)
 	var grid_slots := PackedInt32Array()
 	var grid_value = metadata.get("start_grid_slots", [])
@@ -149,8 +143,8 @@ func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_pl
 		"machine_settings_array": machine_settings,
 		"start_grid_slots": grid_slots,
 		"race_options": (metadata.get("race_options", {}) as Dictionary).duplicate(true) if typeof(metadata.get("race_options", {})) == TYPE_DICTIONARY else {},
-		"raw_frames": raw_frames.duplicate(true),
-		"frame_count": raw_frames.size(),
+		"replay_stream": replay_stream,
+		"frame_count": replay_stream.frame_count(),
 	})
 	prepared_track_index = track_index
 	return {"success": true, "ghost_count": 1}
@@ -275,10 +269,11 @@ func fast_forward_to_tick(target_tick: int) -> bool:
 func _tick_original_replay_slot(slot: Dictionary, sim: GameSim, frame_index: int) -> bool:
 	if sim == null:
 		return false
-	var frames: Array = slot.get("raw_frames", [])
-	if frame_index < 0 or frame_index >= frames.size() or typeof(frames[frame_index]) != TYPE_DICTIONARY:
+	var replay_stream: MxtReplayStream = slot.get("replay_stream")
+	if replay_stream == null or frame_index < 0 or frame_index >= replay_stream.frame_count():
 		return false
-	var inputs_value = (frames[frame_index] as Dictionary).get("inputs", {})
+	var frame := replay_stream.read_frame(frame_index)
+	var inputs_value = frame.get("inputs", {})
 	if typeof(inputs_value) != TYPE_DICTIONARY:
 		return false
 	var session: NetcodeSession = slot.get("netcode_session", null)
@@ -695,16 +690,15 @@ func _prepare_descriptor(descriptor: Dictionary, track_index: int) -> Dictionary
 	var cache_path := String(descriptor.get("cache_path", ""))
 	if cache_path.is_empty() or !FileAccess.file_exists(cache_path):
 		return _prepare_failure("ghost_replay_missing", "A selected ghost replay is no longer in the cache.")
-	var replay_value = JSON.parse_string(FileAccess.get_file_as_string(cache_path))
-	if typeof(replay_value) != TYPE_DICTIONARY:
+	var replay_stream := MxtReplayStream.new()
+	if !replay_stream.load_file(cache_path):
 		return _prepare_failure("ghost_replay_invalid", "A selected ghost replay could not be parsed.")
-	var replay: Dictionary = replay_value
+	var replay: Dictionary = replay_stream.get_metadata()
 	var racer_ids_value = replay.get("racer_ids", [])
 	var settings_value = replay.get("settings", [])
-	var frames_value = replay.get("frames", [])
 	if typeof(racer_ids_value) != TYPE_ARRAY or (racer_ids_value as Array).size() != 1 \
 			or typeof(settings_value) != TYPE_ARRAY or (settings_value as Array).size() != 1 \
-			or typeof(frames_value) != TYPE_ARRAY or (frames_value as Array).is_empty():
+			or replay_stream.frame_count() <= 0:
 		return _prepare_failure("ghost_replay_invalid", "A selected ghost replay has an invalid single-racer stream.")
 	var racer_id := int((racer_ids_value as Array)[0])
 	var settings_raw = (settings_value as Array)[0]
@@ -717,9 +711,9 @@ func _prepare_descriptor(descriptor: Dictionary, track_index: int) -> Dictionary
 	var car_properties := FileAccess.get_file_as_bytes(definition.properties_path)
 	if car_properties.is_empty():
 		return _prepare_failure("ghost_vehicle_unavailable", "A selected ghost's machine properties could not be loaded.")
-	var encoded := _predecode_inputs(frames_value as Array, racer_id)
-	if !bool(encoded.get("success", false)):
-		return encoded
+	var encoded := replay_stream.get_player_input_stream(0)
+	if encoded.is_empty():
+		return _prepare_failure("ghost_noncanonical_frames", "A selected ghost replay contains malformed racer input.")
 	var saved_grid_slots_value = replay.get("start_grid_slots", [])
 	var start_grid_slot := -1
 	if typeof(saved_grid_slots_value) == TYPE_ARRAY and !(saved_grid_slots_value as Array).is_empty():
@@ -753,51 +747,6 @@ func _prepare_descriptor(descriptor: Dictionary, track_index: int) -> Dictionary
 			"validation": validation.duplicate(true),
 		},
 	}
-
-
-func _predecode_inputs(frames: Array, racer_id: int) -> Dictionary:
-	var frame_count := frames.size()
-	var input_bytes := PackedByteArray()
-	input_bytes.resize(frame_count * MAX_ENCODED_INPUT_BYTES)
-	var frame_offsets := PackedInt32Array()
-	frame_offsets.resize(frame_count + 1)
-	var write_offset := 0
-	var racer_key := str(racer_id)
-	for frame_index in range(frame_count):
-		var frame_value = frames[frame_index]
-		if typeof(frame_value) != TYPE_DICTIONARY or int((frame_value as Dictionary).get("tick", -1)) != frame_index:
-			return _prepare_failure("ghost_noncanonical_frames", "A selected ghost replay has a discontinuous frame stream.")
-		var inputs_value = (frame_value as Dictionary).get("inputs", {})
-		if typeof(inputs_value) != TYPE_DICTIONARY or !(inputs_value as Dictionary).has(racer_key):
-			return _prepare_failure("ghost_noncanonical_frames", "A selected ghost replay is missing racer input.")
-		var encoded_value = (inputs_value as Dictionary)[racer_key]
-		if typeof(encoded_value) != TYPE_STRING:
-			return _prepare_failure("ghost_noncanonical_frames", "A selected ghost replay has invalid racer input.")
-		var frame_bytes := Marshalls.base64_to_raw(String(encoded_value))
-		if !_encoded_input_is_valid(frame_bytes):
-			return _prepare_failure("ghost_noncanonical_frames", "A selected ghost replay contains malformed racer input.")
-		frame_offsets[frame_index] = write_offset
-		for byte_value in frame_bytes:
-			input_bytes[write_offset] = byte_value
-			write_offset += 1
-	frame_offsets[frame_count] = write_offset
-	input_bytes.resize(write_offset)
-	return {
-		"success": true,
-		"input_bytes": input_bytes,
-		"frame_offsets": frame_offsets,
-		"frame_count": frame_count,
-	}
-
-
-func _encoded_input_is_valid(bytes: PackedByteArray) -> bool:
-	if bytes.is_empty() or bytes.size() > MAX_ENCODED_INPUT_BYTES:
-		return false
-	var mask := int(bytes[0])
-	var expected_size := 1
-	for bit in [0, 1, 2, 3, 6]:
-		expected_size += 1 if (mask & (1 << bit)) != 0 else 0
-	return bytes.size() == expected_size
 
 
 func _track_matches_descriptors(track_index: int, descriptors: Array) -> bool:

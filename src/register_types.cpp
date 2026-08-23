@@ -11,6 +11,7 @@
 #include "camera/fzgx_gameplay_camera.h"
 #include "netcode/netcode_session.h"
 #include "render/native_stamp_mesh_builder.h"
+#include "replay/replay_stream.h"
 #include "audio/opus_voice_codec.h"
 #include "audio/spatial_audio_manager.h"
 #include "platform/steam/steam_service.h"
@@ -33,6 +34,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(FzgxGameplayCamera);
 	GDREGISTER_CLASS(NetcodeSession);
 	GDREGISTER_CLASS(NativeStampMeshBuilder);
+	GDREGISTER_CLASS(MxtReplayStream);
 	GDREGISTER_CLASS(OpusVoiceCodec);
 	GDREGISTER_CLASS(MxtSpatialAudioManager);
 	GDREGISTER_CLASS(MxtSteamService);

@@ -202,7 +202,7 @@ func _ready_result(digest: String, older_version := false) -> Dictionary:
 	return {
 		"success": true,
 		"message": "Ready",
-		"cache_path": "res://fixture.replay.json",
+		"cache_path": "res://fixture.mxt_replay",
 		"replay_sha256": digest,
 		"trusted_details": {},
 		"validation": {

@@ -101,8 +101,9 @@ func _run() -> void:
 	var accelerated := PlayerInputClass.new()
 	accelerated.accelerate = 1.0
 	_advance(accelerated.serialize())
-	var branch_frames := practice.flatten_canonical_frames()
-	if branch_frames.size() != 52 or (branch_frames[51] as Dictionary).get("inputs", {}).is_empty():
+	var branch_stream: MxtReplayStream = practice.canonical_stream()
+	var branch_frame := branch_stream.read_frame(51) if branch_stream != null else {}
+	if practice.canonical_frame_count() != 52 or branch_frame.get("inputs", {}).is_empty():
 		_fail("new input did not replace the discarded canonical future")
 		return
 	if !practice.load_selected_slot() or practice.canonical_frame_count() != 50:

@@ -68,7 +68,7 @@ func enqueue_verified_submission(submission: Dictionary) -> bool:
 		"board_name": String(submission.get("board_name", "")),
 		"replay_path": replay_path,
 		"replay_sha256": digest,
-		"remote_filename": "mxt_leaderboard_%s.replay.json" % digest_hex,
+		"remote_filename": "mxt_leaderboard_%s.mxt_replay" % digest_hex,
 		"created_unix": int(Time.get_unix_time_from_system()),
 		"attempts": 0,
 		"last_error": "",

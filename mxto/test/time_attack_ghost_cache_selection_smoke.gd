@@ -130,7 +130,7 @@ func _run() -> void:
 	var corrupt_bytes := (original_text + "\n\r\n").to_utf8_buffer()
 	var corrupt_entry := _entry_for_bytes(corrupt_bytes, base_validation, 705)
 	var corrupt_digest := String((corrupt_entry["_trusted_details"] as Dictionary)["replay_sha256"])
-	var corrupt_path := CACHE_ROOT.path_join(corrupt_digest.trim_prefix("sha256:") + ".replay.json")
+	var corrupt_path := CACHE_ROOT.path_join(corrupt_digest.trim_prefix("sha256:") + ".attachment")
 	_write_bytes(corrupt_path, "not a replay".to_utf8_buffer())
 	var corrupt_cache := LeaderboardReplayCache.new()
 	corrupt_cache.cache_root = CACHE_ROOT
@@ -203,7 +203,7 @@ func _exercise_selection_model(board_name: String, base_validation: Dictionary, 
 	var retry_token := int((selection.selected_by_digest[first_digest] as Dictionary).get("request_token", 0))
 	selection_cache.complete(retry_token, {
 		"success": true,
-		"cache_path": "res://fixture.replay.json",
+		"cache_path": "res://fixture.mxt_replay",
 		"replay_sha256": first_digest,
 		"trusted_details": (entries[0]["_trusted_details"] as Dictionary).duplicate(true),
 		"validation": base_validation.duplicate(true),
