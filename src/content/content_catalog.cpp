@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/property_info.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -408,14 +409,19 @@ Dictionary MxtContentCatalog::add_package_internal(
 		Dictionary result;
 		result["valid"] = false;
 		result["errors"] = error_array(errors);
+		result["validation_profile"] = package.validation_profile;
 		return result;
 	}
+	const uint64_t catalog_start_usec = Time::get_singleton()->get_ticks_usec();
 	const mxt::content::ContentRecord record = make_record(package, source, published_file_id);
 	replace_record(record);
+	Dictionary validation_profile = package.validation_profile;
+	validation_profile["catalog_record_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - catalog_start_usec);
 	Dictionary result;
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
 	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["validation_profile"] = validation_profile;
 	return result;
 }
 

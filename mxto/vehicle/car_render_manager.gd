@@ -32,6 +32,7 @@ var _profile_new_archetype_count := 0
 var _profile_reused_archetype_count := 0
 var _profile_obsolete_archetype_count := 0
 var _profile_resize_usec := 0
+var _active_archetype_profile: Dictionary = {}
 
 func _exit_tree() -> void:
 	archetypes.clear()
@@ -100,15 +101,21 @@ func _end_configuration_profile(load_profile: int, definitions: Array) -> void:
 
 func _build_profiled_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
 	var start_usec := Time.get_ticks_usec()
-	var archetype := _build_archetype(definition, livery, key)
-	_profile_new_archetype_count += 1
-	_profile_archetype_builds.append({
+	_active_archetype_profile = {
 		"content_id": definition.content_id if definition != null else "",
 		"name": definition.name if definition != null else "",
 		"runtime_mesh": definition != null and definition.car_scene == null,
 		"stamp_count": livery.stamps.size() if livery != null else 0,
-		"duration_usec": Time.get_ticks_usec() - start_usec,
-	})
+		"pass_count": 0,
+		"surface_count": 0,
+		"vertex_count": 0,
+		"index_count": 0,
+	}
+	var archetype := _build_archetype(definition, livery, key)
+	_active_archetype_profile["duration_usec"] = Time.get_ticks_usec() - start_usec
+	_profile_new_archetype_count += 1
+	_profile_archetype_builds.append(_active_archetype_profile)
+	_active_archetype_profile = {}
 	return archetype
 
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
@@ -361,30 +368,45 @@ func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> Str
 func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key := "") -> Dictionary:
 	if definition.car_scene == null:
 		return _build_runtime_mesh_archetype(definition, livery, key)
+	var phase_start_usec := Time.get_ticks_usec()
 	var template: Node3D = definition.car_scene.instantiate()
+	_active_archetype_profile["scene_instantiate_usec"] = Time.get_ticks_usec() - phase_start_usec
 	var root_transform := template.transform
+	phase_start_usec = Time.get_ticks_usec()
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
 	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
 	var outline_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE")
 	var outline_main_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE_MAIN")
+	_active_archetype_profile["mesh_lookup_usec"] = Time.get_ticks_usec() - phase_start_usec
+	_profile_mesh(main_mesh.mesh)
+	phase_start_usec = Time.get_ticks_usec()
 	var thruster_data := _collect_thruster_data(template, root_transform)
+	_active_archetype_profile["thruster_collect_usec"] = Time.get_ticks_usec() - phase_start_usec
+	var main_pass := _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh.mesh, null if stamp_only_mode else main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery)
+	var outline_pass := _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_mesh.mesh, null if stamp_only_mode else outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1, livery, true)
+	var outline_main_pass := _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_main_mesh.mesh, null if stamp_only_mode else outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2, livery, false)
+	var shadow_pass := _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else shadow_mesh.mesh, null if stamp_only_mode else shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96)
+	var stamp_pass := _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), main_mesh, template, livery, root_transform * main_mesh.transform, main_mesh.material_override)
+	var thruster_pass := _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null if stamp_only_mode else thruster_data["material"], [] if stamp_only_mode else thruster_data["local_transforms"])
 	var archetype := {
 		"key": key if key != "" else _definition_key(definition, livery),
 		"indices": [],
 		"count": 0,
-		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh.mesh, null if stamp_only_mode else main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery),
-		PASS_OUTLINE: _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_mesh.mesh, null if stamp_only_mode else outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1, livery, true),
-		PASS_OUTLINE_MAIN: _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_main_mesh.mesh, null if stamp_only_mode else outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2, livery, false),
-		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else shadow_mesh.mesh, null if stamp_only_mode else shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
-		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), main_mesh, template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
-		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null if stamp_only_mode else thruster_data["material"], [] if stamp_only_mode else thruster_data["local_transforms"]),
+		PASS_MAIN: main_pass,
+		PASS_OUTLINE: outline_pass,
+		PASS_OUTLINE_MAIN: outline_main_pass,
+		"shadow": shadow_pass,
+		PASS_STAMP: stamp_pass,
+		"thruster": thruster_pass,
 	}
 	template.free()
 	return archetype
 
 func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
 	var main_mesh := definition.runtime_mesh
+	_profile_mesh(main_mesh)
 	var local_transform := definition.runtime_transform
+	var phase_start_usec := Time.get_ticks_usec()
 	var outline_material := ShaderMaterial.new()
 	outline_material.shader = OUTLINE_SHADER
 	outline_material.set_shader_parameter("base_outline_width", 1.0)
@@ -395,22 +417,34 @@ func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery,
 	outline_main_material.set_shader_parameter("outline_color", Color(0.25, 0.55, 1.0))
 	var shadow_material := ShaderMaterial.new()
 	shadow_material.shader = SHADOW_SHADER
+	_active_archetype_profile["runtime_material_setup_usec"] = Time.get_ticks_usec() - phase_start_usec
+	phase_start_usec = Time.get_ticks_usec()
 	var template := Node3D.new()
 	var body_mesh := MeshInstance3D.new()
 	body_mesh.mesh = main_mesh
 	body_mesh.material_override = definition.runtime_material
 	body_mesh.transform = local_transform
 	template.add_child(body_mesh)
+	_active_archetype_profile["runtime_template_setup_usec"] = Time.get_ticks_usec() - phase_start_usec
+	var main_pass := _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else definition.runtime_material, local_transform, 1, 0, livery)
+	var outline_pass := _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_material, local_transform, 4, -1, livery, true)
+	var outline_main_pass := _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_main_material, local_transform, 2, -2, livery, false)
+	var shadow_pass := _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else shadow_material, local_transform, 1, 96)
+	var stamp_pass := _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), body_mesh, template, livery, local_transform, definition.runtime_material)
+	phase_start_usec = Time.get_ticks_usec()
+	var runtime_thruster_material := _runtime_thruster_material()
+	_active_archetype_profile["runtime_thruster_material_usec"] = Time.get_ticks_usec() - phase_start_usec
+	var thruster_pass := _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), runtime_thruster_material, [] if stamp_only_mode else definition.runtime_thruster_transforms)
 	var archetype := {
 		"key": key if key != "" else _definition_key(definition, livery),
 		"indices": [],
 		"count": 0,
-		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else definition.runtime_material, local_transform, 1, 0, livery),
-		PASS_OUTLINE: _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_material, local_transform, 4, -1, livery, true),
-		PASS_OUTLINE_MAIN: _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_main_material, local_transform, 2, -2, livery, false),
-		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else shadow_material, local_transform, 1, 96),
-		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), body_mesh, template, livery, local_transform, definition.runtime_material),
-		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), _runtime_thruster_material(), [] if stamp_only_mode else definition.runtime_thruster_transforms),
+		PASS_MAIN: main_pass,
+		PASS_OUTLINE: outline_pass,
+		PASS_OUTLINE_MAIN: outline_main_pass,
+		"shadow": shadow_pass,
+		PASS_STAMP: stamp_pass,
+		"thruster": thruster_pass,
 	}
 	template.free()
 	return archetype
@@ -427,18 +461,29 @@ func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: 
 	var material: Material = null
 	var stamp_vertex_ranges := {}
 	if livery != null and !livery.stamps.is_empty():
+		var phase_start_usec := Time.get_ticks_usec()
 		var catalog := _get_stamp_catalog()
+		_profile_add_usec("stamp_catalog_usec", phase_start_usec)
 		if catalog != null:
+			phase_start_usec = Time.get_ticks_usec()
 			if custom_stamp_atlas_texture != null:
 				catalog = catalog.duplicate() as CarStampCatalog
 				catalog.custom_atlas_texture = custom_stamp_atlas_texture
+			_profile_add_usec("stamp_catalog_duplicate_usec", phase_start_usec)
+			phase_start_usec = Time.get_ticks_usec()
 			var stamp_build := stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
+			_profile_add_usec("stamp_projection_upload_usec", phase_start_usec)
 			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh
+				_profile_mesh(generated_mesh, "stamp_")
+				phase_start_usec = Time.get_ticks_usec()
 				material = catalog.create_stamp_material(base_material, stamp_build["visibility_mask"])
+				_profile_add_usec("stamp_material_usec", phase_start_usec)
 				stamp_vertex_ranges = stamp_build.get("stamp_vertex_ranges", {})
+	var pass_start_usec := Time.get_ticks_usec()
 	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, stamp_render_priority)
+	_profile_add_usec("stamp_pass_resource_usec", pass_start_usec)
 	pass_data["stamp_vertex_ranges"] = stamp_vertex_ranges
 	if mesh == null:
 		var node: MultiMeshInstance3D = pass_data["node"]
@@ -524,6 +569,7 @@ func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Di
 	return {"local_transforms": local_transforms, "material": material}
 
 func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int, livery: CarLivery = null) -> Dictionary:
+	var phase_start_usec := Time.get_ticks_usec()
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = layers
@@ -533,6 +579,8 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	node.visibility_range_end = 0.0
 	node.visibility_range_end_margin = 0.0
 	node.lod_bias = 1000000.0
+	_profile_add_usec("pass_node_setup_usec", phase_start_usec)
+	phase_start_usec = Time.get_ticks_usec()
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -540,11 +588,18 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	multimesh.mesh = mesh
 	multimesh.instance_count = 0
 	node.multimesh = multimesh
+	_profile_add_usec("pass_multimesh_setup_usec", phase_start_usec)
 	if material != null:
+		phase_start_usec = Time.get_ticks_usec()
 		node.material_override = material.duplicate()
 		node.material_override.render_priority = render_priority
 		_apply_livery_to_material(node.material_override, livery)
+		_profile_add_usec("pass_material_duplicate_usec", phase_start_usec)
+	phase_start_usec = Time.get_ticks_usec()
 	add_child(node)
+	_profile_add_usec("pass_node_attach_usec", phase_start_usec)
+	if !_active_archetype_profile.is_empty():
+		_active_archetype_profile["pass_count"] = int(_active_archetype_profile.get("pass_count", 0)) + 1
 	return {
 		"local_transform": local_transform,
 		"node": node,
@@ -559,6 +614,7 @@ func _create_outline_pass(pass_name: String, mesh: Mesh, material: Material, loc
 	return pass_data
 
 func _create_thruster_pass(pass_name: String, material: Material, local_transforms: Array) -> Dictionary:
+	var phase_start_usec := Time.get_ticks_usec()
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = 2
@@ -569,6 +625,8 @@ func _create_thruster_pass(pass_name: String, material: Material, local_transfor
 	quad.size = Vector2(1.0, 1.0)
 	if material != null:
 		quad.material = material.duplicate()
+	_profile_add_usec("thruster_mesh_material_usec", phase_start_usec)
+	phase_start_usec = Time.get_ticks_usec()
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -577,6 +635,9 @@ func _create_thruster_pass(pass_name: String, material: Material, local_transfor
 	multimesh.instance_count = 0
 	node.multimesh = multimesh
 	add_child(node)
+	_profile_add_usec("thruster_multimesh_attach_usec", phase_start_usec)
+	if !_active_archetype_profile.is_empty():
+		_active_archetype_profile["thruster_count"] = local_transforms.size()
 	return {
 		"local_transforms": local_transforms,
 		"node": node,
@@ -704,3 +765,21 @@ func _get_stamp_catalog() -> CarStampCatalog:
 
 func _safe_name(name_in: String) -> String:
 	return name_in.replace(" ", "_").replace("/", "_")
+
+func _profile_add_usec(field: String, start_usec: int) -> void:
+	if _active_archetype_profile.is_empty():
+		return
+	_active_archetype_profile[field] = int(_active_archetype_profile.get(field, 0)) + Time.get_ticks_usec() - start_usec
+
+func _profile_mesh(mesh: Mesh, prefix := "") -> void:
+	if _active_archetype_profile.is_empty() or mesh == null:
+		return
+	var surfaces := mesh.get_surface_count()
+	var vertices := 0
+	var indices := 0
+	for surface in range(surfaces):
+		vertices += mesh.surface_get_array_len(surface)
+		indices += mesh.surface_get_array_index_len(surface)
+	_active_archetype_profile[prefix + "surface_count"] = int(_active_archetype_profile.get(prefix + "surface_count", 0)) + surfaces
+	_active_archetype_profile[prefix + "vertex_count"] = int(_active_archetype_profile.get(prefix + "vertex_count", 0)) + vertices
+	_active_archetype_profile[prefix + "index_count"] = int(_active_archetype_profile.get(prefix + "index_count", 0)) + indices

@@ -10,6 +10,7 @@
 #include <godot_cpp/classes/hashing_context.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/json.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
 
@@ -38,6 +39,64 @@ struct DiskEntry {
 	String relative_path;
 	String absolute_path;
 	uint64_t size = 0;
+};
+
+struct ValidationProfile {
+	uint64_t total_usec = 0;
+	uint64_t manifest_read_usec = 0;
+	uint64_t manifest_parse_usec = 0;
+	uint64_t directory_enumeration_usec = 0;
+	uint64_t structural_validation_usec = 0;
+	uint64_t declared_hash_usec = 0;
+	uint64_t payload_validation_usec = 0;
+	uint64_t glb_validation_usec = 0;
+	uint64_t properties_validation_usec = 0;
+	uint64_t authoring_validation_usec = 0;
+	uint64_t visual_metadata_validation_usec = 0;
+	uint64_t package_digest_usec = 0;
+	uint64_t gameplay_digest_usec = 0;
+	uint64_t file_open_count = 0;
+	uint64_t directory_open_count = 0;
+	uint64_t bytes_read = 0;
+};
+
+static uint64_t profile_now_usec()
+{
+	return Time::get_singleton()->get_ticks_usec();
+}
+
+static Dictionary validation_profile_dictionary(const ValidationProfile &profile)
+{
+	Dictionary out;
+	out["total_usec"] = static_cast<int64_t>(profile.total_usec);
+	out["manifest_read_usec"] = static_cast<int64_t>(profile.manifest_read_usec);
+	out["manifest_parse_usec"] = static_cast<int64_t>(profile.manifest_parse_usec);
+	out["directory_enumeration_usec"] = static_cast<int64_t>(profile.directory_enumeration_usec);
+	out["structural_validation_usec"] = static_cast<int64_t>(profile.structural_validation_usec);
+	out["declared_hash_usec"] = static_cast<int64_t>(profile.declared_hash_usec);
+	out["payload_validation_usec"] = static_cast<int64_t>(profile.payload_validation_usec);
+	out["glb_validation_usec"] = static_cast<int64_t>(profile.glb_validation_usec);
+	out["properties_validation_usec"] = static_cast<int64_t>(profile.properties_validation_usec);
+	out["authoring_validation_usec"] = static_cast<int64_t>(profile.authoring_validation_usec);
+	out["visual_metadata_validation_usec"] = static_cast<int64_t>(profile.visual_metadata_validation_usec);
+	out["package_digest_usec"] = static_cast<int64_t>(profile.package_digest_usec);
+	out["gameplay_digest_usec"] = static_cast<int64_t>(profile.gameplay_digest_usec);
+	out["file_open_count"] = static_cast<int64_t>(profile.file_open_count);
+	out["directory_open_count"] = static_cast<int64_t>(profile.directory_open_count);
+	out["bytes_read"] = static_cast<int64_t>(profile.bytes_read);
+	return out;
+}
+
+struct ValidationProfileFinalizer {
+	ValidationProfile &profile;
+	ValidatedPackage &package;
+	uint64_t start_usec;
+
+	~ValidationProfileFinalizer()
+	{
+		profile.total_usec = profile_now_usec() - start_usec;
+		package.validation_profile = validation_profile_dictionary(profile);
+	}
 };
 
 static void add_error(std::vector<String> &errors, const String &message)
@@ -73,8 +132,10 @@ static bool read_file_limited(
 		const String &path,
 		uint64_t max_bytes,
 		PackedByteArray &out_bytes,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile = nullptr)
 {
+	if (profile) ++profile->file_open_count;
 	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
 	if (file.is_null()) {
 		add_error(errors, "could not open '" + path + "'");
@@ -86,6 +147,7 @@ static bool read_file_limited(
 		return false;
 	}
 	out_bytes = file->get_buffer(static_cast<int64_t>(length));
+	if (profile) profile->bytes_read += static_cast<uint64_t>(out_bytes.size());
 	if (static_cast<uint64_t>(out_bytes.size()) != length || file->get_error() != OK) {
 		add_error(errors, "could not read complete file '" + path + "'");
 		return false;
@@ -110,11 +172,13 @@ static bool enumerate_directory(
 		ContentType type,
 		std::vector<DiskEntry> &out_files,
 		std::vector<String> &out_directories,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile = nullptr)
 {
 	const String disk_path = relative_directory.is_empty()
 			? root_path
 			: root_path.path_join(relative_directory);
+	if (profile) ++profile->directory_open_count;
 	Ref<DirAccess> directory = DirAccess::open(disk_path);
 	if (directory.is_null()) {
 		add_error(errors, "could not open package directory '" + disk_path + "'");
@@ -152,10 +216,11 @@ static bool enumerate_directory(
 				valid = false;
 				continue;
 			}
-			if (!enumerate_directory(root_path, relative_path, type, out_files, out_directories, errors)) {
+			if (!enumerate_directory(root_path, relative_path, type, out_files, out_directories, errors, profile)) {
 				valid = false;
 			}
 		} else {
+			if (profile) ++profile->file_open_count;
 			Ref<FileAccess> file = FileAccess::open(root_path.path_join(relative_path), FileAccess::READ);
 			if (file.is_null()) {
 				add_error(errors, "could not open package file '" + relative_path + "'");
@@ -248,15 +313,17 @@ static uint32_t read_be_u32(const uint8_t *bytes)
 			static_cast<uint32_t>(bytes[3]);
 }
 
-static bool validate_preview_png(const DiskEntry &entry, std::vector<String> &errors)
+static bool validate_preview_png(const DiskEntry &entry, std::vector<String> &errors, ValidationProfile *profile)
 {
 	PackedByteArray header;
+	if (profile) ++profile->file_open_count;
 	Ref<FileAccess> file = FileAccess::open(entry.absolute_path, FileAccess::READ);
 	if (file.is_null() || entry.size < 33) {
 		add_error(errors, "preview.png is missing or too short");
 		return false;
 	}
 	header = file->get_buffer(33);
+	if (profile) profile->bytes_read += static_cast<uint64_t>(header.size());
 	static const uint8_t PNG_SIGNATURE[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
 	if (header.size() != 33 || std::memcmp(header.ptr(), PNG_SIGNATURE, 8) != 0 ||
 			read_be_u32(header.ptr() + 8) != 13 || std::memcmp(header.ptr() + 12, "IHDR", 4) != 0) {
@@ -272,10 +339,10 @@ static bool validate_preview_png(const DiskEntry &entry, std::vector<String> &er
 	return true;
 }
 
-static bool validate_vehicle_boost_sfx(const ContentManifest &manifest, const DiskEntry &entry, std::vector<String> &errors)
+static bool validate_vehicle_boost_sfx(const ContentManifest &manifest, const DiskEntry &entry, std::vector<String> &errors, ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_BOOST_SFX_MAX_BYTES, bytes, errors)) return false;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_BOOST_SFX_MAX_BYTES, bytes, errors, profile)) return false;
 	if (manifest.manual_boost_sfx_path.ends_with(".wav")) {
 		if (bytes.size() < 12 || std::memcmp(bytes.ptr(), "RIFF", 4) != 0 || std::memcmp(bytes.ptr() + 8, "WAVE", 4) != 0) {
 			add_error(errors, "vehicle manual-boost WAV has an invalid header");
@@ -290,10 +357,10 @@ static bool validate_vehicle_boost_sfx(const ContentManifest &manifest, const Di
 	return true;
 }
 
-static bool validate_vehicle_texture_png(const DiskEntry &entry, std::vector<String> &errors)
+static bool validate_vehicle_texture_png(const DiskEntry &entry, std::vector<String> &errors, ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_TEXTURE_MAX_BYTES, bytes, errors)) return false;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_TEXTURE_MAX_BYTES, bytes, errors, profile)) return false;
 	static const uint8_t PNG_SIGNATURE[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
 	if (bytes.size() < 33 || std::memcmp(bytes.ptr(), PNG_SIGNATURE, 8) != 0 ||
 			read_be_u32(bytes.ptr() + 8) != 13 || std::memcmp(bytes.ptr() + 12, "IHDR", 4) != 0) {
@@ -361,10 +428,11 @@ static bool json_vec3_in_range(const Variant &value, double minimum, double maxi
 
 static bool validate_track_metadata(
 		const DiskEntry &entry,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, TRACK_METADATA_MAX_BYTES, bytes, errors)) {
+	if (!read_file_limited(entry.absolute_path, TRACK_METADATA_MAX_BYTES, bytes, errors, profile)) {
 		return false;
 	}
 	if (!audit_json_members(bytes, errors)) {
@@ -459,8 +527,10 @@ static void append_utf8(const Ref<HashingContext> &hash, const String &value)
 static bool append_file(
 		const Ref<HashingContext> &hash,
 		const DiskEntry &entry,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile = nullptr)
 {
+	if (profile) ++profile->file_open_count;
 	Ref<FileAccess> file = FileAccess::open(entry.absolute_path, FileAccess::READ);
 	if (file.is_null()) {
 		add_error(errors, "could not open package file while hashing '" + entry.relative_path + "'");
@@ -470,6 +540,7 @@ static bool append_file(
 	while (remaining > 0) {
 		const int64_t request = static_cast<int64_t>(std::min<uint64_t>(remaining, HASH_CHUNK_BYTES));
 		const PackedByteArray chunk = file->get_buffer(request);
+		if (profile) profile->bytes_read += static_cast<uint64_t>(chunk.size());
 		if (chunk.size() != request) {
 			add_error(errors, "package file changed or failed while hashing '" + entry.relative_path + "'");
 			return false;
@@ -485,7 +556,8 @@ static bool calculate_gameplay_digest(
 		const String &authoritative_path,
 		const DiskEntry &authoritative,
 		String &out_gameplay_digest,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile = nullptr)
 {
 	Ref<HashingContext> gameplay_hash;
 	gameplay_hash.instantiate();
@@ -501,7 +573,7 @@ static bool calculate_gameplay_digest(
 	append_utf8(gameplay_hash, content_type_name(content_type));
 	append_utf8(gameplay_hash, authoritative_path);
 	append_u64_be(gameplay_hash, authoritative.size);
-	if (!append_file(gameplay_hash, authoritative, errors)) {
+	if (!append_file(gameplay_hash, authoritative, errors, profile)) {
 		return false;
 	}
 	out_gameplay_digest = "sha256:" + gameplay_hash->finish().hex_encode();
@@ -513,7 +585,8 @@ static bool calculate_digests(
 		std::vector<DiskEntry> entries,
 		String &out_package_digest,
 		String &out_gameplay_digest,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	std::sort(entries.begin(), entries.end(), [](const DiskEntry &a, const DiskEntry &b) {
 		return utf8_bytes(a.relative_path) < utf8_bytes(b.relative_path);
@@ -529,37 +602,48 @@ static bool calculate_digests(
 	std::memcpy(domain.ptrw(), "MXT_PACKAGE\0", 12);
 	package_hash->update(domain);
 	append_u32_be(package_hash, PACKAGE_FORMAT_REVISION);
+	const uint64_t package_digest_start_usec = profile_now_usec();
 	for (const DiskEntry &entry : entries) {
 		append_utf8(package_hash, entry.relative_path);
 		append_u64_be(package_hash, entry.size);
-		if (!append_file(package_hash, entry, errors)) {
+		if (!append_file(package_hash, entry, errors, profile)) {
 			return false;
 		}
 	}
 	out_package_digest = "sha256:" + package_hash->finish().hex_encode();
+	if (profile) profile->package_digest_usec += profile_now_usec() - package_digest_start_usec;
 
 	const DiskEntry *authoritative = find_disk_entry(entries, manifest.authoritative_path);
 	if (!authoritative) {
 		add_error(errors, "authoritative gameplay payload is missing");
 		return false;
 	}
-	return calculate_gameplay_digest(
+	const uint64_t gameplay_digest_start_usec = profile_now_usec();
+	const bool gameplay_valid = calculate_gameplay_digest(
 			manifest.content_type,
 			manifest.authoritative_path,
 			*authoritative,
 			out_gameplay_digest,
-			errors);
+			errors,
+			profile);
+	if (profile) profile->gameplay_digest_usec += profile_now_usec() - gameplay_digest_start_usec;
+	return gameplay_valid;
 }
 
 static bool validate_declared_hashes(
 		const ContentManifest &manifest,
 		const std::vector<DiskEntry> &entries,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	for (const ManifestFile &manifest_file : manifest.files) {
 		const DiskEntry *entry = find_disk_entry(entries, manifest_file.path);
 		if (!entry) {
 			continue;
+		}
+		if (profile) {
+			++profile->file_open_count;
+			profile->bytes_read += entry->size;
 		}
 		const String actual = FileAccess::get_sha256(entry->absolute_path);
 		if (actual.is_empty() || actual != manifest_file.declared_sha256) {
@@ -635,10 +719,11 @@ static bool validate_vehicle_visual_metadata(
 		const DiskEntry &entry,
 		const VehicleGlbInfo *model_info,
 		Dictionary &out_metadata,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_VISUAL_METADATA_MAX_BYTES, bytes, errors)) return false;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_VISUAL_METADATA_MAX_BYTES, bytes, errors, profile)) return false;
 	if (!audit_json_members(bytes, errors)) return false;
 	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
 	if (parsed.get_type() != Variant::DICTIONARY) {
@@ -825,10 +910,11 @@ static bool validate_vehicle_authoring_metadata(
 		const DiskEntry &entry,
 		uint16_t source_stat_count,
 		Dictionary &out_metadata,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_AUTHORING_METADATA_MAX_BYTES, bytes, errors)) return false;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_AUTHORING_METADATA_MAX_BYTES, bytes, errors, profile)) return false;
 	if (!audit_json_members(bytes, errors)) return false;
 	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
 	if (parsed.get_type() != Variant::DICTIONARY) {
@@ -861,16 +947,17 @@ static bool validate_payloads(
 		const std::vector<DiskEntry> &entries,
 		Dictionary &out_visual_metadata,
 		Dictionary &out_authoring_metadata,
-		std::vector<String> &errors)
+		std::vector<String> &errors,
+		ValidationProfile *profile)
 {
 	const DiskEntry *preview = find_disk_entry(entries, "preview.png");
 	if (preview) {
-		validate_preview_png(*preview, errors);
+		validate_preview_png(*preview, errors, profile);
 	}
 	if (manifest.content_type == ContentType::VEHICLE) {
 		if (!manifest.manual_boost_sfx_path.is_empty()) {
 			const DiskEntry *boost_sfx = find_disk_entry(entries, manifest.manual_boost_sfx_path);
-			if (boost_sfx) validate_vehicle_boost_sfx(manifest, *boost_sfx, errors);
+			if (boost_sfx) validate_vehicle_boost_sfx(manifest, *boost_sfx, errors, profile);
 		}
 		for (const String *texture_path : {
 				&manifest.albedo_texture_path,
@@ -878,7 +965,7 @@ static bool validate_payloads(
 				&manifest.paint_mask_texture_path}) {
 			if (texture_path->is_empty()) continue;
 			const DiskEntry *texture = find_disk_entry(entries, *texture_path);
-			if (texture) validate_vehicle_texture_png(*texture, errors);
+			if (texture) validate_vehicle_texture_png(*texture, errors, profile);
 		}
 		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
 		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
@@ -888,11 +975,18 @@ static bool validate_payloads(
 		bool model_valid = false;
 		uint16_t properties_schema_stat_count = 0;
 		if (model) {
+			const uint64_t start_usec = profile_now_usec();
+			if (profile) {
+				++profile->file_open_count;
+				profile->bytes_read += model->size;
+			}
 			model_valid = validate_glb_file(model->absolute_path, manifest.content_type, errors, &model_info);
+			if (profile) profile->glb_validation_usec += profile_now_usec() - start_usec;
 		}
 		if (properties) {
+			const uint64_t start_usec = profile_now_usec();
 			PackedByteArray bytes;
-			if (read_file_limited(properties->absolute_path, VEHICLE_PROPERTIES_MAX_BYTES, bytes, errors)) {
+			if (read_file_limited(properties->absolute_path, VEHICLE_PROPERTIES_MAX_BYTES, bytes, errors, profile)) {
 				PhysicsCarProperties sampled;
 				String parse_error;
 				if (!PhysicsCarProperties::deserialize_and_sample(
@@ -900,12 +994,20 @@ static bool validate_payloads(
 					add_error(errors, "vehicle properties rejected: " + parse_error);
 				}
 			}
+			if (profile) profile->properties_validation_usec += profile_now_usec() - start_usec;
 		}
-		if (authoring_metadata) validate_vehicle_authoring_metadata(
-				*authoring_metadata, properties_schema_stat_count, out_authoring_metadata, errors);
+		if (authoring_metadata) {
+			const uint64_t start_usec = profile_now_usec();
+			validate_vehicle_authoring_metadata(
+					*authoring_metadata, properties_schema_stat_count, out_authoring_metadata, errors, profile);
+			if (profile) profile->authoring_validation_usec += profile_now_usec() - start_usec;
+		}
 		if (properties && !out_authoring_metadata.is_empty() && errors.empty()) {
+			const uint64_t start_usec = profile_now_usec();
+			if (profile) ++profile->file_open_count;
 			Ref<FileAccess> file = FileAccess::open(properties->absolute_path, FileAccess::READ);
 			const PackedByteArray original = file->get_buffer(file->get_length());
+			if (profile) profile->bytes_read += static_cast<uint64_t>(original.size());
 			Ref<MxtCarAuthoringSession> session;
 			session.instantiate();
 			Dictionary loaded = session->load_bytes(original);
@@ -922,16 +1024,21 @@ static bool validate_payloads(
 				(properties_schema_stat_count == CAR_STAT_COUNT && normalized_bytes != original)) {
 				add_error(errors, "vehicle authoring intent does not match the materialized properties");
 			}
+			if (profile) profile->authoring_validation_usec += profile_now_usec() - start_usec;
 		}
-		if (visual_metadata) validate_vehicle_visual_metadata(
-				*visual_metadata, model_valid ? &model_info : nullptr, out_visual_metadata, errors);
+		if (visual_metadata) {
+			const uint64_t start_usec = profile_now_usec();
+			validate_vehicle_visual_metadata(
+					*visual_metadata, model_valid ? &model_info : nullptr, out_visual_metadata, errors, profile);
+			if (profile) profile->visual_metadata_validation_usec += profile_now_usec() - start_usec;
+		}
 	} else if (manifest.content_type == ContentType::TRACK) {
 		const DiskEntry *track = find_disk_entry(entries, "track/track.mxt_track");
 		const DiskEntry *visual = find_disk_entry(entries, "track/visual.glb");
 		const DiskEntry *metadata = find_disk_entry(entries, "track/metadata.json");
 		if (track) {
 			PackedByteArray bytes;
-			if (read_file_limited(track->absolute_path, TRACK_PAYLOAD_MAX_BYTES, bytes, errors)) {
+			if (read_file_limited(track->absolute_path, TRACK_PAYLOAD_MAX_BYTES, bytes, errors, profile)) {
 				String parse_error;
 				if (!validate_track_payload(bytes, parse_error)) {
 					add_error(errors, "track payload rejected: " + parse_error);
@@ -939,10 +1046,16 @@ static bool validate_payloads(
 			}
 		}
 		if (visual) {
+			const uint64_t start_usec = profile_now_usec();
+			if (profile) {
+				++profile->file_open_count;
+				profile->bytes_read += visual->size;
+			}
 			validate_glb_file(visual->absolute_path, manifest.content_type, errors);
+			if (profile) profile->glb_validation_usec += profile_now_usec() - start_usec;
 		}
 		if (metadata) {
-			validate_track_metadata(*metadata, errors);
+			validate_track_metadata(*metadata, errors, profile);
 		}
 	}
 	return errors.empty();
@@ -1005,6 +1118,9 @@ bool validate_package_directory_internal(
 		std::vector<String> &out_errors)
 {
 	out_package = ValidatedPackage();
+	ValidationProfile profile;
+	ValidationProfileFinalizer profile_finalizer{profile, out_package, profile_now_usec()};
+	++profile.directory_open_count;
 	if (root_path.is_empty() || DirAccess::open(root_path).is_null()) {
 		add_error(out_errors, "package root is not an existing directory");
 		return false;
@@ -1012,16 +1128,23 @@ bool validate_package_directory_internal(
 
 	const String manifest_path = root_path.path_join("manifest.json");
 	PackedByteArray manifest_bytes;
-	if (!read_file_limited(manifest_path, MANIFEST_MAX_BYTES, manifest_bytes, out_errors)) {
+	uint64_t phase_start_usec = profile_now_usec();
+	if (!read_file_limited(manifest_path, MANIFEST_MAX_BYTES, manifest_bytes, out_errors, &profile)) {
 		return false;
 	}
+	profile.manifest_read_usec = profile_now_usec() - phase_start_usec;
+	phase_start_usec = profile_now_usec();
 	if (!parse_manifest(manifest_bytes, out_package.manifest, out_errors)) {
 		return false;
 	}
+	profile.manifest_parse_usec = profile_now_usec() - phase_start_usec;
 
 	std::vector<DiskEntry> entries;
 	std::vector<String> directories;
-	enumerate_directory(root_path, String(), out_package.manifest.content_type, entries, directories, out_errors);
+	phase_start_usec = profile_now_usec();
+	enumerate_directory(root_path, String(), out_package.manifest.content_type, entries, directories, out_errors, &profile);
+	profile.directory_enumeration_usec = profile_now_usec() - phase_start_usec;
+	phase_start_usec = profile_now_usec();
 	validate_disk_entries(out_package.manifest, entries, out_errors);
 	if (!out_errors.empty()) {
 		return false;
@@ -1043,14 +1166,19 @@ bool validate_package_directory_internal(
 		total_bytes += entry.size;
 	}
 	out_package.total_bytes = total_bytes;
+	profile.structural_validation_usec = profile_now_usec() - phase_start_usec;
 	if (!out_errors.empty()) {
 		return false;
 	}
 
-	validate_declared_hashes(out_package.manifest, entries, out_errors);
+	phase_start_usec = profile_now_usec();
+	validate_declared_hashes(out_package.manifest, entries, out_errors, &profile);
+	profile.declared_hash_usec = profile_now_usec() - phase_start_usec;
+	phase_start_usec = profile_now_usec();
 	validate_payloads(
 			out_package.manifest, entries, out_package.visual_metadata,
-			out_package.authoring_metadata, out_errors);
+			out_package.authoring_metadata, out_errors, &profile);
+	profile.payload_validation_usec = profile_now_usec() - phase_start_usec;
 	if (!out_errors.empty()) {
 		return false;
 	}
@@ -1059,7 +1187,8 @@ bool validate_package_directory_internal(
 			entries,
 			out_package.package_digest,
 			out_package.gameplay_digest,
-			out_errors)) {
+			out_errors,
+			&profile)) {
 		return false;
 	}
 	out_package.root_path = root_path;
@@ -1088,6 +1217,7 @@ Dictionary MxtContentValidator::validate_package_directory(const String &root_pa
 	std::vector<String> errors;
 	const bool valid = mxt::content::validate_package_directory_internal(root_path, package, errors);
 	Dictionary result = mxt::content::make_result(valid, errors, package.manifest.content_type == mxt::content::ContentType::INVALID ? nullptr : &package.manifest);
+	result["validation_profile"] = package.validation_profile;
 	if (valid) {
 		result["root_path"] = package.root_path;
 		result["package_digest"] = package.package_digest;

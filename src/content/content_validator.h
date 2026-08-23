@@ -17,6 +17,7 @@ struct ValidatedPackage {
 	uint64_t total_bytes = 0;
 	godot::Dictionary visual_metadata;
 	godot::Dictionary authoring_metadata;
+	godot::Dictionary validation_profile;
 };
 
 bool validate_package_directory_internal(

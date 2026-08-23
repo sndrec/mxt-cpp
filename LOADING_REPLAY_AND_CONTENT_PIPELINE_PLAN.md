@@ -2,9 +2,9 @@
 
 ## Status
 
-Planned. This document is the implementation contract for the loading-performance,
-binary-replay, lobby-rendering, and Workshop-refresh work described below. No
-implementation work is authorized by this document alone.
+In progress. Phase A is complete; Phase B is next. This document is the implementation
+contract for the loading-performance, binary-replay, lobby-rendering, and
+Workshop-refresh work described below.
 
 Execute it with a short goal such as:
 
@@ -191,6 +191,25 @@ invalidated archetypes, and renderer rebuild duration.
   named stages or explicitly identified engine calls.
 - Instrumentation has bounded output and does not log per vertex, per pixel, or per
   simulation tick.
+
+### Phase A results
+
+- Completed by the Phase A instrumentation commit.
+- Four valid historical test-drive snapshots took 0.94-1.03 seconds each. Authoring
+  intent materialization/comparison consumed 0.89-0.91 seconds per package, while
+  GLB validation consumed 0.02-0.10 seconds. Each validation opened 25 files and
+  logically read 4.4-7.1 MB across repeated validation/hash passes.
+- The 48-player, 16-stamps-per-car lobby profile took 1.575 seconds inside archetype
+  configuration. Per-archetype attribution identified native stamp projection and
+  generated-mesh upload as approximately 95% or more of every expensive archetype.
+- A one-player stamped archetype change took 50.9 ms for renderer configuration:
+  19.9 ms built the one replacement All Rounder stamp mesh, while the remaining
+  archetypes were reused. The surrounding full shared-atlas preparation took 23.6
+  ms.
+- An ordinary one-player settings change still spent 22.3 ms walking and sampling
+  all 48 cars, confirming the Phase C early-out target.
+- Profiling output is one bounded record per validation, content refresh, renderer
+  configuration, or Workshop item—not per vertex, pixel, or simulation tick.
 
 ## Phase B: Remove test-drive startup work
 

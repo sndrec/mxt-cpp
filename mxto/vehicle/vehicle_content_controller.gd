@@ -533,6 +533,7 @@ func _scan_test_drive_snapshot_library() -> void:
 				"duration_usec": Time.get_ticks_usec() - snapshot_start_usec,
 				"valid": bool(result.get("valid", false)),
 				"errors": result.get("errors", []),
+				"validation_profile": result.get("validation_profile", {}),
 			})
 			if !bool(result.get("valid", false)):
 				push_warning("Skipped test-drive snapshot %s: %s" % [folder, str(result.get("errors", []))])
@@ -581,6 +582,8 @@ func _on_workshop_items_changed(items: Array) -> void:
 	})
 	var processed_items := []
 	var candidates := []
+	var validation_cache_hit_count := 0
+	var validation_cache_miss_count := 0
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
@@ -591,6 +594,10 @@ func _on_workshop_items_changed(items: Array) -> void:
 			"item": item,
 		})
 		var validation := _workshop_validation_for_item(item)
+		if bool(validation.get("_cache_hit", false)):
+			validation_cache_hit_count += 1
+		else:
+			validation_cache_miss_count += 1
 		if bool(validation.get("valid", false)):
 			var manifest: Dictionary = validation.get("manifest", {})
 			var content_type := String(manifest.get("content_type", ""))
@@ -613,6 +620,8 @@ func _on_workshop_items_changed(items: Array) -> void:
 		processed_items.append(item)
 	LoadTransitionProfilerClass.checkpoint(load_profile, "validate_items", {
 		"candidate_count": candidates.size(),
+		"validation_cache_hit_count": validation_cache_hit_count,
+		"validation_cache_miss_count": validation_cache_miss_count,
 	})
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary): return int(a["published_file_id"]) < int(b["published_file_id"]))
 	var signature_parts := PackedStringArray()
@@ -629,7 +638,12 @@ func _on_workshop_items_changed(items: Array) -> void:
 	LoadTransitionProfilerClass.checkpoint(load_profile, "catalog_signature", {
 		"materially_changed": catalog_materially_changed,
 	})
+	var invalidated_content_ids: Array[String] = []
 	if catalog_materially_changed:
+		for record_value in content_catalog.get_records("vehicle"):
+			var existing_record: Dictionary = record_value
+			if String(existing_record.get("source", "")) == "workshop":
+				invalidated_content_ids.append(String(existing_record.get("content_id", "")))
 		content_catalog.clear_workshop_packages()
 		var registered_signature_parts := PackedStringArray()
 		for candidate in candidates:
@@ -644,6 +658,7 @@ func _on_workshop_items_changed(items: Array) -> void:
 				"valid": bool(registered.get("valid", false)),
 				"errors": registered.get("errors", []),
 				"record": registered.get("record", {}),
+				"validation_profile": registered.get("validation_profile", {}),
 			})
 			if bool(registered.get("valid", false)):
 				var record: Dictionary = registered.get("record", {})
@@ -685,6 +700,9 @@ func _on_workshop_items_changed(items: Array) -> void:
 		"workshop_item_count": workshop_content_items.size(),
 		"catalog_materially_changed": catalog_materially_changed,
 		"catalog_signature": workshop_catalog_signature,
+		"validation_cache_hit_count": validation_cache_hit_count,
+		"validation_cache_miss_count": validation_cache_miss_count,
+		"invalidated_content_ids": invalidated_content_ids,
 	})
 	LoadTransitionProfilerClass.end_transition(load_profile, {
 		"catalog_materially_changed": catalog_materially_changed,
@@ -711,9 +729,12 @@ func _workshop_validation_for_item(item: Dictionary) -> Dictionary:
 	]
 	var cached: Dictionary = workshop_validation_cache.get(published_file_id, {})
 	if String(cached.get("key", "")) == cache_key:
-		return (cached.get("result", {}) as Dictionary).duplicate(true)
+		var cached_result := (cached.get("result", {}) as Dictionary).duplicate(true)
+		cached_result["_cache_hit"] = true
+		return cached_result
 	var validation_start_usec := Time.get_ticks_usec()
 	var result: Dictionary = workshop_validator.validate_package_directory(install_path)
+	result["_cache_hit"] = false
 	workshop_validation_cache[published_file_id] = {"key": cache_key, "result": result.duplicate(true)}
 	record_workshop_diagnostic_event("catalog_package_validation", {
 		"published_file_id": published_file_id,
@@ -723,6 +744,7 @@ func _workshop_validation_for_item(item: Dictionary) -> Dictionary:
 		"package_digest": String(result.get("package_digest", "")),
 		"gameplay_digest": String(result.get("gameplay_digest", "")),
 		"errors": result.get("errors", []),
+		"validation_profile": result.get("validation_profile", {}),
 	})
 	return result
 
@@ -770,14 +792,15 @@ func _load_packaged_definitions() -> Array:
 		if source == "official" or source == "local_draft":
 			continue
 		var definition_start_usec := Time.get_ticks_usec()
-		var definition := _definition_from_package_record(record)
-		profiles.append({
+		var definition_profile := {
 			"content_id": String(record.get("content_id", "")),
 			"source": source,
 			"visual_path": String(record.get("visual_path", "")),
-			"duration_usec": Time.get_ticks_usec() - definition_start_usec,
-			"valid": definition != null,
-		})
+		}
+		var definition := _definition_from_package_record(record, definition_profile)
+		definition_profile["duration_usec"] = Time.get_ticks_usec() - definition_start_usec
+		definition_profile["valid"] = definition != null
+		profiles.append(definition_profile)
 		if definition == null:
 			continue
 		if definitions_by_content_id.has(definition.content_id):
@@ -788,27 +811,36 @@ func _load_packaged_definitions() -> Array:
 	profiles.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
 	return profiles
 
-func _definition_from_package_record(record: Dictionary) -> CarDefinition:
+func _definition_from_package_record(record: Dictionary, profile: Dictionary = {}) -> CarDefinition:
 	var visual_path := String(record.get("visual_path", ""))
+	var phase_start_usec := Time.get_ticks_usec()
 	var gltf_document := GLTFDocument.new()
 	var gltf_state := GLTFState.new()
 	gltf_state.base_path = visual_path.get_base_dir()
 	var error := gltf_document.append_from_file(visual_path, gltf_state)
+	profile["gltf_parse_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if error != OK:
 		push_error("Could not load packaged vehicle visual %s: %s" % [visual_path, error_string(error)])
 		return null
+	phase_start_usec = Time.get_ticks_usec()
 	var instance := gltf_document.generate_scene(gltf_state) as Node3D
+	profile["scene_generation_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if instance == null:
 		push_error("Could not generate packaged vehicle visual: %s" % visual_path)
 		return null
+	phase_start_usec = Time.get_ticks_usec()
 	var mesh_data := _find_mesh(instance, Transform3D.IDENTITY)
+	profile["mesh_traversal_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if mesh_data.is_empty():
 		push_error("Packaged vehicle visual has no runtime mesh: %s" % visual_path)
 		instance.free()
 		return null
 	var mesh_instance: MeshInstance3D = mesh_data["instance"]
+	profile["source_surface_count"] = mesh_instance.mesh.get_surface_count() if mesh_instance.mesh != null else 0
 	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	phase_start_usec = Time.get_ticks_usec()
 	var runtime_mesh := _build_body_mesh(mesh_instance.mesh, visual_metadata.get("body_surfaces", []))
+	profile["body_mesh_build_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if runtime_mesh == null:
 		push_error("Packaged vehicle has no selected runtime body surfaces: %s" % visual_path)
 		instance.free()
@@ -818,15 +850,38 @@ func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 	definition.content_id = String(record.get("content_id", ""))
 	definition.properties_path = String(record.get("authoritative_path", ""))
 	definition.runtime_mesh = runtime_mesh
+	phase_start_usec = Time.get_ticks_usec()
 	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), record)
+	profile["material_texture_build_usec"] = Time.get_ticks_usec() - phase_start_usec
 	definition.runtime_transform = _transform_from_metadata(visual_metadata.get("model_transform", {})) * mesh_data["transform"]
+	phase_start_usec = Time.get_ticks_usec()
 	definition.manual_boost_sfx = _load_packaged_boost_sfx(String(record.get("manual_boost_sfx_path", "")))
+	profile["boost_audio_load_usec"] = Time.get_ticks_usec() - phase_start_usec
 	definition.manual_boost_volume_db = clampf(
 		float(visual_metadata.get("manual_boost_volume_db", 0.0)), -20.0, 20.0)
 	for thruster_value in visual_metadata.get("thrusters", []):
 		definition.runtime_thruster_transforms.append(_thruster_transform_from_metadata(thruster_value))
+	profile["runtime_surface_count"] = runtime_mesh.get_surface_count()
+	profile["runtime_vertex_count"] = _mesh_vertex_count(runtime_mesh)
+	profile["runtime_index_count"] = _mesh_index_count(runtime_mesh)
 	instance.free()
 	return definition
+
+func _mesh_vertex_count(mesh: Mesh) -> int:
+	if mesh == null:
+		return 0
+	var total := 0
+	for surface in range(mesh.get_surface_count()):
+		total += mesh.surface_get_array_len(surface)
+	return total
+
+func _mesh_index_count(mesh: Mesh) -> int:
+	if mesh == null:
+		return 0
+	var total := 0
+	for surface in range(mesh.get_surface_count()):
+		total += mesh.surface_get_array_index_len(surface)
+	return total
 
 func _load_packaged_boost_sfx(path: String) -> AudioStream:
 	if path.is_empty() or !FileAccess.file_exists(path):
