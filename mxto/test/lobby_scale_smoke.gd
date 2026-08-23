@@ -97,6 +97,11 @@ func _run() -> void:
 	var change_schedule_start := Time.get_ticks_usec()
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var change_schedule_usec := Time.get_ticks_usec() - change_schedule_start
+	if game_manager.lobby_chibi_controller.last_settings_apply_definition_count != 1 \
+			or game_manager.lobby_chibi_controller.last_settings_apply_sample_count != 1 \
+			or game_manager.lobby_chibi_controller.last_settings_apply_already_current_count != PLAYER_COUNT - 1:
+		_fail("one-player settings update performed redundant definition or stat work")
+		return
 	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
 	var change_rebuild_start := Time.get_ticks_usec()
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
@@ -110,6 +115,8 @@ func _run() -> void:
 		" steady_avg_us=", snappedf(steady_avg_usec, 0.1),
 		" one_player_change_schedule_ms=", snappedf(float(change_schedule_usec) * 0.001, 0.001),
 		" one_player_change_rebuild_ms=", snappedf(float(change_rebuild_usec) * 0.001, 0.001),
+		" sampled_players=", game_manager.lobby_chibi_controller.last_settings_apply_sample_count,
+		" unchanged_players=", game_manager.lobby_chibi_controller.last_settings_apply_already_current_count,
 		" archetypes=", game_manager.lobby_chibi_controller.render_manager.archetypes.size(),
 		" variant_state_bytes=", variant_state_bytes,
 		" draw_calls=", int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))

@@ -288,6 +288,20 @@ invalidated archetypes, and renderer rebuild duration.
 - Unchanged cars retain their renderer archetypes and materials.
 - The focused scale smoke reports no redundant definition/stat work.
 
+### Phase C results
+
+- Completed by the Phase C lobby-revision commit.
+- The controller now compares each car's applied settings revision before definition
+  lookup or machine-stat sampling. An unchanged car performs only the cheap
+  local-control ownership update.
+- Local-player ownership has its own applied ID and update reason. Explicit vehicle
+  content refresh records the current global settings revision after its forced work
+  instead of assigning a fake stale revision and repeating the entire pass next frame.
+- The 48-player scale smoke changed one machine and measured exactly one definition
+  lookup/stat sample, 47 revision early-outs, 47 reused renderer archetypes, and one
+  replacement archetype. Scheduling the change fell from 24.4 ms in Phase A to 3.8
+  ms; the remaining 78.2 ms deferred render rebuild is owned by later renderer phases.
+
 ## Phase D: Incremental Workshop catalog updates
 
 Replace clear-and-repopulate refreshes with an item delta.

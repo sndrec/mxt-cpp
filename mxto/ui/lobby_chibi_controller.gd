@@ -48,6 +48,10 @@ var magnifier_render_manager: CarRenderManager
 var render_signature := ""
 var roster_cache: Array = []
 var applied_settings_revision := -1
+var applied_local_player_id := -1
+var last_settings_apply_definition_count := 0
+var last_settings_apply_sample_count := 0
+var last_settings_apply_already_current_count := 0
 var pending_render_signature := ""
 var render_rebuild_due_msec := 0
 var render_rebuild_count_total := 0
@@ -117,6 +121,10 @@ func clear() -> void:
 	render_indices.clear()
 	roster_cache.clear()
 	applied_settings_revision = -1
+	applied_local_player_id = -1
+	last_settings_apply_definition_count = 0
+	last_settings_apply_sample_count = 0
+	last_settings_apply_already_current_count = 0
 	hovered_player_id = -1
 	last_broadcast_msec = 0
 	render_signature = ""
@@ -147,6 +155,7 @@ func process_lobby(_delta: float) -> void:
 	for id in roster:
 		var lobby_settings: Dictionary = network_manager.lobby_settings.player_settings.get(int(id), {})
 		vehicle_content_controller.request_lobby_vehicle_content(lobby_settings)
+	var local_id: int = game_manager._local_player_id()
 	var roster_changed := roster != roster_cache
 	if roster_changed:
 		var live := {}
@@ -159,7 +168,7 @@ func process_lobby(_delta: float) -> void:
 				new_car.name = "ChibiCar%d" % id
 				new_car.position = _spawn_position(i)
 				car_root.add_child(new_car)
-				_configure_car(new_car, id, settings, id == game_manager._local_player_id(), network_manager.lobby_settings.get_player_settings_revision(id), true)
+				_configure_car(new_car, id, settings, id == local_id, network_manager.lobby_settings.get_player_settings_revision(id), true)
 				cars[id] = new_car
 		for id in cars.keys():
 			if !live.has(id):
@@ -169,14 +178,15 @@ func process_lobby(_delta: float) -> void:
 				cars.erase(id)
 		roster_cache = roster.duplicate()
 	var settings_revision := network_manager.lobby_settings.revision
-	if roster_changed or settings_revision != applied_settings_revision:
+	var local_control_changed := local_id != applied_local_player_id
+	if roster_changed or settings_revision != applied_settings_revision or local_control_changed:
 		var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "settings_revision_apply", {
 			"roster_count": roster.size(),
 			"roster_changed": roster_changed,
+			"local_control_changed": local_control_changed,
 			"previous_revision": applied_settings_revision,
 			"next_revision": settings_revision,
 		})
-		var local_id: int = game_manager._local_player_id()
 		var player_profiles: Array = []
 		for id in roster:
 			var player_id := int(id)
@@ -191,12 +201,20 @@ func process_lobby(_delta: float) -> void:
 				network_manager.lobby_settings.get_player_settings_revision(player_id),
 				false))
 		applied_settings_revision = settings_revision
+		applied_local_player_id = local_id
+		last_settings_apply_definition_count = player_profiles.filter(
+			func(profile: Dictionary): return bool(profile.get("definition_looked_up", false))).size()
+		last_settings_apply_sample_count = player_profiles.filter(
+			func(profile: Dictionary): return bool(profile.get("stats_sampled", false))).size()
+		last_settings_apply_already_current_count = player_profiles.filter(
+			func(profile: Dictionary): return bool(profile.get("already_current", false))).size()
 		player_profiles.sort_custom(
 			func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
 		LoadTransitionProfilerClass.end_transition(load_profile, {
 			"player_profiles": player_profiles,
-			"already_current_count": player_profiles.filter(
-				func(profile: Dictionary): return bool(profile.get("already_current", false))).size(),
+			"definition_lookup_count": last_settings_apply_definition_count,
+			"stats_sample_count": last_settings_apply_sample_count,
+			"already_current_count": last_settings_apply_already_current_count,
 		})
 	_submit_render(roster)
 	_update_hover_and_magnifier()
@@ -206,6 +224,25 @@ func process_lobby(_delta: float) -> void:
 func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool, force_content_refresh := false) -> Dictionary:
 	var start_usec := Time.get_ticks_usec()
 	var previous_revision := int(car.settings_revision) if car != null else -1
+	var already_current := !initial and !force_content_refresh and settings_revision >= 0 and settings_revision == previous_revision
+	if already_current:
+		var ownership_start_usec := Time.get_ticks_usec()
+		car.set_local_control(local_control)
+		return {
+			"player_id": player_id,
+			"content_id": String(settings.get("vehicle_content_id", "")),
+			"settings_revision": settings_revision,
+			"previous_revision": previous_revision,
+			"already_current": true,
+			"initial": false,
+			"force_content_refresh": false,
+			"definition_looked_up": false,
+			"stats_sampled": false,
+			"definition_usec": 0,
+			"sample_stats_usec": 0,
+			"apply_usec": Time.get_ticks_usec() - ownership_start_usec,
+			"duration_usec": Time.get_ticks_usec() - start_usec,
+		}
 	var definition_start_usec := Time.get_ticks_usec()
 	var definition: CarDefinition = vehicle_content_controller.get_definition(str(settings.get("vehicle_content_id", "")))
 	var definition_usec := Time.get_ticks_usec() - definition_start_usec
@@ -224,9 +261,11 @@ func _configure_car(car, player_id: int, settings: Dictionary, local_control: bo
 		"content_id": String(settings.get("vehicle_content_id", "")),
 		"settings_revision": settings_revision,
 		"previous_revision": previous_revision,
-		"already_current": !initial and !force_content_refresh and settings_revision >= 0 and settings_revision == previous_revision,
+		"already_current": false,
 		"initial": initial,
 		"force_content_refresh": force_content_refresh,
+		"definition_looked_up": true,
+		"stats_sampled": true,
 		"definition_usec": definition_usec,
 		"sample_stats_usec": stats_usec,
 		"apply_usec": apply_usec,
@@ -265,7 +304,8 @@ func refresh_vehicle_content() -> void:
 	LoadTransitionProfilerClass.checkpoint(load_profile, "reconfigure_lobby_cars", {
 		"refreshed_player_count": refreshed_players.size(),
 	})
-	applied_settings_revision = -1
+	applied_settings_revision = network_manager.lobby_settings.revision
+	applied_local_player_id = local_id
 	render_signature = ""
 	pending_render_signature = ""
 	render_rebuild_due_msec = 0
