@@ -354,6 +354,7 @@ func _submit_render(roster: Array) -> void:
 		var definitions := []
 		var settings := []
 		var player_ids := []
+		var render_input_revisions := []
 		var next_render_cars := []
 		for id in roster:
 			var player_id := int(id)
@@ -366,6 +367,11 @@ func _submit_render(roster: Array) -> void:
 			definitions.append(definition)
 			settings.append(car.player_settings)
 			player_ids.append(player_id)
+			render_input_revisions.append("%d:%d:%d" % [
+				player_id,
+				network_manager.lobby_settings.get_player_settings_revision(player_id),
+				network_manager.custom_stamp_network.revision,
+			])
 			render_indices[player_id] = next_render_cars.size()
 			next_render_cars.append(car)
 		LoadTransitionProfilerClass.checkpoint(load_profile, "collect_render_roster", {
@@ -375,7 +381,7 @@ func _submit_render(roster: Array) -> void:
 		LoadTransitionProfilerClass.checkpoint(load_profile, "prepare_custom_stamp_atlas")
 		render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
 		var render_settings: Array = stamp_render.get("settings", settings)
-		render_manager.reconfigure_manual(definitions, render_settings)
+		render_manager.reconfigure_manual(definitions, render_settings, render_input_revisions)
 		LoadTransitionProfilerClass.checkpoint(load_profile, "configure_render_archetypes")
 		render_cars = next_render_cars
 		render_settings_by_id.clear()

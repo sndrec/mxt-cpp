@@ -5,8 +5,9 @@
 #include "godot_cpp/classes/image_texture.hpp"
 #include "godot_cpp/classes/mesh.hpp"
 #include "godot_cpp/classes/object.hpp"
-#include "godot_cpp/classes/rendering_server.hpp"
+#include "godot_cpp/classes/time.hpp"
 #include "godot_cpp/core/class_db.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/packed_color_array.hpp"
 #include "godot_cpp/variant/packed_float32_array.hpp"
 #include "godot_cpp/variant/packed_int32_array.hpp"
@@ -284,6 +285,17 @@ static std::vector<ClipVertex> clipped_triangle_polygon(
 	const Vector3 p0 = transform_xform(body_to_car, vertices[i0]);
 	const Vector3 p1 = transform_xform(body_to_car, vertices[i1]);
 	const Vector3 p2 = transform_xform(body_to_car, vertices[i2]);
+	const Vector3 q0 = transform_xform(car_to_projector, p0);
+	const Vector3 q1 = transform_xform(car_to_projector, p1);
+	const Vector3 q2 = transform_xform(car_to_projector, p2);
+	if ((q0.x < clip_min.x && q1.x < clip_min.x && q2.x < clip_min.x) ||
+			(q0.x > clip_max.x && q1.x > clip_max.x && q2.x > clip_max.x) ||
+			(q0.y < clip_min.y && q1.y < clip_min.y && q2.y < clip_min.y) ||
+			(q0.y > clip_max.y && q1.y > clip_max.y && q2.y > clip_max.y) ||
+			(q0.z < clip_min.z && q1.z < clip_min.z && q2.z < clip_min.z) ||
+			(q0.z > clip_max.z && q1.z > clip_max.z && q2.z > clip_max.z)) {
+		return {};
+	}
 	Vector3 face_normal = (p1 - p0).cross(p2 - p0);
 	if (face_normal.length_squared() <= EPSILON) {
 		return {};
@@ -294,9 +306,9 @@ static std::vector<ClipVertex> clipped_triangle_polygon(
 
 	std::vector<ClipVertex> polygon;
 	polygon.reserve(8);
-	polygon.push_back({ transform_xform(car_to_projector, p0), p0, vertices[i0], normal_at(body_to_car, normals, i0, face_normal), body_normal_at(normals, i0, body_face_normal), uv_at(body_uvs, i0) });
-	polygon.push_back({ transform_xform(car_to_projector, p1), p1, vertices[i1], normal_at(body_to_car, normals, i1, face_normal), body_normal_at(normals, i1, body_face_normal), uv_at(body_uvs, i1) });
-	polygon.push_back({ transform_xform(car_to_projector, p2), p2, vertices[i2], normal_at(body_to_car, normals, i2, face_normal), body_normal_at(normals, i2, body_face_normal), uv_at(body_uvs, i2) });
+	polygon.push_back({ q0, p0, vertices[i0], normal_at(body_to_car, normals, i0, face_normal), body_normal_at(normals, i0, body_face_normal), uv_at(body_uvs, i0) });
+	polygon.push_back({ q1, p1, vertices[i1], normal_at(body_to_car, normals, i1, face_normal), body_normal_at(normals, i1, body_face_normal), uv_at(body_uvs, i1) });
+	polygon.push_back({ q2, p2, vertices[i2], normal_at(body_to_car, normals, i2, face_normal), body_normal_at(normals, i2, body_face_normal), uv_at(body_uvs, i2) });
 
 	clip_polygon_axis(polygon, 0, clip_min.x, true);
 	clip_polygon_axis(polygon, 0, clip_max.x, false);
@@ -361,34 +373,6 @@ static void raster_depth_polygon(const std::vector<ClipVertex> &polygon, const V
 	}
 }
 
-static std::vector<float> build_stamp_depth_map(Ref<Mesh> mesh, const Transform3D &body_to_car, const Transform3D &car_to_projector, const Vector3 &clip_min, const Vector3 &clip_max)
-{
-	std::vector<float> depth_map(OCCLUSION_MAP_SIZE * OCCLUSION_MAP_SIZE, OCCLUSION_DEPTH_EMPTY);
-	for (int surface_index = 0; surface_index < mesh->get_surface_count(); ++surface_index) {
-		const Array arrays = mesh->surface_get_arrays(surface_index);
-		const PackedVector3Array vertices = surface_vertices(arrays);
-		if (vertices.is_empty()) {
-			continue;
-		}
-		const PackedVector3Array normals = surface_normals(arrays);
-		const PackedVector2Array body_uvs = surface_uvs(arrays);
-		const PackedInt32Array indices = surface_indices(arrays);
-		if (indices.is_empty()) {
-			const int tri_count = vertices.size() / 3;
-			for (int tri = 0; tri < tri_count; ++tri) {
-				const int i0 = tri * 3;
-				raster_depth_polygon(clipped_triangle_polygon(body_to_car, car_to_projector, clip_min, clip_max, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2), clip_min, clip_max, depth_map);
-			}
-		} else {
-			const int tri_count = indices.size() / 3;
-			for (int tri = 0; tri < tri_count; ++tri) {
-				raster_depth_polygon(clipped_triangle_polygon(body_to_car, car_to_projector, clip_min, clip_max, vertices, normals, body_uvs, indices[tri * 3], indices[tri * 3 + 1], indices[tri * 3 + 2]), clip_min, clip_max, depth_map);
-			}
-		}
-	}
-	return depth_map;
-}
-
 static Vector2i mask_tile_origin(int mask_slot)
 {
 	return Vector2i(mask_slot % OCCLUSION_ATLAS_COLUMNS, mask_slot / OCCLUSION_ATLAS_COLUMNS) * OCCLUSION_MAP_SIZE;
@@ -409,7 +393,7 @@ static Vector2 mask_uv_for_projector_uv(const Rect2 &mask_rect, const Vector2 &u
 	return mask_rect.position + tile_pixel / atlas_size;
 }
 
-static void write_depth_map_to_mask_image(const std::vector<float> &depth_map, const Vector3 &clip_min, const Vector3 &clip_max, int mask_slot, Ref<Image> mask_image)
+static void write_depth_map_to_mask_pixels(const std::vector<float> &depth_map, const Vector3 &clip_min, const Vector3 &clip_max, int mask_slot, float *mask_pixels)
 {
 	const Vector2i tile_origin = mask_tile_origin(mask_slot);
 	for (int y = 0; y < OCCLUSION_MAP_SIZE; ++y) {
@@ -421,7 +405,11 @@ static void write_depth_map_to_mask_image(const std::vector<float> &depth_map, c
 				encoded_depth = clamp_f(inverse_lerp_f(clip_min.z, clip_max.z, depth), 0.0f, 1.0f);
 				valid = 1.0f;
 			}
-			mask_image->set_pixel(tile_origin.x + x, tile_origin.y + y, Color(encoded_depth, valid, 0.0f, 1.0f));
+			const int atlas_x = tile_origin.x + x;
+			const int atlas_y = tile_origin.y + y;
+			const size_t pixel_offset = static_cast<size_t>((atlas_y * OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE + atlas_x) * 2);
+			mask_pixels[pixel_offset] = encoded_depth;
+			mask_pixels[pixel_offset + 1] = valid;
 		}
 	}
 }
@@ -480,10 +468,9 @@ static void emit_vertex(
 	out_source_data.append(0.0f);
 }
 
-static void append_triangle(
-		const Transform3D &body_to_car,
+static void append_clipped_polygon(
+		const std::vector<ClipVertex> &polygon,
 		const Transform3D &car_to_body,
-		const Transform3D &car_to_projector,
 		const Vector3 &clip_min,
 		const Vector3 &clip_max,
 		const Rect2 &atlas_rect,
@@ -494,12 +481,6 @@ static void append_triangle(
 		const Rect2 &mask_rect,
 		const Color &colour,
 		float depth_epsilon_normalized,
-		const PackedVector3Array &vertices,
-		const PackedVector3Array &normals,
-		const PackedVector2Array &body_uvs,
-		int i0,
-		int i1,
-		int i2,
 		PackedVector3Array &out_vertices,
 		PackedVector3Array &out_normals,
 		PackedVector2Array &out_body_uvs,
@@ -508,7 +489,6 @@ static void append_triangle(
 		PackedFloat32Array &out_mask_data,
 		PackedFloat32Array &out_source_data)
 {
-	const std::vector<ClipVertex> polygon = clipped_triangle_polygon(body_to_car, car_to_projector, clip_min, clip_max, vertices, normals, body_uvs, i0, i1, i2);
 	if (polygon.size() < 3) {
 		return;
 	}
@@ -525,7 +505,7 @@ static void append_stamp_projection(
 		const Transform3D &car_to_body,
 		const StampSpec &stamp,
 		int mask_slot,
-		Ref<Image> mask_image,
+		float *mask_pixels,
 		bool build_visibility_mask,
 		const Transform3D &projector,
 		PackedVector3Array &out_vertices,
@@ -534,7 +514,9 @@ static void append_stamp_projection(
 		PackedVector2Array &out_stamp_uvs,
 		PackedColorArray &out_colours,
 		PackedFloat32Array &out_mask_data,
-		PackedFloat32Array &out_source_data)
+		PackedFloat32Array &out_source_data,
+		uint64_t &visibility_mask_usec,
+		uint64_t &geometry_projection_usec)
 {
 	if (std::abs(static_cast<float>(projector.basis.determinant())) <= EPSILON) {
 		return;
@@ -548,13 +530,13 @@ static void append_stamp_projection(
 	const float depth_epsilon = std::max(OCCLUSION_DEPTH_EPSILON, half_depth * 0.02f);
 	const float depth_range = std::max(static_cast<float>(clip_max.z - clip_min.z), EPSILON);
 	const float depth_epsilon_normalized = clamp_f(depth_epsilon / depth_range, 0.0f, 1.0f);
-	const Rect2 mask_rect = mask_image.is_valid() ? mask_rect_for_slot(mask_slot) : Rect2(0.0f, 0.0f, 1.0f, 1.0f);
+	const Rect2 mask_rect = mask_pixels != nullptr ? mask_rect_for_slot(mask_slot) : Rect2(0.0f, 0.0f, 1.0f, 1.0f);
 
-	if (build_visibility_mask && mask_image.is_valid()) {
-		const std::vector<float> depth_map = build_stamp_depth_map(mesh, body_to_car, car_to_projector, clip_min, clip_max);
-		write_depth_map_to_mask_image(depth_map, clip_min, clip_max, mask_slot, mask_image);
+	std::vector<float> depth_map;
+	if (build_visibility_mask && mask_pixels != nullptr) {
+		depth_map.assign(OCCLUSION_MAP_SIZE * OCCLUSION_MAP_SIZE, OCCLUSION_DEPTH_EMPTY);
 	}
-
+	const uint64_t phase_start_usec = Time::get_singleton()->get_ticks_usec();
 	for (int surface_index = 0; surface_index < mesh->get_surface_count(); ++surface_index) {
 		const Array arrays = mesh->surface_get_arrays(surface_index);
 		const PackedVector3Array vertices = surface_vertices(arrays);
@@ -568,14 +550,24 @@ static void append_stamp_projection(
 			const int tri_count = vertices.size() / 3;
 			for (int tri = 0; tri < tri_count; ++tri) {
 				const int i0 = tri * 3;
-				append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, stamp.atlas_rect, stamp.source_flag, stamp.atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
+				const std::vector<ClipVertex> polygon = clipped_triangle_polygon(body_to_car, car_to_projector, clip_min, clip_max, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2);
+				if (!depth_map.empty()) raster_depth_polygon(polygon, clip_min, clip_max, depth_map);
+				append_clipped_polygon(polygon, car_to_body, clip_min, clip_max, stamp.atlas_rect, stamp.source_flag, stamp.atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
 			}
 		} else {
 			const int tri_count = indices.size() / 3;
 			for (int tri = 0; tri < tri_count; ++tri) {
-				append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, stamp.atlas_rect, stamp.source_flag, stamp.atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, indices[tri * 3], indices[tri * 3 + 1], indices[tri * 3 + 2], out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
+				const std::vector<ClipVertex> polygon = clipped_triangle_polygon(body_to_car, car_to_projector, clip_min, clip_max, vertices, normals, body_uvs, indices[tri * 3], indices[tri * 3 + 1], indices[tri * 3 + 2]);
+				if (!depth_map.empty()) raster_depth_polygon(polygon, clip_min, clip_max, depth_map);
+				append_clipped_polygon(polygon, car_to_body, clip_min, clip_max, stamp.atlas_rect, stamp.source_flag, stamp.atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
 			}
 		}
+	}
+	geometry_projection_usec += Time::get_singleton()->get_ticks_usec() - phase_start_usec;
+	if (!depth_map.empty()) {
+		const uint64_t mask_write_start_usec = Time::get_singleton()->get_ticks_usec();
+		write_depth_map_to_mask_pixels(depth_map, clip_min, clip_max, mask_slot, mask_pixels);
+		visibility_mask_usec += Time::get_singleton()->get_ticks_usec() - mask_write_start_usec;
 	}
 }
 
@@ -605,6 +597,7 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 		bool p_build_visibility_masks,
 		int p_visibility_mask_skip_layer)
 {
+	const uint64_t total_start_usec = Time::get_singleton()->get_ticks_usec();
 	if (p_body_mesh == nullptr || p_livery == nullptr || p_catalog == nullptr) {
 		return empty_build_result();
 	}
@@ -632,13 +625,21 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 	PackedFloat32Array out_source_data;
 	Dictionary stamp_vertex_ranges;
 
-	Ref<Image> mask_image;
+	PackedByteArray mask_bytes;
+	float *mask_pixels = nullptr;
+	uint64_t mask_image_setup_usec = 0;
 	if (p_build_visibility_masks) {
-		mask_image = Image::create(OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE, OCCLUSION_ATLAS_ROWS * OCCLUSION_MAP_SIZE, false, Image::FORMAT_RGF);
-		mask_image->fill(Color(0.0f, 0.0f, 0.0f, 1.0f));
+		const uint64_t phase_start_usec = Time::get_singleton()->get_ticks_usec();
+		mask_bytes.resize(static_cast<int64_t>(OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE * OCCLUSION_ATLAS_ROWS * OCCLUSION_MAP_SIZE * 2 * sizeof(float)));
+		std::fill(mask_bytes.ptrw(), mask_bytes.ptrw() + mask_bytes.size(), static_cast<uint8_t>(0));
+		mask_pixels = reinterpret_cast<float *>(mask_bytes.ptrw());
+		mask_image_setup_usec = Time::get_singleton()->get_ticks_usec() - phase_start_usec;
 	}
 
 	const Transform3D car_to_body = p_body_to_car.affine_inverse();
+	uint64_t stamp_parse_usec = 0;
+	uint64_t visibility_mask_usec = 0;
+	uint64_t geometry_projection_usec = 0;
 	int mask_slot = 0;
 	const int max_mask_slots = OCCLUSION_ATLAS_COLUMNS * OCCLUSION_ATLAS_ROWS;
 	for (int i = 0; i < sorted_stamps.size(); ++i) {
@@ -647,20 +648,23 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 			continue;
 		}
 		StampSpec stamp;
+		const uint64_t parse_start_usec = Time::get_singleton()->get_ticks_usec();
 		if (!parse_stamp_spec(stamp_object, p_catalog, stamp)) {
+			stamp_parse_usec += Time::get_singleton()->get_ticks_usec() - parse_start_usec;
 			continue;
 		}
+		stamp_parse_usec += Time::get_singleton()->get_ticks_usec() - parse_start_usec;
 		const int stamp_mask_slots = stamp.mirror_local_x ? 2 : 1;
 		if (mask_slot + stamp_mask_slots > max_mask_slots) {
 			break;
 		}
 		const int vertex_start = out_vertices.size();
 		const bool build_visibility_mask = p_build_visibility_masks && stamp.layer != p_visibility_mask_skip_layer;
-		append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot, mask_image, build_visibility_mask, stamp.projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
+		append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot, mask_pixels, build_visibility_mask, stamp.projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
 		if (stamp.mirror_local_x) {
 			const Basis mirror_basis(Vector3(-1.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f), Vector3(0.0f, 0.0f, 1.0f));
 			const Transform3D mirrored_projector = Transform3D(mirror_basis, Vector3()) * stamp.projector;
-			append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot + 1, mask_image, build_visibility_mask, mirrored_projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data);
+			append_stamp_projection(mesh, p_body_to_car, car_to_body, stamp, mask_slot + 1, mask_pixels, build_visibility_mask, mirrored_projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data, visibility_mask_usec, geometry_projection_usec);
 		}
 		const int vertex_count = out_vertices.size() - vertex_start;
 		if (vertex_count > 0) {
@@ -680,6 +684,13 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 		result["mesh"] = out_mesh;
 		result["visibility_mask"] = Variant();
 		result["stamp_vertex_ranges"] = Dictionary();
+		Dictionary profile;
+		profile["total_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - total_start_usec);
+		profile["mask_image_setup_usec"] = static_cast<int64_t>(mask_image_setup_usec);
+		profile["stamp_parse_usec"] = static_cast<int64_t>(stamp_parse_usec);
+		profile["visibility_mask_usec"] = static_cast<int64_t>(visibility_mask_usec);
+		profile["geometry_projection_usec"] = static_cast<int64_t>(geometry_projection_usec);
+		result["profile"] = profile;
 		return result;
 	}
 
@@ -695,18 +706,34 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 	const int64_t format_flags =
 			(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT)) |
 			(static_cast<int64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT) << static_cast<int64_t>(Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT));
+	const uint64_t mesh_upload_start_usec = Time::get_singleton()->get_ticks_usec();
 	out_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), Dictionary(), BitField<Mesh::ArrayFormat>(format_flags));
+	const uint64_t mesh_upload_usec = Time::get_singleton()->get_ticks_usec() - mesh_upload_start_usec;
 
 	Ref<Texture2D> visibility_mask;
-	if (mask_image.is_valid()) {
+	uint64_t texture_upload_usec = 0;
+	if (!mask_bytes.is_empty()) {
+		const Ref<Image> mask_image = Image::create_from_data(
+				OCCLUSION_ATLAS_COLUMNS * OCCLUSION_MAP_SIZE,
+				OCCLUSION_ATLAS_ROWS * OCCLUSION_MAP_SIZE,
+				false,
+				Image::FORMAT_RGF,
+				mask_bytes);
+		const uint64_t texture_upload_start_usec = Time::get_singleton()->get_ticks_usec();
 		visibility_mask = ImageTexture::create_from_image(mask_image);
-		RenderingServer *rendering_server = RenderingServer::get_singleton();
-		if (rendering_server != nullptr) {
-			rendering_server->force_sync();
-		}
+		texture_upload_usec = Time::get_singleton()->get_ticks_usec() - texture_upload_start_usec;
 	}
 	result["mesh"] = out_mesh;
 	result["visibility_mask"] = visibility_mask;
 	result["stamp_vertex_ranges"] = stamp_vertex_ranges;
+	Dictionary profile;
+	profile["total_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - total_start_usec);
+	profile["mask_image_setup_usec"] = static_cast<int64_t>(mask_image_setup_usec);
+	profile["stamp_parse_usec"] = static_cast<int64_t>(stamp_parse_usec);
+	profile["visibility_mask_usec"] = static_cast<int64_t>(visibility_mask_usec);
+	profile["geometry_projection_usec"] = static_cast<int64_t>(geometry_projection_usec);
+	profile["mesh_upload_usec"] = static_cast<int64_t>(mesh_upload_usec);
+	profile["texture_upload_usec"] = static_cast<int64_t>(texture_upload_usec);
+	result["profile"] = profile;
 	return result;
 }

@@ -33,16 +33,22 @@ var _profile_reused_archetype_count := 0
 var _profile_obsolete_archetype_count := 0
 var _profile_resize_usec := 0
 var _active_archetype_profile: Dictionary = {}
+var _cached_input_revisions: Array = []
+var _cached_definition_instances: Array = []
+var _cached_liveries: Array = []
+var _cached_archetype_keys: Array = []
 
 func _exit_tree() -> void:
 	archetypes.clear()
 	car_archetype_indices = PackedInt32Array()
 	car_slots = PackedInt32Array()
+	_clear_render_input_cache()
 
 func clear_renderer() -> void:
 	archetypes.clear()
 	car_archetype_indices = PackedInt32Array()
 	car_slots = PackedInt32Array()
+	_clear_render_input_cache()
 	for child in get_children():
 		child.queue_free()
 
@@ -64,10 +70,17 @@ func configure_manual(definitions: Array, player_settings: Array = [], unique_ar
 	_configure_archetypes(definitions, player_settings)
 	_end_configuration_profile(load_profile, definitions)
 
-func reconfigure_manual(definitions: Array, player_settings: Array = []) -> void:
+func reconfigure_manual(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> void:
 	var load_profile := _begin_configuration_profile("reconfigure_manual", definitions)
-	_reconfigure_archetypes(definitions, player_settings)
+	_reconfigure_archetypes(definitions, player_settings, input_revisions)
 	_end_configuration_profile(load_profile, definitions)
+
+
+func _clear_render_input_cache() -> void:
+	_cached_input_revisions.clear()
+	_cached_definition_instances.clear()
+	_cached_liveries.clear()
+	_cached_archetype_keys.clear()
 
 
 func _begin_configuration_profile(mode: String, definitions: Array, fields: Dictionary = {}) -> int:
@@ -176,7 +189,7 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		_resize_passes(archetype, int(archetype["count"]))
 	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
-func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) -> void:
+func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
 	car_slots.resize(definitions.size())
 	if !multimesh_render_enabled:
@@ -194,10 +207,36 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) ->
 			reusable[existing_key] = archetype
 	var next_archetypes: Array = []
 	var archetype_map := {}
+	var next_input_revisions: Array = []
+	var next_definition_instances: Array = []
+	var next_liveries: Array = []
+	var next_archetype_keys: Array = []
+	next_input_revisions.resize(definitions.size())
+	next_definition_instances.resize(definitions.size())
+	next_liveries.resize(definitions.size())
+	next_archetype_keys.resize(definitions.size())
 	for i in range(definitions.size()):
 		var definition: CarDefinition = definitions[i]
-		var livery := _livery_for_index(i, definition, player_settings)
-		var key := _definition_key(definition, livery)
+		var definition_instance := definition.get_instance_id() if definition != null else 0
+		var input_revision = input_revisions[i] if i < input_revisions.size() else null
+		var cache_matches: bool = (
+			input_revision != null
+			and i < _cached_input_revisions.size()
+			and input_revision == _cached_input_revisions[i]
+			and i < _cached_definition_instances.size()
+			and definition_instance == _cached_definition_instances[i])
+		var livery: CarLivery
+		var key: String
+		if cache_matches:
+			livery = _cached_liveries[i] as CarLivery
+			key = String(_cached_archetype_keys[i])
+		else:
+			livery = _livery_for_index(i, definition, player_settings)
+			key = _definition_key(definition, livery)
+		next_input_revisions[i] = input_revision
+		next_definition_instances[i] = definition_instance
+		next_liveries[i] = livery
+		next_archetype_keys[i] = key
 		var archetype_index := -1
 		if archetype_map.has(key):
 			archetype_index = int(archetype_map[key])
@@ -225,6 +264,10 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) ->
 	for obsolete in reusable.values():
 		_free_archetype_nodes(obsolete)
 	archetypes = next_archetypes
+	_cached_input_revisions = next_input_revisions
+	_cached_definition_instances = next_definition_instances
+	_cached_liveries = next_liveries
+	_cached_archetype_keys = next_archetype_keys
 	var resize_start_usec := Time.get_ticks_usec()
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
@@ -473,6 +516,9 @@ func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: 
 			phase_start_usec = Time.get_ticks_usec()
 			var stamp_build := stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
 			_profile_add_usec("stamp_projection_upload_usec", phase_start_usec)
+			for field_value in (stamp_build.get("profile", {}) as Dictionary).keys():
+				var field := String(field_value)
+				_active_archetype_profile["stamp_native_%s" % field] = int((stamp_build["profile"] as Dictionary).get(field, 0))
 			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh

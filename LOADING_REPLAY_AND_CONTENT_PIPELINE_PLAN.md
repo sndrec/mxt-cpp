@@ -394,6 +394,32 @@ Do not proceed to threading merely because work remains. First:
 If a target cannot be met, record the measured reason and proceed based on evidence,
 not optimism.
 
+### Phase E results
+
+- Native sub-phase timing accounted for effectively all archetype construction cost.
+  The expensive path was neither GLTF scene instantiation nor material/pass creation:
+  stamp projection repeatedly clipped every body triangle twice per stamp, then filled
+  and rewrote a fixed-size floating-point visibility image through per-pixel Godot API
+  calls.
+- Stamp projection now rejects triangles wholly outside a projector before polygon
+  allocation, clips each triangle once for both visibility rasterization and emitted
+  geometry, writes visibility pixels directly into the final packed image buffer, and
+  does not force a global RenderingServer synchronization after every mask texture.
+- The renderer retains per-player livery resources and archetype keys behind exact
+  lobby player revision, custom-stamp revision, and definition-instance identities.
+  A one-player change no longer reparses and rehashes the other 47 liveries.
+- The measured 48-player renderer configuration fell from 1,509.2 ms in Phase A to
+  364.2 ms, a 4.14x reduction. Its one-player changed-archetype configuration fell to
+  6.8 ms with 47 archetypes reused, including a 5.4 ms replacement build and about
+  1.4 ms of reuse/resize overhead.
+- The complete one-player lobby render transition is now approximately 34.6 ms because
+  rebuilding/scanning the custom-stamp atlas payload still costs approximately 23.4 ms.
+  That is now the dominant synchronous cost and must be included in Phase F's bounded
+  preparation path rather than hidden behind further renderer micro-optimization.
+- Release compilation, the livery render-manager smoke, the lobby chibi render smoke,
+  and the 48-player scale smoke completed successfully with the same generated stamp
+  vertex count and visible-car behavior.
+
 ## Phase F: Non-blocking lobby replacement builds
 
 After Phase E:
