@@ -2,9 +2,9 @@
 
 ## Status
 
-In progress. Phases A through G are complete; final integrated verification is in
-progress. This document is the implementation contract for the loading-performance,
-binary-replay, lobby-rendering, and Workshop-refresh work described below.
+Complete. Phases A through G and final integrated verification are complete. This
+document is the implementation record for the loading-performance, binary-replay,
+lobby-rendering, and Workshop-refresh work described below.
 
 Execute it with a short goal such as:
 
@@ -645,3 +645,22 @@ profiles when results determine architecture.
 - Legacy JSON playback is possible only for trusted Steam leaderboard attachments;
   ordinary local replay paths cannot invoke it.
 - Existing Steam leaderboard behavior otherwise remains unchanged by this plan.
+
+## Final Verification Results
+
+- Final `scons target=template_release -j4` completed successfully.
+- A non-headless safe-render-thread game launch reached `game_manager_ready`, stayed
+  open for the requested smoke window, and exited normally with code 0.
+- Native replay stream corruption, binary deterministic playback, 40-file catalog,
+  Practice unit/runtime/continuation, leaderboard-only legacy conversion and cache,
+  ghost picker/lifecycle, content package, vehicle content, and 48-player lobby
+  scale/churn checks all reached their success markers.
+- The final broad suite exposed and this plan fixed one instrumentation regression:
+  generic `Mesh` profiling had called `ArrayMesh`-only size methods on the bumper's
+  `SphereMesh`. Profiling now reads generic surface arrays and the bumper race starts
+  without that script error.
+- Existing broad-suite noise remains outside this plan: the car-properties sampler
+  expects a dirt-drag default absent from the current Accelerator asset, and several
+  full-scene headless tests intermittently access-violate during engine teardown
+  after printing their success markers. The ordinary game launch does not reproduce
+  that teardown failure.

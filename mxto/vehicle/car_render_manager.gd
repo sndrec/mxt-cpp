@@ -919,8 +919,11 @@ func _profile_mesh(mesh: Mesh, prefix := "") -> void:
 	var vertices := 0
 	var indices := 0
 	for surface in range(surfaces):
-		vertices += mesh.surface_get_array_len(surface)
-		indices += mesh.surface_get_array_index_len(surface)
+		var arrays := mesh.surface_get_arrays(surface)
+		if arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
+			vertices += arrays[Mesh.ARRAY_VERTEX].size()
+		if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null:
+			indices += arrays[Mesh.ARRAY_INDEX].size()
 	_active_archetype_profile[prefix + "surface_count"] = int(_active_archetype_profile.get(prefix + "surface_count", 0)) + surfaces
 	_active_archetype_profile[prefix + "vertex_count"] = int(_active_archetype_profile.get(prefix + "vertex_count", 0)) + vertices
 	_active_archetype_profile[prefix + "index_count"] = int(_active_archetype_profile.get(prefix + "index_count", 0)) + indices
