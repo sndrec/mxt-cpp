@@ -328,7 +328,10 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("redo"), &MxtCarAuthoringSession::redo);
 	ClassDB::bind_method(D_METHOD("import_model", "source_path", "draft_root"), &MxtCarAuthoringSession::import_model);
 	ClassDB::bind_method(D_METHOD("load_vehicle_package", "package_root"), &MxtCarAuthoringSession::load_vehicle_package);
-	ClassDB::bind_method(D_METHOD("build_vehicle_package", "package_root", "preview_png_path", "title", "description", "author_name"), &MxtCarAuthoringSession::build_vehicle_package);
+	ClassDB::bind_method(
+			D_METHOD("build_vehicle_package", "package_root", "preview_png_path", "title", "description", "author_name", "validate_package"),
+			&MxtCarAuthoringSession::build_vehicle_package,
+			DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_model_path"), &MxtCarAuthoringSession::get_model_path);
 	ClassDB::bind_method(D_METHOD("get_model_transform"), &MxtCarAuthoringSession::get_model_transform);
 	ClassDB::bind_method(D_METHOD("set_model_transform", "value"), &MxtCarAuthoringSession::set_model_transform);
@@ -1494,7 +1497,8 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 		const String &preview_png_path,
 		const String &title,
 		const String &description,
-		const String &author_name)
+		const String &author_name,
+		bool validate_package)
 {
 	String root;
 	const String draft_root = package_root.trim_suffix("/package").trim_suffix("\\package");
@@ -1634,17 +1638,19 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	if (!write_text_file(root.path_join("manifest.json"), JSON::stringify(manifest, "  ", true, true))) {
 		return result_dictionary(false, single_error("could not write vehicle package manifest"), {});
 	}
-	mxt::content::ValidatedPackage package;
-	std::vector<String> validation_errors;
-	if (!mxt::content::validate_package_directory_internal(root, package, validation_errors)) {
-		PackedStringArray errors;
-		for (const String &error : validation_errors) errors.push_back(error);
-		return result_dictionary(false, errors, {});
-	}
 	Dictionary result = result_dictionary(true, {}, properties_result.get("warnings", PackedStringArray()));
 	result["package_path"] = root;
-	result["package_digest"] = package.package_digest;
-	result["gameplay_digest"] = package.gameplay_digest;
+	if (validate_package) {
+		mxt::content::ValidatedPackage package;
+		std::vector<String> validation_errors;
+		if (!mxt::content::validate_package_directory_internal(root, package, validation_errors)) {
+			PackedStringArray errors;
+			for (const String &error : validation_errors) errors.push_back(error);
+			return result_dictionary(false, errors, {});
+		}
+		result["package_digest"] = package.package_digest;
+		result["gameplay_digest"] = package.gameplay_digest;
+	}
 	dirty = false;
 	return result;
 }

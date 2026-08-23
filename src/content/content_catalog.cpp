@@ -79,6 +79,121 @@ static PackedStringArray error_array(const std::vector<String> &errors)
 	return output;
 }
 
+static void add_error(std::vector<String> &errors, const String &message)
+{
+	errors.push_back(message);
+}
+
+static bool read_file(const String &path, PackedByteArray &out_bytes, std::vector<String> &errors)
+{
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
+	if (file.is_null()) {
+		add_error(errors, "could not open package file '" + path + "'");
+		return false;
+	}
+	const uint64_t length = file->get_length();
+	out_bytes = file->get_buffer(static_cast<int64_t>(length));
+	if (static_cast<uint64_t>(out_bytes.size()) != length) {
+		add_error(errors, "could not read complete package file '" + path + "'");
+		return false;
+	}
+	return true;
+}
+
+static std::vector<String> manifest_paths(const mxt::content::ContentManifest &manifest)
+{
+	std::vector<String> paths;
+	paths.reserve(manifest.files.size() + 1);
+	paths.push_back("manifest.json");
+	for (const mxt::content::ManifestFile &file : manifest.files) {
+		paths.push_back(file.path);
+	}
+	return paths;
+}
+
+static void remove_snapshot_staging(const String &root_path, const std::vector<String> &paths)
+{
+	for (const String &path : paths) {
+		DirAccess::remove_absolute(root_path.path_join(path));
+	}
+	DirAccess::remove_absolute(root_path.path_join("vehicle"));
+	DirAccess::remove_absolute(root_path.path_join("track"));
+	DirAccess::remove_absolute(root_path);
+}
+
+static bool materialize_snapshot(
+		const String &package_root,
+		const String &library_root,
+		mxt::content::ValidatedPackage &out_package,
+		std::vector<String> &out_paths,
+		std::vector<String> &errors)
+{
+	const String source_root = global_path(package_root);
+	const String use_library_root = global_path(library_root);
+	PackedByteArray manifest_bytes;
+	mxt::content::ContentManifest manifest;
+	if (!read_file(source_root.path_join("manifest.json"), manifest_bytes, errors) ||
+			!mxt::content::parse_manifest(manifest_bytes, manifest, errors)) {
+		return false;
+	}
+	out_paths = manifest_paths(manifest);
+	if (DirAccess::make_dir_recursive_absolute(use_library_root) != OK) {
+		add_error(errors, "could not create test-drive snapshot library");
+		return false;
+	}
+	const String staging_path = use_library_root.path_join(
+			String(".mxt-snapshot-") + String::num_uint64(Time::get_singleton()->get_ticks_usec()));
+	if (DirAccess::make_dir_recursive_absolute(
+			staging_path.path_join(mxt::content::content_type_name(manifest.content_type))) != OK) {
+		add_error(errors, "could not create test-drive snapshot staging directory");
+		return false;
+	}
+	for (const String &path : out_paths) {
+		if (DirAccess::copy_absolute(source_root.path_join(path), staging_path.path_join(path)) != OK) {
+			add_error(errors, "could not copy test-drive package file '" + path + "'");
+			remove_snapshot_staging(staging_path, out_paths);
+			return false;
+		}
+	}
+	if (!mxt::content::validate_package_directory_internal(staging_path, out_package, errors)) {
+		remove_snapshot_staging(staging_path, out_paths);
+		return false;
+	}
+	return true;
+}
+
+static bool install_snapshot(
+		mxt::content::ValidatedPackage &package,
+		const String &library_root,
+		const std::vector<String> &paths,
+		std::vector<String> &errors)
+{
+	const String use_library_root = global_path(library_root);
+	const String staging_path = package.root_path;
+	const String final_path = use_library_root.path_join(package.package_digest.substr(7));
+	String displaced_path;
+	if (DirAccess::open(final_path).is_valid()) {
+		displaced_path = use_library_root.path_join(
+				String(".") + package.package_digest.substr(7) + String(".obsolete-") +
+				String::num_uint64(Time::get_singleton()->get_ticks_usec()));
+		if (DirAccess::rename_absolute(final_path, displaced_path) != OK) {
+			add_error(errors, "could not replace the existing test-drive snapshot");
+			remove_snapshot_staging(staging_path, paths);
+			return false;
+		}
+	}
+	if (DirAccess::rename_absolute(staging_path, final_path) != OK) {
+		add_error(errors, "could not install the validated test-drive snapshot");
+		if (!displaced_path.is_empty()) {
+			DirAccess::rename_absolute(displaced_path, final_path);
+		}
+		remove_snapshot_staging(staging_path, paths);
+		return false;
+	}
+	package.root_path = final_path;
+	return true;
+}
+
 static bool is_digest_directory_name(const String &name)
 {
 	if (name.length() != 64) return false;
@@ -171,6 +286,9 @@ void MxtContentCatalog::_bind_methods()
 	ClassDB::bind_method(D_METHOD("clear_loose_tracks"), &MxtContentCatalog::clear_loose_tracks);
 	ClassDB::bind_method(D_METHOD("add_local_package", "package_root"), &MxtContentCatalog::add_local_package);
 	ClassDB::bind_method(D_METHOD("add_draft_package", "package_root"), &MxtContentCatalog::add_draft_package);
+	ClassDB::bind_method(
+			D_METHOD("snapshot_draft_package", "package_root", "library_root"),
+			&MxtContentCatalog::snapshot_draft_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
 	ClassDB::bind_method(D_METHOD("clear_workshop_packages"), &MxtContentCatalog::clear_workshop_packages);
@@ -433,6 +551,65 @@ Dictionary MxtContentCatalog::add_local_package(const String &package_root)
 Dictionary MxtContentCatalog::add_draft_package(const String &package_root)
 {
 	return add_package_internal(package_root, mxt::content::ContentSource::LOCAL_DRAFT, 0);
+}
+
+Dictionary MxtContentCatalog::snapshot_draft_package(
+		const String &package_root,
+		const String &library_root)
+{
+	std::vector<String> errors;
+	std::vector<String> snapshot_paths;
+	mxt::content::ValidatedPackage package;
+	if (!materialize_snapshot(package_root, library_root, package, snapshot_paths, errors)) {
+		Dictionary result;
+		result["valid"] = false;
+		result["errors"] = error_array(errors);
+		result["validation_profile"] = package.validation_profile;
+		return result;
+	}
+	const String final_path = global_path(library_root).path_join(package.package_digest.substr(7));
+	for (const mxt::content::ContentRecord &existing : records) {
+		if (existing.source == mxt::content::ContentSource::LOCAL_DRAFT &&
+				existing.package_digest == package.package_digest &&
+				existing.root_path == final_path &&
+				DirAccess::open(final_path).is_valid()) {
+			remove_snapshot_staging(package.root_path, snapshot_paths);
+			Dictionary result;
+			result["valid"] = true;
+			result["errors"] = PackedStringArray();
+			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			result["package_path"] = existing.root_path;
+			result["package_digest"] = existing.package_digest;
+			result["gameplay_digest"] = existing.gameplay_digest;
+			result["validation_profile"] = package.validation_profile;
+			result["reused_existing"] = true;
+			return result;
+		}
+	}
+	if (!install_snapshot(package, library_root, snapshot_paths, errors)) {
+		Dictionary result;
+		result["valid"] = false;
+		result["errors"] = error_array(errors);
+		result["validation_profile"] = package.validation_profile;
+		return result;
+	}
+	const uint64_t catalog_start_usec = Time::get_singleton()->get_ticks_usec();
+	const mxt::content::ContentRecord record = make_record(
+			package, mxt::content::ContentSource::LOCAL_DRAFT, 0);
+	replace_record(record);
+	Dictionary validation_profile = package.validation_profile;
+	validation_profile["catalog_record_usec"] = static_cast<int64_t>(
+			Time::get_singleton()->get_ticks_usec() - catalog_start_usec);
+	Dictionary result;
+	result["valid"] = true;
+	result["errors"] = PackedStringArray();
+	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["package_path"] = package.root_path;
+	result["package_digest"] = package.package_digest;
+	result["gameplay_digest"] = package.gameplay_digest;
+	result["validation_profile"] = validation_profile;
+	result["reused_existing"] = false;
+	return result;
 }
 
 Dictionary MxtContentCatalog::add_workshop_package(const String &package_root, int64_t published_file_id)

@@ -158,7 +158,8 @@ public:
 			const String &preview_png_path,
 			const String &title,
 			const String &description,
-			const String &author_name);
+			const String &author_name,
+			bool validate_package = true);
 	String get_model_path() const;
 	bool load_draft_visual_state(
 			const String &draft_model_path,

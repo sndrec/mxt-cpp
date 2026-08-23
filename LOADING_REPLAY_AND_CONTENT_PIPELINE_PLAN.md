@@ -248,6 +248,29 @@ invalidated archetypes, and renderer rebuild duration.
 - One Test Drive request validates the produced immutable package no more than once.
 - Corrupt imported or Workshop packages remain rejected.
 
+### Phase B results
+
+- Completed by the Phase B snapshot-pipeline commit.
+- Vehicle-content startup and installed-content refresh no longer enumerate or
+  validate the historical Test Drive snapshot directory. On the same development
+  machine used for Phase A, the measured headless `game_manager_ready` transition
+  fell from 4.64 seconds to 0.619 seconds; no Test Drive snapshot transition or
+  validation appeared in the startup profile.
+- Test Drive now writes the mutable authoring package without validating it, then
+  performs one native snapshot transaction that copies only manifest-declared files,
+  validates the immutable staging package once, installs it by package digest, and
+  registers the native validated record directly. The archive export/import and
+  second catalog-validation chain is gone.
+- A digest already registered during the current process reuses its catalog record
+  without validating the destination again. A pre-existing destination without a
+  current-process validated record is displaced before the newly validated snapshot
+  is installed.
+- Package validation now streams each file once for its declared SHA-256, package
+  digest, and authoritative gameplay digest. Bounded properties and JSON payloads
+  retained from that pass are reused by schema and authoring validation.
+- The focused content-package smoke covers corrupt hash rejection, archive
+  validation, snapshot registration, and same-session snapshot reuse.
+
 ## Phase C: Per-player lobby revision early-out
 
 - Compare the car's applied player-settings revision with the incoming player's

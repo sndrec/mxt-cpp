@@ -89,6 +89,7 @@ public:
 	void clear_loose_tracks();
 	Dictionary add_local_package(const String &package_root);
 	Dictionary add_draft_package(const String &package_root);
+	Dictionary snapshot_draft_package(const String &package_root, const String &library_root);
 	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);
 	Dictionary scan_local_library(const String &library_root);
 	void clear_workshop_packages();

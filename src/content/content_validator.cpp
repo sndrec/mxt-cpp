@@ -41,6 +41,11 @@ struct DiskEntry {
 	uint64_t size = 0;
 };
 
+struct CachedPayload {
+	String relative_path;
+	PackedByteArray bytes;
+};
+
 struct ValidationProfile {
 	uint64_t total_usec = 0;
 	uint64_t manifest_read_usec = 0;
@@ -53,6 +58,7 @@ struct ValidationProfile {
 	uint64_t properties_validation_usec = 0;
 	uint64_t authoring_validation_usec = 0;
 	uint64_t visual_metadata_validation_usec = 0;
+	uint64_t combined_hash_usec = 0;
 	uint64_t package_digest_usec = 0;
 	uint64_t gameplay_digest_usec = 0;
 	uint64_t file_open_count = 0;
@@ -79,6 +85,7 @@ static Dictionary validation_profile_dictionary(const ValidationProfile &profile
 	out["properties_validation_usec"] = static_cast<int64_t>(profile.properties_validation_usec);
 	out["authoring_validation_usec"] = static_cast<int64_t>(profile.authoring_validation_usec);
 	out["visual_metadata_validation_usec"] = static_cast<int64_t>(profile.visual_metadata_validation_usec);
+	out["combined_hash_usec"] = static_cast<int64_t>(profile.combined_hash_usec);
 	out["package_digest_usec"] = static_cast<int64_t>(profile.package_digest_usec);
 	out["gameplay_digest_usec"] = static_cast<int64_t>(profile.gameplay_digest_usec);
 	out["file_open_count"] = static_cast<int64_t>(profile.file_open_count);
@@ -153,6 +160,36 @@ static bool read_file_limited(
 		return false;
 	}
 	return true;
+}
+
+static const PackedByteArray *find_cached_payload(
+		const std::vector<CachedPayload> &cache,
+		const String &relative_path)
+{
+	for (const CachedPayload &payload : cache) {
+		if (payload.relative_path == relative_path) return &payload.bytes;
+	}
+	return nullptr;
+}
+
+static bool read_or_reuse_file_limited(
+		const DiskEntry &entry,
+		uint64_t max_bytes,
+		const std::vector<CachedPayload> &cache,
+		PackedByteArray &out_bytes,
+		std::vector<String> &errors,
+		ValidationProfile *profile = nullptr)
+{
+	if (entry.size > max_bytes) {
+		add_error(errors, "file exceeds its size limit: '" + entry.absolute_path + "'");
+		return false;
+	}
+	const PackedByteArray *cached = find_cached_payload(cache, entry.relative_path);
+	if (cached) {
+		out_bytes = *cached;
+		return true;
+	}
+	return read_file_limited(entry.absolute_path, max_bytes, out_bytes, errors, profile);
 }
 
 static bool is_allowed_directory(const String &relative_path, ContentType type)
@@ -428,11 +465,12 @@ static bool json_vec3_in_range(const Variant &value, double minimum, double maxi
 
 static bool validate_track_metadata(
 		const DiskEntry &entry,
+		const std::vector<CachedPayload> &cache,
 		std::vector<String> &errors,
 		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, TRACK_METADATA_MAX_BYTES, bytes, errors, profile)) {
+	if (!read_or_reuse_file_limited(entry, TRACK_METADATA_MAX_BYTES, cache, bytes, errors, profile)) {
 		return false;
 	}
 	if (!audit_json_members(bytes, errors)) {
@@ -580,9 +618,28 @@ static bool calculate_gameplay_digest(
 	return true;
 }
 
-static bool calculate_digests(
+static const ManifestFile *find_manifest_file(
+		const ContentManifest &manifest,
+		const String &path)
+{
+	for (const ManifestFile &file : manifest.files) {
+		if (file.path == path) return &file;
+	}
+	return nullptr;
+}
+
+static bool cache_payload_bytes(const String &path)
+{
+	return path == "vehicle/properties.mxt_car_props" ||
+			path == "vehicle/visual.json" ||
+			path == "vehicle/authoring.json" ||
+			path == "track/metadata.json";
+}
+
+static bool calculate_and_validate_hashes(
 		const ContentManifest &manifest,
 		std::vector<DiskEntry> entries,
+		std::vector<CachedPayload> &out_cache,
 		String &out_package_digest,
 		String &out_gameplay_digest,
 		std::vector<String> &errors,
@@ -602,54 +659,86 @@ static bool calculate_digests(
 	std::memcpy(domain.ptrw(), "MXT_PACKAGE\0", 12);
 	package_hash->update(domain);
 	append_u32_be(package_hash, PACKAGE_FORMAT_REVISION);
-	const uint64_t package_digest_start_usec = profile_now_usec();
-	for (const DiskEntry &entry : entries) {
-		append_utf8(package_hash, entry.relative_path);
-		append_u64_be(package_hash, entry.size);
-		if (!append_file(package_hash, entry, errors, profile)) {
-			return false;
-		}
-	}
-	out_package_digest = "sha256:" + package_hash->finish().hex_encode();
-	if (profile) profile->package_digest_usec += profile_now_usec() - package_digest_start_usec;
 
 	const DiskEntry *authoritative = find_disk_entry(entries, manifest.authoritative_path);
 	if (!authoritative) {
 		add_error(errors, "authoritative gameplay payload is missing");
 		return false;
 	}
-	const uint64_t gameplay_digest_start_usec = profile_now_usec();
-	const bool gameplay_valid = calculate_gameplay_digest(
-			manifest.content_type,
-			manifest.authoritative_path,
-			*authoritative,
-			out_gameplay_digest,
-			errors,
-			profile);
-	if (profile) profile->gameplay_digest_usec += profile_now_usec() - gameplay_digest_start_usec;
-	return gameplay_valid;
-}
-
-static bool validate_declared_hashes(
-		const ContentManifest &manifest,
-		const std::vector<DiskEntry> &entries,
-		std::vector<String> &errors,
-		ValidationProfile *profile)
-{
-	for (const ManifestFile &manifest_file : manifest.files) {
-		const DiskEntry *entry = find_disk_entry(entries, manifest_file.path);
-		if (!entry) {
-			continue;
-		}
-		if (profile) {
-			++profile->file_open_count;
-			profile->bytes_read += entry->size;
-		}
-		const String actual = FileAccess::get_sha256(entry->absolute_path);
-		if (actual.is_empty() || actual != manifest_file.declared_sha256) {
-			add_error(errors, "SHA-256 mismatch for '" + manifest_file.path + "'");
-		}
+	Ref<HashingContext> gameplay_hash;
+	gameplay_hash.instantiate();
+	if (gameplay_hash->start(HashingContext::HASH_SHA256) != OK) {
+		add_error(errors, "could not initialize gameplay SHA-256");
+		return false;
 	}
+	PackedByteArray gameplay_domain;
+	gameplay_domain.resize(13);
+	std::memcpy(gameplay_domain.ptrw(), "MXT_GAMEPLAY\0", 13);
+	gameplay_hash->update(gameplay_domain);
+	append_u32_be(gameplay_hash, GAMEPLAY_DIGEST_REVISION);
+	append_utf8(gameplay_hash, content_type_name(manifest.content_type));
+	append_utf8(gameplay_hash, manifest.authoritative_path);
+	append_u64_be(gameplay_hash, authoritative->size);
+
+	const uint64_t hash_start_usec = profile_now_usec();
+	for (const DiskEntry &entry : entries) {
+		append_utf8(package_hash, entry.relative_path);
+		append_u64_be(package_hash, entry.size);
+		const ManifestFile *declared_file = find_manifest_file(manifest, entry.relative_path);
+		Ref<HashingContext> declared_hash;
+		if (declared_file) {
+			declared_hash.instantiate();
+			if (declared_hash->start(HashingContext::HASH_SHA256) != OK) {
+				add_error(errors, "could not initialize declared-file SHA-256");
+				return false;
+			}
+		}
+		const bool is_authoritative = entry.relative_path == manifest.authoritative_path;
+		CachedPayload cached;
+		const bool cache_bytes = cache_payload_bytes(entry.relative_path);
+		if (cache_bytes) {
+			cached.relative_path = entry.relative_path;
+			cached.bytes.resize(static_cast<int64_t>(entry.size));
+		}
+		if (profile) ++profile->file_open_count;
+		Ref<FileAccess> file = FileAccess::open(entry.absolute_path, FileAccess::READ);
+		if (file.is_null()) {
+			add_error(errors, "could not open package file while hashing '" + entry.relative_path + "'");
+			return false;
+		}
+		uint64_t remaining = entry.size;
+		uint64_t offset = 0;
+		while (remaining > 0) {
+			const int64_t request = static_cast<int64_t>(std::min<uint64_t>(remaining, HASH_CHUNK_BYTES));
+			const PackedByteArray chunk = file->get_buffer(request);
+			if (profile) profile->bytes_read += static_cast<uint64_t>(chunk.size());
+			if (chunk.size() != request) {
+				add_error(errors, "package file changed or failed while hashing '" + entry.relative_path + "'");
+				return false;
+			}
+			package_hash->update(chunk);
+			if (is_authoritative) gameplay_hash->update(chunk);
+			if (declared_file) declared_hash->update(chunk);
+			if (cache_bytes) {
+				std::memcpy(
+						cached.bytes.ptrw() + static_cast<int64_t>(offset),
+						chunk.ptr(),
+						static_cast<size_t>(chunk.size()));
+			}
+			offset += static_cast<uint64_t>(request);
+			remaining -= static_cast<uint64_t>(request);
+		}
+		if (declared_file) {
+			const String actual = declared_hash->finish().hex_encode();
+			if (actual != declared_file->declared_sha256) {
+				add_error(errors, "SHA-256 mismatch for '" + entry.relative_path + "'");
+			}
+		}
+		if (cache_bytes) out_cache.push_back(std::move(cached));
+	}
+	out_package_digest = "sha256:" + package_hash->finish().hex_encode();
+	out_gameplay_digest = "sha256:" + gameplay_hash->finish().hex_encode();
+	if (profile) profile->combined_hash_usec += profile_now_usec() - hash_start_usec;
 	return errors.empty();
 }
 
@@ -718,12 +807,13 @@ static bool read_bounded_vector3(
 static bool validate_vehicle_visual_metadata(
 		const DiskEntry &entry,
 		const VehicleGlbInfo *model_info,
+		const std::vector<CachedPayload> &cache,
 		Dictionary &out_metadata,
 		std::vector<String> &errors,
 		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_VISUAL_METADATA_MAX_BYTES, bytes, errors, profile)) return false;
+	if (!read_or_reuse_file_limited(entry, VEHICLE_VISUAL_METADATA_MAX_BYTES, cache, bytes, errors, profile)) return false;
 	if (!audit_json_members(bytes, errors)) return false;
 	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
 	if (parsed.get_type() != Variant::DICTIONARY) {
@@ -909,12 +999,13 @@ static bool validate_vehicle_visual_metadata(
 static bool validate_vehicle_authoring_metadata(
 		const DiskEntry &entry,
 		uint16_t source_stat_count,
+		const std::vector<CachedPayload> &cache,
 		Dictionary &out_metadata,
 		std::vector<String> &errors,
 		ValidationProfile *profile)
 {
 	PackedByteArray bytes;
-	if (!read_file_limited(entry.absolute_path, VEHICLE_AUTHORING_METADATA_MAX_BYTES, bytes, errors, profile)) return false;
+	if (!read_or_reuse_file_limited(entry, VEHICLE_AUTHORING_METADATA_MAX_BYTES, cache, bytes, errors, profile)) return false;
 	if (!audit_json_members(bytes, errors)) return false;
 	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
 	if (parsed.get_type() != Variant::DICTIONARY) {
@@ -945,6 +1036,7 @@ static bool validate_vehicle_authoring_metadata(
 static bool validate_payloads(
 		const ContentManifest &manifest,
 		const std::vector<DiskEntry> &entries,
+		const std::vector<CachedPayload> &cache,
 		Dictionary &out_visual_metadata,
 		Dictionary &out_authoring_metadata,
 		std::vector<String> &errors,
@@ -974,6 +1066,8 @@ static bool validate_payloads(
 		VehicleGlbInfo model_info;
 		bool model_valid = false;
 		uint16_t properties_schema_stat_count = 0;
+		PackedByteArray properties_bytes;
+		bool properties_bytes_valid = false;
 		if (model) {
 			const uint64_t start_usec = profile_now_usec();
 			if (profile) {
@@ -985,12 +1079,14 @@ static bool validate_payloads(
 		}
 		if (properties) {
 			const uint64_t start_usec = profile_now_usec();
-			PackedByteArray bytes;
-			if (read_file_limited(properties->absolute_path, VEHICLE_PROPERTIES_MAX_BYTES, bytes, errors, profile)) {
+			if (read_or_reuse_file_limited(
+					*properties, VEHICLE_PROPERTIES_MAX_BYTES, cache,
+					properties_bytes, errors, profile)) {
+				properties_bytes_valid = true;
 				PhysicsCarProperties sampled;
 				String parse_error;
 				if (!PhysicsCarProperties::deserialize_and_sample(
-						bytes, 0.5f, sampled, parse_error, &properties_schema_stat_count)) {
+						properties_bytes, 0.5f, sampled, parse_error, &properties_schema_stat_count)) {
 					add_error(errors, "vehicle properties rejected: " + parse_error);
 				}
 			}
@@ -999,15 +1095,13 @@ static bool validate_payloads(
 		if (authoring_metadata) {
 			const uint64_t start_usec = profile_now_usec();
 			validate_vehicle_authoring_metadata(
-					*authoring_metadata, properties_schema_stat_count, out_authoring_metadata, errors, profile);
+					*authoring_metadata, properties_schema_stat_count, cache,
+					out_authoring_metadata, errors, profile);
 			if (profile) profile->authoring_validation_usec += profile_now_usec() - start_usec;
 		}
-		if (properties && !out_authoring_metadata.is_empty() && errors.empty()) {
+		if (properties_bytes_valid && !out_authoring_metadata.is_empty() && errors.empty()) {
 			const uint64_t start_usec = profile_now_usec();
-			if (profile) ++profile->file_open_count;
-			Ref<FileAccess> file = FileAccess::open(properties->absolute_path, FileAccess::READ);
-			const PackedByteArray original = file->get_buffer(file->get_length());
-			if (profile) profile->bytes_read += static_cast<uint64_t>(original.size());
+			const PackedByteArray &original = properties_bytes;
 			Ref<MxtCarAuthoringSession> session;
 			session.instantiate();
 			Dictionary loaded = session->load_bytes(original);
@@ -1029,7 +1123,8 @@ static bool validate_payloads(
 		if (visual_metadata) {
 			const uint64_t start_usec = profile_now_usec();
 			validate_vehicle_visual_metadata(
-					*visual_metadata, model_valid ? &model_info : nullptr, out_visual_metadata, errors, profile);
+					*visual_metadata, model_valid ? &model_info : nullptr, cache,
+					out_visual_metadata, errors, profile);
 			if (profile) profile->visual_metadata_validation_usec += profile_now_usec() - start_usec;
 		}
 	} else if (manifest.content_type == ContentType::TRACK) {
@@ -1055,7 +1150,7 @@ static bool validate_payloads(
 			if (profile) profile->glb_validation_usec += profile_now_usec() - start_usec;
 		}
 		if (metadata) {
-			validate_track_metadata(*metadata, errors, profile);
+			validate_track_metadata(*metadata, cache, errors, profile);
 		}
 	}
 	return errors.empty();
@@ -1171,24 +1266,23 @@ bool validate_package_directory_internal(
 		return false;
 	}
 
-	phase_start_usec = profile_now_usec();
-	validate_declared_hashes(out_package.manifest, entries, out_errors, &profile);
-	profile.declared_hash_usec = profile_now_usec() - phase_start_usec;
-	phase_start_usec = profile_now_usec();
-	validate_payloads(
-			out_package.manifest, entries, out_package.visual_metadata,
-			out_package.authoring_metadata, out_errors, &profile);
-	profile.payload_validation_usec = profile_now_usec() - phase_start_usec;
-	if (!out_errors.empty()) {
-		return false;
-	}
-	if (!calculate_digests(
+	std::vector<CachedPayload> payload_cache;
+	if (!calculate_and_validate_hashes(
 			out_package.manifest,
 			entries,
+			payload_cache,
 			out_package.package_digest,
 			out_package.gameplay_digest,
 			out_errors,
 			&profile)) {
+		return false;
+	}
+	phase_start_usec = profile_now_usec();
+	validate_payloads(
+			out_package.manifest, entries, payload_cache, out_package.visual_metadata,
+			out_package.authoring_metadata, out_errors, &profile);
+	profile.payload_validation_usec = profile_now_usec() - phase_start_usec;
+	if (!out_errors.empty()) {
 		return false;
 	}
 	out_package.root_path = root_path;

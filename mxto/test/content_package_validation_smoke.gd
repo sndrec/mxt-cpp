@@ -31,6 +31,17 @@ func _initialize() -> void:
 	_add_vehicle_texture_payloads(vehicle_root)
 	var textured_vehicle_result: Dictionary = validator.validate_package_directory(vehicle_root)
 	_expect(bool(textured_vehicle_result.get("valid", false)), "vehicle package with standalone material PNGs should validate: %s" % [textured_vehicle_result.get("errors", [])])
+	var snapshot_library := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_snapshot_library")
+	_remove_tree(snapshot_library)
+	var snapshot_catalog := MxtContentCatalog.new()
+	var snapshot: Dictionary = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
+	_expect(bool(snapshot.get("valid", false)), "vehicle package should become a registered test-drive snapshot: %s" % [snapshot.get("errors", [])])
+	if bool(snapshot.get("valid", false)):
+		var snapshot_record: Dictionary = snapshot.get("record", {})
+		_expect(snapshot_record.get("source", "") == "local_draft", "test-drive snapshot should register as local draft content")
+		_expect(snapshot_record.get("root_path", "") == snapshot.get("package_path", ""), "test-drive record should point at the immutable snapshot")
+		var repeated_snapshot: Dictionary = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
+		_expect(bool(repeated_snapshot.get("valid", false)) and bool(repeated_snapshot.get("reused_existing", false)), "same-session test-drive snapshot should reuse its validated catalog record")
 
 	var package_io := MxtContentPackageIO.new()
 	var archive_path := ProjectSettings.globalize_path("user://" + ROOT_NAME + ".mxtpkg")

@@ -56,8 +56,6 @@ func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: Cust
 	})
 	_scan_local_content_library()
 	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
-	_scan_test_drive_snapshot_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "test_drive_snapshots_scanned")
 	var initial_workshop_items := steam_service.get_workshop_items()
 	if !initial_workshop_items.is_empty():
 		_on_workshop_items_changed(initial_workshop_items)
@@ -360,8 +358,6 @@ func refresh_installed_content() -> void:
 	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "installed_vehicle_refresh")
 	_scan_local_content_library()
 	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
-	_scan_test_drive_snapshot_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "test_drive_snapshots_scanned")
 	reload_definitions()
 	LoadTransitionProfilerClass.checkpoint(load_profile, "definitions_reloaded", {
 		"definition_count": definitions.size(),
@@ -509,43 +505,10 @@ func _scan_local_content_library() -> void:
 		"diagnostic_count": (result.get("diagnostics", []) as Array).size(),
 		"vehicle_record_count": content_catalog.get_records("vehicle").size(),
 	})
-
-func _scan_test_drive_snapshot_library() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "test_drive_snapshot_scan")
-	var library_path := ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH)
-	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
-		push_error("Could not create the test-drive snapshot library")
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "could_not_create_library"})
-		return
-	var directory := DirAccess.open(library_path)
-	if directory == null:
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "library_unavailable"})
-		return
-	var snapshot_profiles: Array = []
-	directory.list_dir_begin()
-	var folder := directory.get_next()
-	while !folder.is_empty():
-		if directory.current_is_dir() and !directory.is_link(folder) and !folder.begins_with("."):
-			var snapshot_start_usec := Time.get_ticks_usec()
-			var result: Dictionary = content_catalog.add_draft_package(library_path.path_join(folder))
-			snapshot_profiles.append({
-				"folder": folder,
-				"duration_usec": Time.get_ticks_usec() - snapshot_start_usec,
-				"valid": bool(result.get("valid", false)),
-				"errors": result.get("errors", []),
-				"validation_profile": result.get("validation_profile", {}),
-			})
-			if !bool(result.get("valid", false)):
-				push_warning("Skipped test-drive snapshot %s: %s" % [folder, str(result.get("errors", []))])
-		folder = directory.get_next()
-	directory.list_dir_end()
-	snapshot_profiles.sort_custom(
-		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"library_path": library_path,
-		"snapshot_count": snapshot_profiles.size(),
-		"snapshot_profiles": snapshot_profiles,
-	})
+func create_test_drive_snapshot(package_root: String) -> Dictionary:
+	return content_catalog.snapshot_draft_package(
+		package_root,
+		ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH))
 
 func _scan_trusted_verifier_workshop_packages() -> void:
 	var args := OS.get_cmdline_args()

@@ -11,7 +11,6 @@ const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
-const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
 const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
@@ -1404,7 +1403,7 @@ func _manual_save_draft() -> void:
 		_update_autosave_status("Saved; previous thumbnail kept")
 
 
-func _build_package(preview_override := "") -> Dictionary:
+func _build_package(preview_override := "", validate_package := true) -> Dictionary:
 	if !_flush_autosave():
 		return {"valid": false, "errors": PackedStringArray([autosave_error]), "warnings": PackedStringArray()}
 	var preview_path := String(preview_override)
@@ -1423,7 +1422,8 @@ func _build_package(preview_override := "") -> Dictionary:
 		preview_path,
 		title_input.text,
 		description_input.text,
-		author_input.text)
+		author_input.text,
+		validate_package)
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
 		_refresh_draft_options()
@@ -1495,25 +1495,19 @@ func _export_package(path: String) -> void:
 
 
 func _test_drive() -> void:
-	var built := _build_package()
+	var built := _build_package("", false)
 	if !bool(built.get("valid", false)):
 		return
-	var package_io := MxtContentPackageIO.new()
-	var archive_path := _draft_root() + "/test-drive.mxtpkg"
-	var exported: Dictionary = package_io.export_mxtpkg(_draft_root() + "/package", archive_path)
-	if !bool(exported.get("valid", false)):
-		_show_diagnostics(exported)
-		return
-	var imported: Dictionary = package_io.import_mxtpkg(
-		archive_path,
-		ProjectSettings.globalize_path(TEST_DRIVE_LIBRARY_ROOT))
-	_show_diagnostics(imported)
-	if !bool(imported.get("valid", false)):
+	var snapshot: Dictionary = vehicle_content_controller.create_test_drive_snapshot(
+		String(built.get("package_path", "")))
+	_show_diagnostics(snapshot)
+	if !bool(snapshot.get("valid", false)):
 		return
 	test_drive_requested.emit({
 		"draft_id": draft_id,
-		"package_path": String(imported.get("package_path", "")),
-		"package_digest": String(imported.get("package_digest", "")),
+		"record": snapshot.get("record", {}),
+		"package_path": String(snapshot.get("package_path", "")),
+		"package_digest": String(snapshot.get("package_digest", "")),
 	})
 
 
