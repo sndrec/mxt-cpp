@@ -34,5 +34,51 @@
       "enabled": true,
       "head_sampling_rate": 0.1
     }
+  },
+  "env": {
+    "staging": {
+      "name": "mxt-leaderboard-api-staging",
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "MAX_REPLAY_BYTES": "16777216",
+        "REPLAY_URL_TTL_SECONDS": "300"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mxt-leaderboards-staging",
+          "database_id": "a2c6ae75-c86b-4ce6-b494-7bada7b7c2e0",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "REPLAYS",
+          "bucket_name": "mxt-leaderboard-replays-staging"
+        }
+      ]
+    },
+    "production": {
+      "name": "mxt-leaderboard-api-production",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "MAX_REPLAY_BYTES": "16777216",
+        "REPLAY_URL_TTL_SECONDS": "300"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mxt-leaderboards-production",
+          "database_id": "53296b6a-885e-4f47-a21e-f4e2762456c2",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "REPLAYS",
+          "bucket_name": "mxt-leaderboard-replays-production"
+        }
+      ]
+    }
   }
 }

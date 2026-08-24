@@ -6,6 +6,10 @@
   "scripts": {
     "check": "npm run types:check && tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
     "deploy:dry": "wrangler deploy --dry-run",
+    "deploy:production": "wrangler deploy --env production",
+    "deploy:staging": "wrangler deploy --env staging",
+    "migrate:production": "wrangler d1 migrations apply DB --env production --remote",
+    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
     "test": "vitest run",
     "types": "wrangler types src/worker-configuration.d.ts --include-runtime=false",
     "types:check": "wrangler types src/worker-configuration.d.ts --include-runtime=false --check"
