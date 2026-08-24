@@ -435,7 +435,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 12;
+	result["benchmark_version"] = 13;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
 	result["benchmark_reference"] = "All Rounder at 50%; All Rounder range sampled at 0%, 50%, and 100% defines A and E; official extrema define S and F, with fallback for setting-invariant metrics";
@@ -450,27 +450,37 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		const CarPerformanceCategory category = static_cast<CarPerformanceCategory>(category_raw);
 		Array components;
 		float score_sum = 0.0f;
+		uint8_t scored_count = 0;
 		const uint8_t count = car_performance_component_count(category);
 		for (uint8_t component = 0; component < count; ++component) {
+			const CarPerformanceComponent &raw_component = raw.components[category][component];
+			Dictionary component_result;
+			component_result["name"] = car_performance_component_name(category, component);
+			component_result["explanation"] = car_performance_component_explanation(category, component);
+			component_result["unit"] = car_performance_component_unit(category, component);
+			component_result["available"] = raw_component.available;
+			if (!raw_component.available) {
+				component_result["grade"] = "N/A";
+				components.push_back(component_result);
+				continue;
+			}
 			const float grade_a = grade_calibration.component_best[category][component];
 			const float grade_e = grade_calibration.component_worst[category][component];
 			const float grade_s = grade_calibration.component_official_best[category][component];
 			const float grade_f = grade_calibration.component_official_worst[category][component];
 			const float center = grade_calibration.center_raw.components[category][component].value;
-			const float value = raw.components[category][component].value;
+			const float value = raw_component.value;
 			const float component_score = score_against_anchors(
 				value, center, grade_a, grade_e, grade_s, grade_f);
 			score_sum += component_score;
-			Dictionary component_result;
-			component_result["name"] = car_performance_component_name(category, component);
-			component_result["explanation"] = car_performance_component_explanation(category, component);
-			component_result["unit"] = car_performance_component_unit(category, component);
+			++scored_count;
 			component_result["value"] = display_component_value(category, component, value);
 			component_result["score"] = component_score;
 			component_result["grade"] = grade_label(component_score);
 			components.push_back(component_result);
 		}
-		const float category_score = count > 0 ? score_sum / static_cast<float>(count) : 2.0f;
+		const float category_score = scored_count > 0
+			? score_sum / static_cast<float>(scored_count) : 2.0f;
 		Dictionary category_result;
 		category_result["name"] = car_performance_category_name(category);
 		category_result["score"] = category_score;

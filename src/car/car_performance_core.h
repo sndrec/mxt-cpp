@@ -21,6 +21,7 @@ static constexpr uint8_t CAR_PERFORMANCE_MAX_COMPONENTS = 6;
 
 struct CarPerformanceComponent {
 	float value = 0.0f;
+	bool available = true;
 };
 
 struct CarPerformanceRaw {

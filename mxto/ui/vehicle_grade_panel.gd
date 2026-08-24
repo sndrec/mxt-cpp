@@ -95,7 +95,8 @@ func _add_benchmark_row(category: String, component: Dictionary) -> void:
 	row.add_child(label)
 	row.add_child(_make_help_button(explanation))
 	var value := Label.new()
-	value.text = "%s %s" % [_format_value(float(component.get("value", 0.0))), String(component.get("unit", ""))]
+	var available := bool(component.get("available", true))
+	value.text = "%s %s" % [_format_value(float(component.get("value", 0.0))), String(component.get("unit", ""))] if available else "N/A"
 	value.custom_minimum_size.x = 118.0
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	row.add_child(value)
@@ -199,6 +200,8 @@ func _format_value(value: float) -> String:
 
 
 func _grade_colour(grade: String) -> Color:
+	if grade == "N/A":
+		return Color(0.72, 0.72, 0.72)
 	if grade.begins_with("S"):
 		return Color(0.38, 0.9, 1.0)
 	if grade.begins_with("A"):

@@ -193,9 +193,10 @@ static bool analyze_handling(
 	const float benchmark_speed_kmh = std::max(finite_or(settled_speed_kmh), 0.0f);
 	float ordinary_yaw = 0.0f;
 	float drift_yaw = 0.0f;
+	bool drift_observed = false;
 	if (!godot::GameSim::measure_flat_ground_steering(
 			property_document, machine_setting, benchmark_speed_kmh,
-			settled_base_speed, ordinary_yaw, drift_yaw)) {
+			settled_base_speed, ordinary_yaw, drift_yaw, drift_observed)) {
 		return false;
 	}
 	const float ordinary_retention = 1.0f /
@@ -205,6 +206,7 @@ static bool analyze_handling(
 	out.components[CAR_PERFORMANCE_CORNERING][0].value = ordinary_yaw;
 	out.components[CAR_PERFORMANCE_CORNERING][1].value = ordinary_retention;
 	out.components[CAR_PERFORMANCE_CORNERING][2].value = drift_yaw;
+	out.components[CAR_PERFORMANCE_CORNERING][2].available = drift_observed;
 	out.components[CAR_PERFORMANCE_CORNERING][3].value = drift_retention;
 
 	const float breakaway = normal[CAR_STAT_GRIP_1];
@@ -364,7 +366,8 @@ bool analyze_car_performance(
 	for (uint8_t category = 0; category < CAR_PERFORMANCE_CATEGORY_COUNT; ++category) {
 		for (uint8_t component = 0; component < car_performance_component_count(
 				static_cast<CarPerformanceCategory>(category)); ++component) {
-			if (!std::isfinite(out_analysis.components[category][component].value)) return false;
+			const CarPerformanceComponent &result = out_analysis.components[category][component];
+			if (result.available && !std::isfinite(result.value)) return false;
 		}
 	}
 	return true;

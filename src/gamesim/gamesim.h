@@ -606,7 +606,8 @@ namespace godot {
 			float settled_speed_kmh,
 			float settled_base_speed,
 			float& out_normal_degrees_per_second,
-			float& out_drift_degrees_per_second);
+			float& out_drift_degrees_per_second,
+			bool& out_drift_observed);
 		godot::Dictionary sample_car_properties(const godot::PackedByteArray& bytes, double machine_setting) const;
 		godot::Dictionary evaluate_car_properties(const godot::PackedByteArray& bytes, double machine_setting,
 			bool genuinely_drifting, double strafe_input, double signed_slip,

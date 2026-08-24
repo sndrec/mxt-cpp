@@ -194,9 +194,11 @@ bool GameSim::measure_flat_ground_steering(
 		float settled_speed_kmh,
 		float settled_base_speed,
 		float& out_normal_degrees_per_second,
-		float& out_drift_degrees_per_second) {
+		float& out_drift_degrees_per_second,
+		bool& out_drift_observed) {
 	out_normal_degrees_per_second = 0.0f;
 	out_drift_degrees_per_second = 0.0f;
+	out_drift_observed = false;
 	if (car_properties.is_empty() || !std::isfinite(machine_setting) ||
 			!std::isfinite(settled_speed_kmh) || !std::isfinite(settled_base_speed)) {
 		return false;
@@ -294,8 +296,9 @@ bool GameSim::measure_flat_ground_steering(
 		RADIANS_TO_DEGREES * 60.0f / static_cast<float>(TURN_MEASURE_FRAMES);
 	out_normal_degrees_per_second = std::abs(accumulated_angle[0]) * degrees_per_second_scale;
 	out_drift_degrees_per_second = std::abs(accumulated_angle[1]) * degrees_per_second_scale;
+	out_drift_observed = drift_observed;
 	const bool valid = std::isfinite(out_normal_degrees_per_second) &&
-		std::isfinite(out_drift_degrees_per_second) && drift_observed;
+		std::isfinite(out_drift_degrees_per_second);
 	memdelete(benchmark);
 	return valid;
 }
