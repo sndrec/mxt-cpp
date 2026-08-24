@@ -1,9 +1,8 @@
 class_name LegacyLeaderboardReplayReader extends RefCounted
 
-# This is the sole compatibility boundary for replay JSON. Steam leaderboard
-# attachments already in production remain trusted by their recorded SHA-256
-# and schema metadata until those boards move to the first-party service.
-# Local replays, new recordings, ghosts, and all other runtime paths are binary.
+# This is the sole compatibility boundary for leaderboard replay JSON. It keeps
+# pending pre-0.3.2 submissions and recovered Steam attachments verifiable while
+# new recordings and every ordinary local replay path remain binary.
 
 const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
 const CURRENT_BINARY_SCHEMA := 5
