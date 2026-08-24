@@ -6,6 +6,8 @@ import os
 import re
 import threading
 import time
+import traceback
+import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +36,48 @@ class ServiceConfig:
     board_ids: dict[str, int]
     steam_api: SteamWebApi
     replay_verifier: ReplayVerifier
+    log_path: Path
+
+
+class JsonlEventLog:
+    MAX_BYTES = 16 * 1024 * 1024
+    BACKUP_COUNT = 3
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lock = threading.Lock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, event: str, **fields: Any) -> None:
+        now = time.time()
+        record = {
+            "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "unix_time": now,
+            "event": event,
+            **fields,
+        }
+        line = json.dumps(record, separators=(",", ":"), ensure_ascii=True)
+        with self._lock:
+            self._rotate_if_needed(len(line) + 1)
+            with self.path.open("a", encoding="utf-8", newline="\n") as output:
+                output.write(line)
+                output.write("\n")
+        print(f"MXT_LEADERBOARD_SERVICE {line}", flush=True)
+
+    def _rotate_if_needed(self, incoming_bytes: int) -> None:
+        try:
+            current_bytes = self.path.stat().st_size
+        except FileNotFoundError:
+            return
+        if current_bytes + incoming_bytes <= self.MAX_BYTES:
+            return
+        oldest = self.path.with_name(f"{self.path.name}.{self.BACKUP_COUNT}")
+        oldest.unlink(missing_ok=True)
+        for index in range(self.BACKUP_COUNT - 1, 0, -1):
+            source = self.path.with_name(f"{self.path.name}.{index}")
+            if source.is_file():
+                source.replace(self.path.with_name(f"{self.path.name}.{index + 1}"))
+        self.path.replace(self.path.with_name(f"{self.path.name}.1"))
 
 
 class TicketReplayGuard:
@@ -63,6 +107,13 @@ class LeaderboardHttpServer(ThreadingHTTPServer):
         self.config = config
         self.verifier_slots = threading.BoundedSemaphore(config.verifier_concurrency)
         self.ticket_guard = TicketReplayGuard(config.ticket_reuse_window_seconds)
+        self.event_log = JsonlEventLog(config.log_path)
+
+    def log_event(self, event: str, **fields: Any) -> None:
+        try:
+            self.event_log.write(event, **fields)
+        except OSError as exc:
+            print(f"MXT_LEADERBOARD_SERVICE_LOG_ERROR event={event} error={exc}", flush=True)
 
 
 class LeaderboardRequestHandler(BaseHTTPRequestHandler):
@@ -72,13 +123,15 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format_string: str, *args: Any) -> None:
         print(f"{self.address_string()} - {format_string % args}", flush=True)
 
-    def _json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+    def _json(self, status: HTTPStatus, payload: dict[str, Any], request_id: str = "") -> None:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if request_id:
+            self.send_header("X-MXT-Request-ID", request_id)
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
@@ -91,19 +144,51 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"})
 
     def do_POST(self) -> None:
+        request_id = uuid.uuid4().hex[:16]
+        started = time.monotonic()
+        try:
+            self._handle_post(request_id, started)
+        except Exception as exc:  # This boundary must keep one bad request from killing its worker thread.
+            self.server.log_event(
+                "submission_unhandled_exception",
+                request_id=request_id,
+                duration_msec=round((time.monotonic() - started) * 1000.0, 3),
+                exception_type=type(exc).__name__,
+                message=str(exc),
+                traceback=traceback.format_exc(),
+            )
+            try:
+                self._json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {
+                        "ok": False,
+                        "error": "internal_server_error",
+                        "message": f"Leaderboard backend error; reference {request_id}.",
+                        "request_id": request_id,
+                    },
+                    request_id,
+                )
+            except (BrokenPipeError, ConnectionResetError):
+                self.server.log_event("submission_response_disconnected", request_id=request_id)
+
+    def _handle_post(self, request_id: str, started: float) -> None:
         if self.path != "/v1/time-attack/submit":
-            self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"})
+            self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"}, request_id)
             return
         config = self.server.config
         if self.headers.get_content_type() != "application/vnd.mxt.replay+json":
-            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"ok": False, "error": "invalid_content_type"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="invalid_content_type")
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"ok": False, "error": "invalid_content_type"}, request_id)
             return
         try:
             content_length = int(self.headers.get("Content-Length", "-1"))
         except ValueError:
             content_length = -1
         if content_length <= 0 or content_length > config.maximum_replay_bytes:
-            self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"ok": False, "error": "invalid_replay_size"})
+            self.server.log_event(
+                "submission_rejected", request_id=request_id, stage="headers", error="invalid_replay_size", content_length=content_length
+            )
+            self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"ok": False, "error": "invalid_replay_size"}, request_id)
             return
         authorization = self.headers.get("Authorization", "")
         ticket_hex = authorization[12:].strip() if authorization.startswith("SteamTicket ") else ""
@@ -112,70 +197,164 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
         auth_app_id_text = self.headers.get("X-MXT-Steam-App-ID", "")
         claimed_score_text = self.headers.get("X-MXT-Claimed-Score-Milliseconds", "")
         if not TICKET_PATTERN.fullmatch(ticket_hex) or (len(ticket_hex) & 1) != 0 or identity != config.ticket_identity:
-            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "invalid_authentication_ticket"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="authentication", error="invalid_authentication_ticket")
+            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "invalid_authentication_ticket"}, request_id)
             return
         if not BOARD_PATTERN.fullmatch(board_name) or board_name not in config.board_ids:
-            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_leaderboard"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="unknown_leaderboard", board_name=board_name)
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_leaderboard"}, request_id)
             return
         try:
             auth_app_id = int(auth_app_id_text)
         except ValueError:
             auth_app_id = 0
         if auth_app_id not in config.auth_app_ids:
-            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unapproved_steam_app"})
+            self.server.log_event(
+                "submission_rejected", request_id=request_id, stage="headers", error="unapproved_steam_app", auth_app_id=auth_app_id
+            )
+            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unapproved_steam_app"}, request_id)
             return
         try:
             claimed_score = int(claimed_score_text)
         except ValueError:
-            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_claimed_score"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="invalid_claimed_score")
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_claimed_score"}, request_id)
             return
         if claimed_score <= 0 or claimed_score > 0x7FFFFFFF:
-            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_claimed_score"})
+            self.server.log_event(
+                "submission_rejected", request_id=request_id, stage="headers", error="invalid_claimed_score", claimed_score=claimed_score
+            )
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_claimed_score"}, request_id)
             return
+        self.server.log_event(
+            "submission_received",
+            request_id=request_id,
+            board_name=board_name,
+            auth_app_id=auth_app_id,
+            claimed_score=claimed_score,
+            content_length=content_length,
+        )
         replay_bytes = self.rfile.read(content_length)
         if len(replay_bytes) != content_length:
-            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "incomplete_replay"})
+            self.server.log_event(
+                "submission_rejected",
+                request_id=request_id,
+                stage="body",
+                error="incomplete_replay",
+                expected_bytes=content_length,
+                received_bytes=len(replay_bytes),
+            )
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "incomplete_replay"}, request_id)
             return
+        auth_started = time.monotonic()
         try:
             steam_id = config.steam_api.authenticate_ticket(ticket_hex, identity, auth_app_id)
         except SteamWebApiError as exc:
-            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "steam_authentication_failed", "message": str(exc)})
+            self.server.log_event(
+                "submission_failed", request_id=request_id, stage="steam_authentication", error="steam_authentication_failed", message=str(exc)
+            )
+            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "steam_authentication_failed", "message": str(exc)}, request_id)
             return
+        self.server.log_event(
+            "submission_authenticated",
+            request_id=request_id,
+            steam_id=str(steam_id),
+            duration_msec=round((time.monotonic() - auth_started) * 1000.0, 3),
+        )
         try:
             owns_app = config.steam_api.check_app_ownership(steam_id, auth_app_id)
         except SteamWebApiError as exc:
-            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "steam_ownership_unavailable", "message": str(exc)})
+            self.server.log_event(
+                "submission_failed", request_id=request_id, stage="steam_ownership", error="steam_ownership_unavailable", steam_id=str(steam_id), message=str(exc)
+            )
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "steam_ownership_unavailable", "message": str(exc)}, request_id)
             return
         if not owns_app:
-            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "app_not_owned"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="steam_ownership", error="app_not_owned", steam_id=str(steam_id))
+            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "app_not_owned"}, request_id)
             return
         if not self.server.verifier_slots.acquire(blocking=False):
-            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "verifier_busy"})
+            self.server.log_event("submission_deferred", request_id=request_id, stage="verification", error="verifier_busy")
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "verifier_busy"}, request_id)
             return
         if not self.server.ticket_guard.consume(ticket_hex):
             self.server.verifier_slots.release()
-            self._json(HTTPStatus.CONFLICT, {"ok": False, "error": "authentication_ticket_already_used"})
+            self.server.log_event("submission_rejected", request_id=request_id, stage="verification", error="authentication_ticket_already_used")
+            self._json(HTTPStatus.CONFLICT, {"ok": False, "error": "authentication_ticket_already_used"}, request_id)
             return
+        verify_started = time.monotonic()
+        self.server.log_event("submission_verification_started", request_id=request_id, board_name=board_name)
         try:
             verified = config.replay_verifier.verify(replay_bytes, board_name, claimed_score)
         except ReplayVerificationError as exc:
-            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"ok": False, "error": "replay_rejected", "message": str(exc)})
+            self.server.log_event(
+                "submission_rejected", request_id=request_id, stage="verification", error="replay_rejected", message=str(exc), duration_msec=round((time.monotonic() - verify_started) * 1000.0, 3)
+            )
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"ok": False, "error": "replay_rejected", "message": str(exc)}, request_id)
             return
         finally:
             self.server.verifier_slots.release()
+        self.server.log_event(
+            "submission_verified",
+            request_id=request_id,
+            board_name=board_name,
+            replay_sha256=str(verified.get("replay_sha256", "")),
+            replay_schema_version=int(verified.get("replay_schema_version", 0)),
+            ruleset_revision=int(verified.get("ruleset_revision", 0)),
+            game_version=verified.get("game_version", {}),
+            duration_msec=round((time.monotonic() - verify_started) * 1000.0, 3),
+        )
+        score_write_started = time.monotonic()
+        leaderboard_id = config.board_ids[board_name]
+        self.server.log_event(
+            "submission_steam_write_started",
+            request_id=request_id,
+            board_name=board_name,
+            leaderboard_id=leaderboard_id,
+            steam_id=str(steam_id),
+            claimed_score=claimed_score,
+        )
         try:
             steam_response = config.steam_api.set_leaderboard_score(
-                config.board_ids[board_name],
+                leaderboard_id,
                 steam_id,
                 claimed_score,
                 leaderboard_details(verified),
             )
         except (SteamWebApiError, ValueError) as exc:
-            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "steam_score_write_failed", "message": str(exc)})
+            self.server.log_event(
+                "submission_failed",
+                request_id=request_id,
+                stage="steam_score_write",
+                error="steam_score_write_failed",
+                exception_type=type(exc).__name__,
+                message=str(exc),
+                leaderboard_id=leaderboard_id,
+                steam_id=str(steam_id),
+                duration_msec=round((time.monotonic() - score_write_started) * 1000.0, 3),
+            )
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"ok": False, "error": "steam_score_write_failed", "message": str(exc), "request_id": request_id},
+                request_id,
+            )
             return
         steam_result_value = steam_response.get("result", steam_response)
         steam_result = steam_result_value if isinstance(steam_result_value, dict) else {}
         retained = bool(steam_result.get("score_changed", False))
+        global_rank = int(steam_result.get("global_rank_new", 0) or 0)
+        previous_global_rank = int(steam_result.get("global_rank_previous", 0) or 0)
+        self.server.log_event(
+            "submission_steam_write_completed",
+            request_id=request_id,
+            board_name=board_name,
+            leaderboard_id=leaderboard_id,
+            steam_id=str(steam_id),
+            retained=retained,
+            global_rank=global_rank,
+            previous_global_rank=previous_global_rank,
+            duration_msec=round((time.monotonic() - score_write_started) * 1000.0, 3),
+        )
         self._json(
             HTTPStatus.OK,
             {
@@ -185,10 +364,17 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
                 "score_milliseconds": claimed_score,
                 "replay_sha256": str(verified["replay_sha256"]),
                 "retained": retained,
-                "global_rank": int(steam_result.get("global_rank_new", 0)),
-                "previous_global_rank": int(steam_result.get("global_rank_previous", 0)),
+                "global_rank": global_rank,
+                "previous_global_rank": previous_global_rank,
                 "steam_response": steam_response,
             },
+            request_id,
+        )
+        self.server.log_event(
+            "submission_completed",
+            request_id=request_id,
+            board_name=board_name,
+            duration_msec=round((time.monotonic() - started) * 1000.0, 3),
         )
 
 
@@ -315,6 +501,9 @@ def load_config() -> ServiceConfig:
         timeout_seconds=timeout_seconds,
         trusted_workshop_packages=trusted_workshop_packages,
     )
+    log_path = Path(
+        os.environ.get("MXT_LEADERBOARD_LOG_PATH", str(service_root.parent / "logs" / "leaderboard-service.jsonl"))
+    ).resolve()
     return ServiceConfig(
         listen_host=os.environ.get("MXT_LEADERBOARD_LISTEN_HOST", "127.0.0.1"),
         listen_port=_positive_integer_environment("MXT_LEADERBOARD_LISTEN_PORT", 8787),
@@ -328,12 +517,23 @@ def load_config() -> ServiceConfig:
         board_ids=board_ids,
         steam_api=SteamWebApi(publisher_key, app_id, steam_base_url),
         replay_verifier=replay_verifier,
+        log_path=log_path,
     )
 
 
 def main() -> None:
     config = load_config()
     server = LeaderboardHttpServer((config.listen_host, config.listen_port), config)
+    server.log_event(
+        "service_started",
+        listen_host=config.listen_host,
+        listen_port=config.listen_port,
+        app_id=config.app_id,
+        authenticated_app_ids=sorted(config.auth_app_ids),
+        board_count=len(config.board_ids),
+        verifier_concurrency=config.verifier_concurrency,
+        log_path=str(config.log_path),
+    )
     print(f"MaxX Throttle leaderboard verifier listening on {config.listen_host}:{config.listen_port}", flush=True)
     try:
         server.serve_forever()

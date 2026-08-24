@@ -275,7 +275,32 @@ func _on_ticket_completed(request_id: int, result: Dictionary) -> void:
 	last_message = "Uploading replay for trusted verification..."
 	_emit_status()
 
-func _on_http_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _response_header(headers: PackedStringArray, name: String) -> String:
+	var prefix := name.to_lower() + ":"
+	for header in headers:
+		var text := String(header)
+		if text.to_lower().begins_with(prefix):
+			return text.substr(prefix.length()).strip_edges()
+	return ""
+
+func _submission_failure_message(
+		result: int,
+		response_code: int,
+		headers: PackedStringArray,
+		response: Dictionary) -> String:
+	var request_id := String(response.get("request_id", _response_header(headers, "X-MXT-Request-ID")))
+	var message := String(response.get("message", "")).strip_edges()
+	if message.is_empty():
+		message = String(response.get("error", "")).replace("_", " ").strip_edges()
+	if message.is_empty() and response_code > 0:
+		message = "Leaderboard service returned HTTP %d." % response_code
+	if message.is_empty():
+		message = "Leaderboard service request failed (transport result %d)." % result
+	if !request_id.is_empty() and !message.contains(request_id):
+		message = "%s Reference %s." % [message.trim_suffix("."), request_id]
+	return message
+
+func _on_http_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
 	_cancel_active_ticket()
 	var response_value = JSON.parse_string(body.get_string_from_utf8())
 	var response: Dictionary = response_value if typeof(response_value) == TYPE_DICTIONARY else {}
@@ -302,7 +327,8 @@ func _on_http_request_completed(result: int, response_code: int, _headers: Packe
 		submission_completed.emit(completed_submission.duplicate(true))
 		_pump_submission_queue()
 		return
-	var message := String(response.get("message", response.get("error", "Leaderboard service request failed.")))
+	var message := _submission_failure_message(result, response_code, headers, response)
+	push_warning("MXT_LEADERBOARD submission failed result=%d http=%d message=%s" % [result, response_code, message])
 	if response_code in [400, 403, 413, 415, 422]:
 		_reject_active(message)
 	else:
