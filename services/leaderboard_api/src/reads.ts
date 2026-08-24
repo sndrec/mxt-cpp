@@ -62,7 +62,8 @@ export async function readPlayerBests(
       r.vehicle_content_id, r.vehicle_gameplay_digest, r.machine_setting_percent,
       r.ruleset_revision, r.replay_schema_version,
       r.game_version_major, r.game_version_compatibility, r.game_version_patch,
-      r.replay_sha256, r.replay_byte_length, r.provenance
+      r.replay_sha256, r.replay_byte_length, r.provenance,
+      '' AS historical_unavailable_reason
     FROM player_vehicle_bests best
     JOIN verified_runs r ON r.run_id = best.run_id
     JOIN players p ON p.steam_id = r.steam_id

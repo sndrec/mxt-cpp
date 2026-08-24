@@ -7,37 +7,54 @@ const ENTRY_COLUMNS = `
   vehicle_content_id, vehicle_gameplay_digest, machine_setting_percent,
   ruleset_revision, replay_schema_version,
   game_version_major, game_version_compatibility, game_version_patch,
-  replay_sha256, replay_byte_length, provenance`;
+  replay_sha256, replay_byte_length, provenance, historical_unavailable_reason`;
 
-const JOINED_ENTRY_COLUMNS = `
+const VERIFIED_JOINED_ENTRY_COLUMNS = `
   r.run_id, r.steam_id, p.persona_name, p.avatar_url, p.profile_url,
   r.score_milliseconds, r.received_unix,
   r.track_content_id, r.track_gameplay_digest,
   r.vehicle_content_id, r.vehicle_gameplay_digest, r.machine_setting_percent,
   r.ruleset_revision, r.replay_schema_version,
   r.game_version_major, r.game_version_compatibility, r.game_version_patch,
-  r.replay_sha256, r.replay_byte_length, r.provenance`;
+  r.replay_sha256, r.replay_byte_length, r.provenance,
+  '' AS historical_unavailable_reason`;
+
+const HISTORICAL_JOINED_ENTRY_COLUMNS = `
+  h.historical_id AS run_id, h.steam_id, p.persona_name, p.avatar_url, p.profile_url,
+  h.score_milliseconds, h.received_unix,
+  h.track_content_id, h.track_gameplay_digest,
+  '' AS vehicle_content_id, '' AS vehicle_gameplay_digest, -1 AS machine_setting_percent,
+  h.ruleset_revision, 0 AS replay_schema_version,
+  0 AS game_version_major, 0 AS game_version_compatibility, 0 AS game_version_patch,
+  '' AS replay_sha256, 0 AS replay_byte_length, h.provenance,
+  h.unavailable_reason AS historical_unavailable_reason`;
 
 const OVERALL_BOARD_CTE = `
-WITH candidates AS (
-  SELECT
-    r.run_id, r.steam_id, p.persona_name, p.avatar_url, p.profile_url,
-    r.score_milliseconds, r.received_unix,
-    r.track_content_id, r.track_gameplay_digest,
-    r.vehicle_content_id, r.vehicle_gameplay_digest, r.machine_setting_percent,
-    r.ruleset_revision, r.replay_schema_version,
-    r.game_version_major, r.game_version_compatibility, r.game_version_patch,
-    r.replay_sha256, r.replay_byte_length, r.provenance,
-    ROW_NUMBER() OVER (
-      PARTITION BY r.steam_id
-      ORDER BY r.score_milliseconds, r.received_unix, r.run_id
-    ) AS player_choice
+WITH all_candidates AS (
+  SELECT ${VERIFIED_JOINED_ENTRY_COLUMNS}
   FROM player_vehicle_bests best
   JOIN verified_runs r ON r.run_id = best.run_id
   JOIN players p ON p.steam_id = r.steam_id
   WHERE r.board_id = ?1
     AND r.moderation_state = 'visible'
     AND p.moderation_state = 'visible'
+
+  UNION ALL
+
+  SELECT ${HISTORICAL_JOINED_ENTRY_COLUMNS}
+  FROM historical_scores h
+  JOIN players p ON p.steam_id = h.steam_id
+  WHERE h.board_id = ?1
+    AND h.moderation_state = 'visible'
+    AND p.moderation_state = 'visible'
+), candidates AS (
+  SELECT
+    ${ENTRY_COLUMNS},
+    ROW_NUMBER() OVER (
+      PARTITION BY steam_id
+      ORDER BY score_milliseconds, received_unix, run_id
+    ) AS player_choice
+  FROM all_candidates
 ), board AS (
   SELECT ${ENTRY_COLUMNS},
     ROW_NUMBER() OVER (ORDER BY score_milliseconds, received_unix, run_id) AS global_rank
@@ -47,7 +64,7 @@ WITH candidates AS (
 
 const VEHICLE_BOARD_CTE = `
 WITH board AS (
-  SELECT ${JOINED_ENTRY_COLUMNS},
+  SELECT ${VERIFIED_JOINED_ENTRY_COLUMNS},
     ROW_NUMBER() OVER (ORDER BY r.score_milliseconds, r.received_unix, r.run_id) AS global_rank
   FROM player_vehicle_bests best
   JOIN verified_runs r ON r.run_id = best.run_id
@@ -154,7 +171,8 @@ export function publicEntry(row: LeaderboardEntryRow): Record<string, string | n
     },
     replay_sha256: row.replay_sha256,
     replay_byte_length: row.replay_byte_length,
-    replay_available: true,
+    replay_available: row.replay_sha256 !== "" && row.replay_byte_length > 0,
     provenance: row.provenance,
+    historical_unavailable_reason: row.historical_unavailable_reason,
   };
 }

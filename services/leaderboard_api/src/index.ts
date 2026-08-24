@@ -1,4 +1,5 @@
 import { signHmac, verifyHmac } from "./crypto";
+import { importHistoricalScore } from "./historical";
 import { publicEntry, readAroundPlayer, readLeaderboard } from "./leaderboards";
 import { readCategories, readPlayerBests } from "./reads";
 import { archiveVerifiedRun, replayRow, storeReplay } from "./storage";
@@ -7,6 +8,7 @@ import {
   encodeCursor,
   parseBoardId,
   parseCursor,
+  parseHistoricalScoreImport,
   parsePositiveInteger,
   parseRunId,
   parseSteamId,
@@ -107,6 +109,51 @@ async function handleIngest(request: Request, env: Env, requestId: string): Prom
     replay_sha256: envelope.replay_sha256,
     ...archive,
   }, 200, requestId);
+}
+
+async function handleHistoricalScoreImport(request: Request, env: Env, requestId: string): Promise<Response> {
+  if (request.headers.get("Content-Type") !== "application/json") {
+    throw new ApiError(415, "invalid_content_type");
+  }
+  const timestampText = requiredHeader(request, "X-MXT-Migration-Timestamp", 32);
+  const signature = requiredHeader(request, "X-MXT-Migration-Signature", 128).toLowerCase();
+  if (!/^[0-9]+$/.test(timestampText)) throw new ApiError(401, "invalid_migration_timestamp");
+  const timestamp = Number(timestampText);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > SIGNATURE_WINDOW_SECONDS) {
+    throw new ApiError(401, "expired_migration_signature");
+  }
+  const lengthText = request.headers.get("Content-Length") ?? "";
+  if (!/^[0-9]+$/.test(lengthText) || Number(lengthText) <= 0 || Number(lengthText) > 65_536) {
+    throw new ApiError(413, "invalid_migration_record_size");
+  }
+  const body = await request.text();
+  if (!await verifyHmac(env.MIGRATION_SECRET, `${timestampText}\n${body}`, signature)) {
+    throw new ApiError(401, "invalid_migration_signature");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    throw new ApiError(400, "invalid_metadata");
+  }
+  let record;
+  try {
+    record = parseHistoricalScoreImport(parsed);
+  } catch (error) {
+    throw new ApiError(400, error instanceof Error ? error.message : "invalid_metadata");
+  }
+  const imported = await importHistoricalScore(env, record, now);
+  console.log(JSON.stringify({
+    event: "historical_score_imported",
+    request_id: requestId,
+    historical_id: imported.historical_id,
+    board_id: record.board_id,
+    steam_id: record.steam_id,
+    score_milliseconds: imported.score_milliseconds,
+    changed: imported.changed,
+  }));
+  return jsonResponse({ ok: true, replay_available: false, ...imported }, 200, requestId);
 }
 
 async function handleLeaderboard(url: URL, env: Env, boardId: string, requestId: string): Promise<Response> {
@@ -229,6 +276,9 @@ async function route(request: Request, env: Env, requestId: string): Promise<Res
   }
   if (request.method === "POST" && url.pathname === "/v1/ingest/verified-run") {
     return handleIngest(request, env, requestId);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/admin/import-historical-score") {
+    return handleHistoricalScoreImport(request, env, requestId);
   }
   let match = /^\/v1\/leaderboards\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && match?.[1] !== undefined) {

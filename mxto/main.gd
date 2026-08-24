@@ -88,7 +88,7 @@ const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LeaderboardReplayCacheClass = preload("res://steam/leaderboard_replay_cache.gd")
 const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_ghost_controller.gd")
-const LegacyLeaderboardSettingRecoveryClass = preload("res://steam/legacy_leaderboard_setting_recovery.gd")
+const SteamLeaderboardSnapshotClass = preload("res://steam/steam_leaderboard_snapshot.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
@@ -163,7 +163,7 @@ var leaderboard_replay_cache: LeaderboardReplayCache
 var leaderboard_watch_request_token := 0
 var time_attack_ghost_controller: TimeAttackGhostController
 var time_attack_ghost_descriptors: Array = []
-var legacy_leaderboard_setting_recovery
+var steam_leaderboard_snapshot
 
 func _enter_tree() -> void:
 	_disable_native_joypad_focus_navigation()
@@ -328,12 +328,12 @@ func _ready() -> void:
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
-	var legacy_setting_recovery_requested := LegacyLeaderboardSettingRecoveryClass.requested(args, user_args)
-	if legacy_setting_recovery_requested:
-		legacy_leaderboard_setting_recovery = LegacyLeaderboardSettingRecoveryClass.new()
-		legacy_leaderboard_setting_recovery.name = "LegacyLeaderboardSettingRecovery"
-		add_child(legacy_leaderboard_setting_recovery)
-		legacy_leaderboard_setting_recovery.initialize(self, steam_service, args, user_args)
+	var steam_snapshot_requested := SteamLeaderboardSnapshotClass.requested(args, user_args)
+	if steam_snapshot_requested:
+		steam_leaderboard_snapshot = SteamLeaderboardSnapshotClass.new()
+		steam_leaderboard_snapshot.name = "SteamLeaderboardSnapshot"
+		add_child(steam_leaderboard_snapshot)
+		steam_leaderboard_snapshot.initialize(steam_service, args, user_args)
 		$Control.visible = false
 		lobby_control.visible = false
 	var lobby_load_peer_mode := args.has("--lobby-load-peer") or user_args.has("--lobby-load-peer")
@@ -355,11 +355,11 @@ func _ready() -> void:
 	debug_runtime_controller.configure_command_line(args, user_args)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
-	if !legacy_setting_recovery_requested and !replay_launch_requested and auto_track_editor_mode:
+	if !steam_snapshot_requested and !replay_launch_requested and auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
-	elif !legacy_setting_recovery_requested and !replay_launch_requested and auto_singleplayer_mode:
+	elif !steam_snapshot_requested and !replay_launch_requested and auto_singleplayer_mode:
 		call_deferred("_start_singleplayer_race", false, TimeAttackRulesClass.build_options())
-	if headless_mode and !legacy_setting_recovery_requested and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
+	if headless_mode and !steam_snapshot_requested and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
 		var vehicle_content_id := ""
 		if vehicle_content_controller.definitions.size() > 0:
 			vehicle_content_id = vehicle_content_controller.definitions[0].content_id

@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-
 LogFunction = Callable[[str], None]
 ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|$))")
+STEAM_APP_ID = 5001340
 
 
 @dataclass(frozen=True)
@@ -25,14 +25,17 @@ class DeploymentPaths:
     server_root: Path
     bundle: Path
     publisher_key: Path
-    leaderboard_ids: Path
-    curated_packages: Path
+    leaderboard_ingest_secret: Path
+    leaderboard_migration_secret: Path
     tunnel_token: Path
     manifest: Path
     client_service_config: Path
     bundle_builder: Path
     task_installer: Path
-    provisioner: Path
+    history_importer: Path
+    steam_snapshot_root: Path
+    steam_snapshot_manifest: Path
+    steam_import_report: Path
 
     @staticmethod
     def discover() -> "DeploymentPaths":
@@ -46,14 +49,17 @@ class DeploymentPaths:
             server_root=server_root,
             bundle=server_root / "verifier-bundle",
             publisher_key=server_root / "steam_publisher_key.txt",
-            leaderboard_ids=server_root / "mxt-leaderboard-ids-5001310.json",
-            curated_packages=server_root / "curated-workshop-packages.json",
+            leaderboard_ingest_secret=server_root / "leaderboard-ingest-secret.txt",
+            leaderboard_migration_secret=server_root / "leaderboard-migration-secret.txt",
             tunnel_token=server_root / "cloudflare-tunnel-token.txt",
             manifest=repository_root / "mxto" / "steam" / "leaderboards.json",
             client_service_config=repository_root / "mxto" / "steam" / "leaderboard_service.json",
             bundle_builder=service_root / "build_windows_bundle.ps1",
             task_installer=service_root / "install_windows_tasks.ps1",
-            provisioner=service_root / "provision_leaderboards.py",
+            history_importer=service_root / "import_steam_history.py",
+            steam_snapshot_root=server_root / "steam-leaderboard-snapshot",
+            steam_snapshot_manifest=server_root / "steam-leaderboard-snapshot" / "snapshot.json",
+            steam_import_report=server_root / "steam-leaderboard-import-report.json",
         )
 
 
@@ -62,7 +68,7 @@ class DeploymentError(RuntimeError):
 
 
 class DeploymentManager:
-    APP_ID = 5001310
+    APP_ID = STEAM_APP_ID
     VERIFIER_TASK = "MaxXThrottleLeaderboardVerifier"
     TUNNEL_TASK = "MaxXThrottleLeaderboardTunnel"
 
@@ -175,12 +181,18 @@ class DeploymentManager:
         ).stdout
         return {"commit": commit, "tracked_dirty": bool(dirty_output.strip())}
 
-    def public_origin(self) -> str:
+    def _client_service_config(self) -> dict[str, object]:
         try:
             value = json.loads(self.paths.client_service_config.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return ""
-        return str(value.get("base_url", "")).rstrip("/") if isinstance(value, dict) else ""
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def public_origin(self) -> str:
+        return str(self._client_service_config().get("submission_base_url", "")).rstrip("/")
+
+    def leaderboard_api_origin(self) -> str:
+        return str(self._client_service_config().get("api_base_url", "")).rstrip("/")
 
     @staticmethod
     def _request_status(url: str, timeout: float = 4.0) -> int:
@@ -210,6 +222,10 @@ class DeploymentManager:
         submit_get_status = self._request_status(origin + "/v1/time-attack/submit", timeout)
         return health_status == 404 and submit_get_status == 404
 
+    def leaderboard_api_health(self, timeout: float = 4.0) -> bool:
+        origin = self.leaderboard_api_origin()
+        return origin.startswith("https://") and self._request_status(origin + "/healthz", timeout) == 200
+
     def bundle_identity(self) -> dict[str, object]:
         path = self.paths.bundle / "bundle_identity.json"
         try:
@@ -218,7 +234,7 @@ class DeploymentManager:
             return {}
         return value if isinstance(value, dict) else {}
 
-    def board_rows(self) -> tuple[list[dict[str, object]], dict[str, int]]:
+    def board_rows(self) -> list[dict[str, object]]:
         try:
             manifest = json.loads(self.paths.manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
@@ -226,36 +242,27 @@ class DeploymentManager:
         boards = manifest.get("boards", []) if isinstance(manifest, dict) else []
         if not isinstance(boards, list):
             raise DeploymentError("Leaderboard manifest has no board list.")
-        id_map: dict[str, int] = {}
-        try:
-            deployed_ids = json.loads(self.paths.leaderboard_ids.read_text(encoding="utf-8"))
-            raw_ids = deployed_ids.get("boards", {}) if isinstance(deployed_ids, dict) else {}
-            if isinstance(raw_ids, dict):
-                id_map = {str(name): int(value) for name, value in raw_ids.items() if int(value) > 0}
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            id_map = {}
         rows: list[dict[str, object]] = []
         for value in boards:
-            if not isinstance(value, dict):
+            if not isinstance(value, dict) or str(value.get("track_source", "official")) != "official":
                 continue
-            steam_name = str(value.get("steam_name", ""))
-            steam_id = id_map.get(steam_name, 0)
+            board_id = str(value.get("steam_name", ""))
             rows.append(
                 {
                     "title": str(value.get("track_title", value.get("track_slug", "Unknown Track"))),
-                    "source": "Curated Workshop" if value.get("track_source") == "curated_workshop" else "Official",
+                    "source": "Official",
                     "digest": str(value.get("track_gameplay_digest", "")),
-                    "steam_name": steam_name,
-                    "steam_id": steam_id,
-                    "status": "Synced" if steam_id > 0 else "Missing Steam ID",
+                    "board_id": board_id,
+                    "ruleset_revision": int(value.get("ruleset_revision", 0)),
+                    "status": "Configured" if board_id else "Missing ID",
                 }
             )
-        return rows, id_map
+        return rows
 
     def status(self) -> dict[str, object]:
         source = self.source_state()
         identity = self.bundle_identity()
-        boards, ids = self.board_rows()
+        boards = self.board_rows()
         return {
             "source_commit": source["commit"],
             "source_tracked_dirty": source["tracked_dirty"],
@@ -267,16 +274,24 @@ class DeploymentManager:
             "local_health": self.local_health(),
             "public_route_health": self.public_route_health(),
             "public_origin": self.public_origin(),
+            "leaderboard_api_health": self.leaderboard_api_health(),
+            "leaderboard_api_origin": self.leaderboard_api_origin(),
             "manifest_board_count": len(boards),
-            "synced_board_count": sum(1 for row in boards if row["status"] == "Synced"),
-            "id_map_count": len(ids),
+            "configured_board_count": sum(1 for row in boards if row["status"] == "Configured"),
             "boards": boards,
         }
 
-    def _validate_private_files(self, include_tunnel: bool, include_leaderboard_ids: bool = True) -> None:
+    def _validate_private_files(
+        self,
+        include_tunnel: bool,
+        include_ingest_secret: bool = True,
+        include_migration_secret: bool = False,
+    ) -> None:
         required = [self.paths.publisher_key]
-        if include_leaderboard_ids:
-            required.append(self.paths.leaderboard_ids)
+        if include_ingest_secret:
+            required.append(self.paths.leaderboard_ingest_secret)
+        if include_migration_secret:
+            required.append(self.paths.leaderboard_migration_secret)
         if include_tunnel:
             required.append(self.paths.tunnel_token)
         missing = [str(path) for path in required if not path.is_file()]
@@ -285,6 +300,14 @@ class DeploymentManager:
         key = self.paths.publisher_key.read_text(encoding="utf-8").strip()
         if not re.fullmatch(r"[0-9A-Fa-f]{32}", key):
             raise DeploymentError("The private Steam publisher key file is not valid.")
+        if include_ingest_secret:
+            ingest_secret = self.paths.leaderboard_ingest_secret.read_text(encoding="utf-8").strip()
+            if len(ingest_secret) < 64:
+                raise DeploymentError("The private leaderboard ingest secret is not valid.")
+        if include_migration_secret:
+            migration_secret = self.paths.leaderboard_migration_secret.read_text(encoding="utf-8").strip()
+            if len(migration_secret) < 64:
+                raise DeploymentError("The private leaderboard migration secret is not valid.")
 
     def install_or_repair_tasks(self, log: LogFunction) -> None:
         self._validate_private_files(include_tunnel=True)
@@ -353,6 +376,26 @@ class DeploymentManager:
             raise DeploymentError(f"Refusing to remove an unrecognized staging directory: {path}")
         shutil.rmtree(path)
 
+    def _adopt_legacy_live_bundle(self, log: LogFunction) -> None:
+        bundle = self.paths.bundle
+        marker = bundle / ".mxt-verifier-bundle"
+        if marker.is_file():
+            return
+        required = (
+            bundle / "runtime" / "MaxXThrottleVerifier.exe",
+            bundle / "runtime" / "MaxXThrottleVerifier.pck",
+            bundle / "service" / "server.py",
+            bundle / "start_windows_bundle.ps1",
+        )
+        if (
+            bundle.resolve().parent != self.paths.server_root.resolve()
+            or bundle.name != "verifier-bundle"
+            or not all(path.is_file() for path in required)
+        ):
+            raise DeploymentError(f"Live bundle directory is not recognized: {bundle}")
+        marker.touch(exist_ok=False)
+        log("Recognized the legacy verifier bundle and added its deployment marker.")
+
     def deploy(self, log: LogFunction) -> None:
         if os.name != "nt":
             raise DeploymentError("The one-click verifier deployment currently supports Windows only.")
@@ -395,6 +438,7 @@ class DeploymentManager:
         )
 
         old_bundle_saved = False
+        candidate_activated = False
         task_was_running = self.task_state(self.VERIFIER_TASK) == "Running"
         try:
             log("Step 3/5: Briefly stopping the live verifier...")
@@ -403,19 +447,14 @@ class DeploymentManager:
                 self._wait_for_task_not_running(self.VERIFIER_TASK)
 
             if self.paths.bundle.exists():
-                if not (self.paths.bundle / ".mxt-verifier-bundle").is_file():
-                    raise DeploymentError(f"Live bundle directory is not recognized: {self.paths.bundle}")
+                self._adopt_legacy_live_bundle(log)
                 os.replace(self.paths.bundle, backup)
                 old_bundle_saved = True
             os.replace(candidate, self.paths.bundle)
+            candidate_activated = True
 
             log("Step 4/5: Starting the new verifier...")
-            if self.task_state(self.VERIFIER_TASK) == "Missing" or self.task_state(self.TUNNEL_TASK) == "Missing":
-                self.install_or_repair_tasks(log)
-            else:
-                self._task_command("Start", self.VERIFIER_TASK)
-                if self.task_state(self.TUNNEL_TASK) != "Running":
-                    self._task_command("Start", self.TUNNEL_TASK)
+            self.install_or_repair_tasks(log)
 
             log("Step 5/5: Running health checks...")
             self._wait_for_health(log)
@@ -424,7 +463,8 @@ class DeploymentManager:
             if self.task_state(self.VERIFIER_TASK) == "Running":
                 self._task_command("Stop", self.VERIFIER_TASK)
                 self._wait_for_task_not_running(self.VERIFIER_TASK)
-            self._remove_bundle_directory(self.paths.bundle)
+            if candidate_activated:
+                self._remove_bundle_directory(self.paths.bundle)
             if old_bundle_saved and backup.exists():
                 os.replace(backup, self.paths.bundle)
                 if self.task_state(self.VERIFIER_TASK) != "Missing":
@@ -436,56 +476,94 @@ class DeploymentManager:
         self._remove_bundle_directory(backup)
         log("DONE: The trusted leaderboard verifier is deployed and healthy.")
 
-    def sync_leaderboards(self, log: LogFunction, deploy_after: bool = True) -> None:
-        self._validate_private_files(include_tunnel=deploy_after, include_leaderboard_ids=False)
-        log("Syncing the checked-in leaderboard manifest to Steam...")
-        key = self.paths.publisher_key.read_text(encoding="utf-8").strip()
+    def export_steam_leaderboard_snapshot(self, log: LogFunction) -> None:
+        executable = self.paths.bundle / "runtime" / "MaxXThrottleVerifier.exe"
+        pack = self.paths.bundle / "runtime" / "MaxXThrottleVerifier.pck"
+        for required in (executable, pack):
+            if not required.is_file():
+                raise DeploymentError(f"Steam snapshot requires the deployed verifier: {required}")
         environment = os.environ.copy()
-        environment["MXT_STEAM_APP_ID"] = str(self.APP_ID)
-        environment["MXT_STEAM_PUBLISHER_KEY"] = key
-        candidate_ids = self.paths.server_root / f"mxt-leaderboard-ids-candidate-{os.getpid()}.json"
-        backup_ids = self.paths.server_root / f"mxt-leaderboard-ids-backup-{os.getpid()}.json"
-        candidate_ids.unlink(missing_ok=True)
-        backup_ids.unlink(missing_ok=True)
-        old_ids_saved = False
-        ids_replaced = False
-        try:
-            self._run_streaming(
-                [
-                    sys.executable,
-                    str(self.paths.provisioner),
-                    "--manifest",
-                    str(self.paths.manifest),
-                    "--output",
-                    str(candidate_ids),
-                ],
-                log,
-                cwd=self.paths.repository_root,
-                env=environment,
-            )
-            if not candidate_ids.is_file():
-                raise DeploymentError("Steam synchronization did not produce a leaderboard ID map.")
-            if self.paths.leaderboard_ids.exists():
-                os.replace(self.paths.leaderboard_ids, backup_ids)
-                old_ids_saved = True
-            os.replace(candidate_ids, self.paths.leaderboard_ids)
-            ids_replaced = True
-            log("Steam leaderboard IDs are synchronized.")
-            if deploy_after:
-                self.deploy(log)
-        except Exception:
-            log("Leaderboard synchronization or deployment failed. Restoring the previous ID map...")
-            if ids_replaced:
-                self.paths.leaderboard_ids.unlink(missing_ok=True)
-            if ids_replaced and old_ids_saved and backup_ids.exists():
-                os.replace(backup_ids, self.paths.leaderboard_ids)
-                if self.task_state(self.VERIFIER_TASK) != "Missing":
-                    if self.task_state(self.VERIFIER_TASK) == "Running":
-                        self._task_command("Stop", self.VERIFIER_TASK)
-                        self._wait_for_task_not_running(self.VERIFIER_TASK)
-                    self._task_command("Start", self.VERIFIER_TASK)
-                    self._wait_for_health(log)
-            raise
-        finally:
-            candidate_ids.unlink(missing_ok=True)
-            backup_ids.unlink(missing_ok=True)
+        environment["SteamAppId"] = str(self.APP_ID)
+        environment["SteamGameId"] = str(self.APP_ID)
+        command = [
+            str(executable),
+            "--headless",
+            "--",
+            "--export-steam-leaderboard-snapshot",
+            "--steam-leaderboard-snapshot-output",
+            str(self.paths.steam_snapshot_root),
+        ]
+        log("Downloading the complete official Steam leaderboard snapshot and attached replays...")
+        self._run_streaming(command, log, cwd=self.paths.bundle / "runtime", env=environment)
+        if not self.paths.steam_snapshot_manifest.is_file():
+            raise DeploymentError("Steam snapshot did not write its manifest.")
+        snapshot = json.loads(self.paths.steam_snapshot_manifest.read_text(encoding="utf-8"))
+        if not isinstance(snapshot, dict) or snapshot.get("complete") is not True:
+            raise DeploymentError("Steam snapshot is incomplete.")
+        counts = snapshot.get("counts", {})
+        if not isinstance(counts, dict):
+            counts = {}
+        log(
+            "Snapshot complete: "
+            f"{int(counts.get('entries_scanned', 0))} entries, "
+            f"{int(counts.get('replays_downloaded', 0))} replays, "
+            f"{int(counts.get('replays_unavailable', 0))} unavailable, "
+            f"{int(counts.get('replays_failed', 0))} failed."
+        )
+        log(f"Snapshot: {self.paths.steam_snapshot_manifest}")
+
+    def import_steam_leaderboard_snapshot(self, log: LogFunction) -> None:
+        self._validate_private_files(
+            include_tunnel=False,
+            include_ingest_secret=True,
+            include_migration_secret=True,
+        )
+        executable = self.paths.bundle / "runtime" / "MaxXThrottleVerifier.exe"
+        for required in (
+            executable,
+            self.paths.steam_snapshot_manifest,
+            self.paths.history_importer,
+            self.paths.manifest,
+        ):
+            if not required.is_file():
+                raise DeploymentError(f"Steam import requires: {required}")
+        api_url = self.leaderboard_api_origin()
+        if not api_url.startswith("https://"):
+            raise DeploymentError("The custom leaderboard API URL is not configured.")
+        command = [
+            sys.executable,
+            str(self.paths.history_importer),
+            "--snapshot",
+            str(self.paths.steam_snapshot_manifest),
+            "--report",
+            str(self.paths.steam_import_report),
+            "--manifest",
+            str(self.paths.manifest),
+            "--game-executable",
+            str(executable),
+            "--temporary-directory",
+            str(self.paths.server_root),
+            "--api-url",
+            api_url,
+            "--ingest-secret-file",
+            str(self.paths.leaderboard_ingest_secret),
+            "--migration-secret-file",
+            str(self.paths.leaderboard_migration_secret),
+        ]
+        log("Reverifying replay-backed Steam history and importing the frozen snapshot...")
+        self._run_streaming(command, log, cwd=self.paths.repository_root)
+        if not self.paths.steam_import_report.is_file():
+            raise DeploymentError("Steam history import did not write its audit report.")
+        report = json.loads(self.paths.steam_import_report.read_text(encoding="utf-8"))
+        if not isinstance(report, dict) or report.get("complete") is not True:
+            raise DeploymentError("Steam history import report is incomplete or has retriable failures.")
+        counts = report.get("counts", {})
+        if not isinstance(counts, dict):
+            counts = {}
+        log(
+            "Import complete: "
+            f"{int(counts.get('replay_backed_imported', 0))} replay-backed, "
+            f"{int(counts.get('score_only_imported', 0))} score-only, "
+            f"{int(counts.get('invalid', 0))} invalid."
+        )
+        log(f"Audit report: {self.paths.steam_import_report}")

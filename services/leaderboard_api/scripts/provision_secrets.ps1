@@ -1,6 +1,7 @@
 param(
     [ValidateSet('staging', 'production')]
-    [string]$Environment
+    [string]$Environment,
+    [switch]$Rotate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,16 +27,30 @@ function Set-WorkerSecret([string]$Name, [string]$Value) {
     }
 }
 
+function Get-OrCreateSecret([string]$Path) {
+    if (-not $Rotate -and (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        $existing = (Get-Content -LiteralPath $Path -Raw).Trim()
+        if ($existing.Length -ge 64) {
+            return $existing
+        }
+        throw "Existing secret file is invalid: $Path"
+    }
+    $value = New-RandomHex 48
+    Set-Content -LiteralPath $Path -Value $value -NoNewline -Encoding ascii
+    return $value
+}
+
 $ingestPath = Join-Path $secretRoot "$Environment-ingest-secret.txt"
 $replayUrlPath = Join-Path $secretRoot "$Environment-replay-url-secret.txt"
-$ingestSecret = New-RandomHex 48
-$replayUrlSecret = New-RandomHex 48
-
-Set-Content -LiteralPath $ingestPath -Value $ingestSecret -NoNewline -Encoding ascii
-Set-Content -LiteralPath $replayUrlPath -Value $replayUrlSecret -NoNewline -Encoding ascii
+$migrationPath = Join-Path $secretRoot "$Environment-migration-secret.txt"
+$ingestSecret = Get-OrCreateSecret $ingestPath
+$replayUrlSecret = Get-OrCreateSecret $replayUrlPath
+$migrationSecret = Get-OrCreateSecret $migrationPath
 Set-WorkerSecret 'INGEST_SECRET' $ingestSecret
 Set-WorkerSecret 'REPLAY_URL_SECRET' $replayUrlSecret
+Set-WorkerSecret 'MIGRATION_SECRET' $migrationSecret
 
 Write-Host "Provisioned $Environment Worker secrets."
 Write-Host "Verifier ingest secret: $ingestPath"
 Write-Host "Replay URL secret: $replayUrlPath"
+Write-Host "Migration secret: $migrationPath"

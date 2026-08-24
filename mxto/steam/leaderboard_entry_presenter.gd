@@ -40,6 +40,8 @@ static func _vehicle_display(game_manager: GameManager, entry: Dictionary) -> St
 
 
 static func _version_display(entry: Dictionary) -> String:
+	if String(entry.get("provenance", "")) == "steam_import_score_only":
+		return "Historical Steam entry · no replay"
 	var version_value = entry.get("game_version", {})
 	if typeof(version_value) != TYPE_DICTIONARY:
 		return "Unknown version"
@@ -53,6 +55,8 @@ static func _version_display(entry: Dictionary) -> String:
 
 
 static func vehicle_name(game_manager: GameManager, content_id: String, gameplay_digest: String) -> String:
+	if content_id.is_empty() and gameplay_digest.is_empty():
+		return "Unspecified"
 	if game_manager != null and game_manager.vehicle_content_controller != null:
 		var definition := game_manager.vehicle_content_controller.get_definition(content_id)
 		if definition != null:

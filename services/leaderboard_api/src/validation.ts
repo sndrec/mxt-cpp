@@ -5,6 +5,7 @@ import {
   RUN_ID_PATTERN,
   STEAM_ID_PATTERN,
   type LeaderboardCursor,
+  type HistoricalScoreImport,
   type VerifiedRunEnvelope,
 } from "./types";
 
@@ -130,6 +131,44 @@ export function parseVerifiedEnvelope(encoded: string): VerifiedRunEnvelope {
     avatar_url: validWebUrl(optionalString(parsed, "avatar_url", 512), "avatar_url"),
     profile_url: validWebUrl(optionalString(parsed, "profile_url", 512), "profile_url"),
     source_timestamp_unix: boundedInteger(parsed, "source_timestamp_unix", 0, 0x7fffffff),
+    provenance,
+  };
+}
+
+export function parseHistoricalScoreImport(parsed: unknown): HistoricalScoreImport {
+  if (!isRecord(parsed)) throw new Error("invalid_metadata");
+  boundedInteger(parsed, "schema_version", API_VERSION, API_VERSION);
+  const steamId = requiredString(parsed, "steam_id", 20);
+  const boardId = requiredString(parsed, "board_id", 128);
+  const trackDigest = requiredString(parsed, "track_gameplay_digest", 71);
+  if (!STEAM_ID_PATTERN.test(steamId)) throw new Error("invalid_steam_id");
+  if (!BOARD_ID_PATTERN.test(boardId)) throw new Error("invalid_board_id");
+  if (!DIGEST_PATTERN.test(trackDigest)) throw new Error("invalid_track_gameplay_digest");
+  const details = parsed.source_details;
+  if (!Array.isArray(details) || details.length > 64 || details.some((value) =>
+    typeof value !== "number" || !Number.isSafeInteger(value) || value < -0x80000000 || value > 0x7fffffff)) {
+    throw new Error("invalid_source_details");
+  }
+  const provenance = requiredString(parsed, "provenance", 32);
+  if (provenance !== "steam_import_score_only") throw new Error("invalid_provenance");
+  return {
+    schema_version: API_VERSION,
+    steam_id: steamId,
+    auth_app_id: boundedInteger(parsed, "auth_app_id", 1, 0x7fffffff),
+    board_id: boardId,
+    track_content_id: requiredString(parsed, "track_content_id", 256),
+    track_gameplay_digest: trackDigest,
+    track_title: requiredString(parsed, "track_title", 256),
+    score_milliseconds: boundedInteger(parsed, "score_milliseconds", 1, 0x7fffffff),
+    ruleset_revision: boundedInteger(parsed, "ruleset_revision", 1, 0x7fffffff),
+    persona_name: optionalString(parsed, "persona_name", 128),
+    avatar_url: validWebUrl(optionalString(parsed, "avatar_url", 512), "avatar_url"),
+    profile_url: validWebUrl(optionalString(parsed, "profile_url", 512), "profile_url"),
+    source_timestamp_unix: boundedInteger(parsed, "source_timestamp_unix", 0, 0x7fffffff),
+    source_global_rank: boundedInteger(parsed, "source_global_rank", 0, 10_000_000),
+    source_ugc_handle: optionalString(parsed, "source_ugc_handle", 32),
+    source_details: details as number[],
+    unavailable_reason: requiredString(parsed, "unavailable_reason", 128),
     provenance,
   };
 }

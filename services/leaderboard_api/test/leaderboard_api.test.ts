@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { VerifiedRunEnvelope } from "../src/types";
 
 const INGEST_SECRET = "test-ingest-secret-with-sufficient-entropy";
+const MIGRATION_SECRET = "test-migration-secret-with-sufficient-entropy";
 const BASE_URL = "https://leaderboards.example.test";
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -22,15 +23,30 @@ function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function signature(message: string): Promise<string> {
+async function signature(message: string, secret = INGEST_SECRET): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(INGEST_SECRET),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
   return bytesToHex(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message))));
+}
+
+async function importHistoricalScore(record: Record<string, unknown>): Promise<Response> {
+  const body = JSON.stringify(record);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  return exports.default.fetch(new Request(`${BASE_URL}/v1/admin/import-historical-score`, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(new TextEncoder().encode(body).byteLength),
+      "Content-Type": "application/json",
+      "X-MXT-Migration-Signature": await signature(`${timestamp}\n${body}`, MIGRATION_SECRET),
+      "X-MXT-Migration-Timestamp": timestamp,
+    },
+    body,
+  }));
 }
 
 async function envelope(
@@ -90,6 +106,7 @@ async function ingest(
 async function clearStorage(): Promise<void> {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM player_vehicle_bests"),
+    env.DB.prepare("DELETE FROM historical_scores"),
     env.DB.prepare("DELETE FROM verified_runs"),
     env.DB.prepare("DELETE FROM replay_objects"),
     env.DB.prepare("DELETE FROM boards"),
@@ -266,5 +283,48 @@ describe("custom leaderboard authority", () => {
     const runCount = await env.DB.prepare("SELECT COUNT(*) AS count FROM verified_runs").first<number>("count");
     expect(runCount).toBe(0);
     expect((await env.REPLAYS.list()).objects).toHaveLength(0);
+  });
+
+  it("imports replay-unavailable Steam history without advertising a replay", async () => {
+    const replay = new TextEncoder().encode("verified current replay");
+    const current = await envelope(replay, { score_milliseconds: 60_000 });
+    expect((await ingest(replay, current)).status).toBe(200);
+    const historical = {
+      schema_version: 1,
+      steam_id: "76561198000000002",
+      auth_app_id: 5001340,
+      board_id: current.board_id,
+      track_content_id: current.track_content_id,
+      track_gameplay_digest: current.track_gameplay_digest,
+      track_title: current.track_title,
+      score_milliseconds: 55_000,
+      ruleset_revision: current.ruleset_revision,
+      persona_name: "Historical Pilot",
+      avatar_url: "",
+      profile_url: "https://steamcommunity.com/profiles/76561198000000002",
+      source_timestamp_unix: Math.floor(Date.now() / 1000),
+      source_global_rank: 1,
+      source_ugc_handle: "",
+      source_details: [],
+      unavailable_reason: "missing_replay_attachment",
+      provenance: "steam_import_score_only",
+    };
+    const response = await importHistoricalScore(historical);
+    expect(response.status).toBe(200);
+
+    const boardResponse = await exports.default.fetch(
+      `${BASE_URL}/v1/leaderboards/${current.board_id}?scope=global`,
+    );
+    const board = await boardResponse.json<{ entries: Array<Record<string, unknown>> }>();
+    expect(board.entries).toHaveLength(2);
+    expect(board.entries[0]).toMatchObject({
+      steam_id: historical.steam_id,
+      score_milliseconds: 55_000,
+      replay_available: false,
+      replay_sha256: "",
+      historical_unavailable_reason: "missing_replay_attachment",
+      provenance: "steam_import_score_only",
+    });
+    expect(board.entries[1]?.replay_available).toBe(true);
   });
 });

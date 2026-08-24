@@ -37,6 +37,27 @@ export type VerifiedRunEnvelope = Readonly<{
   provenance: "native_submission" | "steam_import";
 }>;
 
+export type HistoricalScoreImport = Readonly<{
+  schema_version: 1;
+  steam_id: string;
+  auth_app_id: number;
+  board_id: string;
+  track_content_id: string;
+  track_gameplay_digest: string;
+  track_title: string;
+  score_milliseconds: number;
+  ruleset_revision: number;
+  persona_name: string;
+  avatar_url: string;
+  profile_url: string;
+  source_timestamp_unix: number;
+  source_global_rank: number;
+  source_ugc_handle: string;
+  source_details: readonly number[];
+  unavailable_reason: string;
+  provenance: "steam_import_score_only";
+}>;
+
 export type LeaderboardCursor = Readonly<{
   score_milliseconds: number;
   received_unix: number;
@@ -65,6 +86,7 @@ export type LeaderboardEntryRow = Readonly<{
   replay_sha256: string;
   replay_byte_length: number;
   provenance: string;
+  historical_unavailable_reason: string;
 }>;
 
 export type RunReplayRow = Readonly<{

@@ -38,6 +38,7 @@ class DeploymentManagerWindow:
             "tunnel": tk.StringVar(value="Checking..."),
             "local": tk.StringVar(value="Checking..."),
             "public": tk.StringVar(value="Checking..."),
+            "authority": tk.StringVar(value="Checking..."),
             "source": tk.StringVar(value="Source: checking..."),
             "deployed": tk.StringVar(value="Deployed: checking..."),
             "boards": tk.StringVar(value="Leaderboards: checking..."),
@@ -119,7 +120,7 @@ class DeploymentManagerWindow:
         ).pack(anchor="w", pady=(0, 2))
         tk.Label(
             outer,
-            text="One button updates the trusted leaderboard verifier. Your normal Steam game upload stays exactly the same.",
+            text=f"Playtest app {self.manager.APP_ID}. Deploy the trusted verifier, inspect the custom authority, and perform the one-time Steam history import.",
             font=("Segoe UI", 10),
             fg=self.COLORS["muted"],
             bg=self.COLORS["background"],
@@ -178,11 +179,12 @@ class DeploymentManagerWindow:
 
         status_panel = tk.Frame(parent, bg=self.COLORS["panel"], padx=16, pady=14)
         status_panel.pack(fill="x", pady=(0, 12))
-        status_panel.columnconfigure((0, 1, 2, 3), weight=1, uniform="status")
+        status_panel.columnconfigure((0, 1, 2, 3, 4), weight=1, uniform="status")
         self._status_tile(status_panel, 0, "Verifier Task", "verifier")
         self._status_tile(status_panel, 1, "Cloudflare Tunnel", "tunnel")
         self._status_tile(status_panel, 2, "Local Health", "local")
         self._status_tile(status_panel, 3, "Public Route", "public")
+        self._status_tile(status_panel, 4, "Custom Authority", "authority")
 
         detail_panel = tk.Frame(parent, bg=self.COLORS["panel"], padx=16, pady=12)
         detail_panel.pack(fill="x", pady=(0, 12))
@@ -257,14 +259,14 @@ class DeploymentManagerWindow:
         controls.pack(fill="x", pady=(14, 10))
         self._make_button(
             controls,
-            "SYNC BOARDS TO STEAM + DEPLOY",
-            self.sync_boards,
+            "EXPORT STEAM HISTORY SNAPSHOT",
+            self.export_steam_history,
             primary=True,
-            width=31,
+            width=32,
         ).pack(side="left")
         tk.Label(
             controls,
-            text="Use only after adding/changing boards in leaderboards.json.\nExisting boards are found; missing boards are created; then the verifier is deployed.",
+            text="One-time migration step: downloads every official Steam leaderboard row and every available replay attachment.\nThe snapshot is read-only with respect to Steam.",
             justify="left",
             font=("Segoe UI", 10),
             fg=self.COLORS["muted"],
@@ -275,12 +277,29 @@ class DeploymentManagerWindow:
         tools.pack(fill="x", pady=(0, 10))
         self._make_button(tools, "Refresh Board List", self.refresh_status).pack(side="left", padx=(0, 8))
         self._make_button(tools, "Open Board Manifest", lambda: self._open_path(self.manager.paths.manifest)).pack(side="left", padx=(0, 8))
-        self._make_button(tools, "Open Private ID Map", lambda: self._open_path(self.manager.paths.leaderboard_ids)).pack(side="left", padx=(0, 8))
+        self._make_button(tools, "Open Snapshot", lambda: self._open_path(self.manager.paths.steam_snapshot_manifest)).pack(side="left", padx=(0, 8))
+        self._make_button(tools, "Open Import Report", lambda: self._open_path(self.manager.paths.steam_import_report)).pack(side="left", padx=(0, 8))
         self._make_button(
             tools,
             "Open Steamworks Leaderboards",
             lambda: webbrowser.open(f"https://partner.steamgames.com/apps/leaderboards/{self.manager.APP_ID}"),
         ).pack(side="left")
+
+        migration = tk.Frame(parent, bg=self.COLORS["panel"], padx=14, pady=10)
+        migration.pack(fill="x", pady=(0, 8))
+        self._make_button(
+            migration,
+            "IMPORT SNAPSHOT TO CUSTOM AUTHORITY",
+            self.import_steam_history,
+            width=37,
+        ).pack(side="left")
+        tk.Label(
+            migration,
+            text="Deterministically reverifies replay-backed rows; explicitly marks score-only rows as historical and non-playable.",
+            font=("Segoe UI", 9),
+            fg=self.COLORS["muted"],
+            bg=self.COLORS["panel"],
+        ).pack(side="left", padx=14)
 
         summary = tk.Frame(parent, bg=self.COLORS["panel"], padx=14, pady=10)
         summary.pack(fill="x", pady=(0, 8))
@@ -293,13 +312,13 @@ class DeploymentManagerWindow:
         ).pack(side="left")
         tk.Label(
             summary,
-            text="Boards are immutable identities. Editing a track's gameplay creates a new board; old boards remain on Steam.",
+            text="Board IDs are immutable competitive identities; Steam is migration input only.",
             font=("Segoe UI", 9),
             fg=self.COLORS["muted"],
             bg=self.COLORS["panel"],
         ).pack(side="right")
 
-        columns = ("title", "source", "status", "steam_id", "steam_name", "digest")
+        columns = ("title", "source", "status", "ruleset", "board_id", "digest")
         tree_frame = tk.Frame(parent, bg=self.COLORS["background"])
         tree_frame.pack(fill="both", expand=True)
         self.board_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", style="Boards.Treeview")
@@ -307,20 +326,20 @@ class DeploymentManagerWindow:
             "title": "Track",
             "source": "Source",
             "status": "Status",
-            "steam_id": "Steam ID",
-            "steam_name": "Steam Name",
+            "ruleset": "Ruleset",
+            "board_id": "Board ID",
             "digest": "Gameplay Digest",
         }
-        widths = {"title": 150, "source": 120, "status": 120, "steam_id": 90, "steam_name": 310, "digest": 190}
+        widths = {"title": 150, "source": 100, "status": 110, "ruleset": 70, "board_id": 330, "digest": 190}
         for column in columns:
             self.board_tree.heading(column, text=headings[column])
-            self.board_tree.column(column, width=widths[column], minwidth=70, stretch=column in {"steam_name", "digest"})
+            self.board_tree.column(column, width=widths[column], minwidth=70, stretch=column in {"board_id", "digest"})
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.board_tree.yview)
         self.board_tree.configure(yscrollcommand=scrollbar.set)
         self.board_tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self.board_tree.tag_configure("missing", foreground=self.COLORS["bad"])
-        self.board_tree.tag_configure("synced", foreground=self.COLORS["text"])
+        self.board_tree.tag_configure("configured", foreground=self.COLORS["text"])
 
     def _open_path(self, path: Path) -> None:
         if not path.exists():
@@ -390,18 +409,30 @@ class DeploymentManagerWindow:
             return
         self._run_action("Deploying trusted verifier", self.manager.deploy)
 
-    def sync_boards(self) -> None:
-        if not messagebox.askyesno(
-            "Sync leaderboard boards to Steam?",
-            "Use this only when leaderboards.json changed.\n\n"
-            "Steam leaderboard identities cannot be deleted. Existing names will be reused and missing names will be created. "
-            "Afterward, the verifier will be deployed automatically.\n\nContinue?",
-            icon="warning",
+    def export_steam_history(self) -> None:
+        if not messagebox.askokcancel(
+            "Export the Steam history snapshot?",
+            "This reads every official Steam leaderboard and downloads every available replay attachment into the private server folder.\n\n"
+            "It does not modify Steam. The currently deployed verifier must include the snapshot tool.\n\nContinue?",
         ):
             return
         self._run_action(
-            "Synchronizing Steam leaderboards and deploying",
-            lambda log: self.manager.sync_leaderboards(log, deploy_after=True),
+            "Exporting Steam leaderboard history",
+            self.manager.export_steam_leaderboard_snapshot,
+            refresh_after=False,
+        )
+
+    def import_steam_history(self) -> None:
+        if not messagebox.askokcancel(
+            "Import the frozen Steam snapshot?",
+            "Replay-backed entries will be deterministically re-simulated before import. Rows without a recoverable replay are imported only as visibly non-playable historical scores.\n\n"
+            "The operation is idempotent and writes a complete audit report.\n\nContinue?",
+        ):
+            return
+        self._run_action(
+            "Importing Steam history into the custom authority",
+            self.manager.import_steam_leaderboard_snapshot,
+            refresh_after=False,
         )
 
     def restart_services(self) -> None:
@@ -420,14 +451,17 @@ class DeploymentManagerWindow:
         tunnel = str(status.get("tunnel_task", "Unknown"))
         local_ok = bool(status.get("local_health", False))
         public_ok = bool(status.get("public_route_health", False))
+        authority_ok = bool(status.get("leaderboard_api_health", False))
         self.status_vars["verifier"].set(verifier)
         self.status_vars["tunnel"].set(tunnel)
         self.status_vars["local"].set("Healthy" if local_ok else "Offline")
         self.status_vars["public"].set("Healthy" if public_ok else "Problem")
+        self.status_vars["authority"].set("Healthy" if authority_ok else "Problem")
         self.status_value_labels["verifier"].configure(fg=self.COLORS["good"] if verifier == "Running" else self.COLORS["bad"])
         self.status_value_labels["tunnel"].configure(fg=self.COLORS["good"] if tunnel == "Running" else self.COLORS["bad"])
         self.status_value_labels["local"].configure(fg=self.COLORS["good"] if local_ok else self.COLORS["bad"])
         self.status_value_labels["public"].configure(fg=self.COLORS["good"] if public_ok else self.COLORS["bad"])
+        self.status_value_labels["authority"].configure(fg=self.COLORS["good"] if authority_ok else self.COLORS["bad"])
 
         source_commit = str(status.get("source_commit", ""))
         deployed_commit = str(status.get("deployed_commit", ""))
@@ -440,8 +474,8 @@ class DeploymentManagerWindow:
             f"Deployed: {deployed_commit[:12] or 'none'}" + ("  (built from tracked changes)" if deployed_dirty else "")
         )
         board_count = int(status.get("manifest_board_count", 0))
-        synced_count = int(status.get("synced_board_count", 0))
-        self.status_vars["boards"].set(f"Leaderboards: {synced_count} of {board_count} synchronized with Steam")
+        configured_count = int(status.get("configured_board_count", 0))
+        self.status_vars["boards"].set(f"Leaderboards: {configured_count} of {board_count} configured for the custom authority")
 
         for item in self.board_tree.get_children():
             self.board_tree.delete(item)
@@ -456,11 +490,11 @@ class DeploymentManagerWindow:
                     row.get("title", ""),
                     row.get("source", ""),
                     row.get("status", ""),
-                    row.get("steam_id", ""),
-                    row.get("steam_name", ""),
+                    row.get("ruleset_revision", ""),
+                    row.get("board_id", ""),
                     digest.replace("sha256:", "")[:16] + "..." if digest else "",
                 ),
-                tags=("synced" if row.get("status") == "Synced" else "missing",),
+                tags=("configured" if row.get("status") == "Configured" else "missing",),
             )
 
     def _drain_events(self) -> None:
