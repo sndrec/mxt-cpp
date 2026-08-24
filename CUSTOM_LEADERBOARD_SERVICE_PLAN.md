@@ -8,10 +8,10 @@ Active implementation contract for the 0.3.2 leaderboard migration. The custom s
 
 Store and serve verified Time Attack records with enough control to support:
 
-- every verified run and its exact replay, not only leaderboard-retained bests;
+- every valid completed ranked run and its exact replay, not only leaderboard-retained bests;
 - each player's best time for every vehicle on every ranked track;
 - an overall leaderboard derived from each player's fastest qualifying run;
-- vehicle-filtered Global, Around Me, and Friends views;
+- vehicle-filtered Global views, with Around Me and Friends as optional follow-up views;
 - stable replay retrieval for leaderboard viewing, ghosts, audits, and moderation;
 - exact track, vehicle, ruleset, machine-setting, replay, and Steam-account identity;
 - moderation, deletion, migration, and audit operations controlled by MaxX Throttle;
@@ -26,6 +26,22 @@ The existing service already authenticates a Steam ticket, checks app ownership,
 Steam retains one score per user per leaderboard and does not provide the category, replay-retention, migration, or administrative control the game now needs. The new service must reuse the existing verification boundary rather than create a second verifier or trust client-provided result fields.
 
 The 0.3.2 release is the authority cutover. Its leaderboard client targets the custom service. Steam leaderboard writes and reads are removed from the live submission path once the custom service has passed pre-release validation.
+
+## Ranked Archive Scope
+
+The game submits every completed ranked Time Attack run to the verifier, even when the client already knows that the time cannot improve a personal or leaderboard best. The client must never pre-filter a completed ranked run based on its time.
+
+The permanent server archive includes every run that passes ranked verification using an official ranked track and an official vehicle. Whether the run changes a per-vehicle best, overall best, or any displayed leaderboard row has no effect on archival.
+
+The archive explicitly excludes:
+
+- unranked and Practice runs;
+- runs using Practice-only settings;
+- custom or loose tracks;
+- custom, local-draft, or Workshop vehicles;
+- corrupt replays and submissions that fail ranked verification.
+
+Excluded runs remain governed by the game's existing local replay behavior and are never uploaded merely for analytics. Ranked eligibility and replay archival are decided from verifier output, not client claims.
 
 ## Steam Identity
 
@@ -103,13 +119,13 @@ The overall track board is derived by taking each player's lowest current per-ve
 
 ### Replay objects
 
-Replay bodies do not belong in the relational database. Store every successfully verified replay by SHA-256 in object storage. The digest is both the immutable object identity and an integrity check, and identical replay bytes may share one stored object.
+Replay bodies do not belong in the relational database. Store every successfully verified completed ranked replay by SHA-256 in object storage. The digest is both the immutable object identity and an integrity check, and identical replay bytes may share one stored object.
 
 Verified replays are retained indefinitely by default, including runs that do not improve any best. A run or object may be hidden by moderation, but ordinary cleanup must not destroy audit evidence. Any future retention or deletion policy requires an explicit migration and must preserve every object still referenced by a visible run, moderation hold, investigation, or historical import.
 
 ## Authoritative Submission Transaction
 
-1. Receive the existing authenticated raw replay submission.
+1. Receive an authenticated raw replay submission for every completed ranked run, without client-side best-time filtering.
 2. Authenticate the Steam ticket and confirm app ownership.
 3. Run the existing deterministic verifier against pinned track and vehicle content.
 4. Ignore client claims for vehicle, setting, digests, and finish time; use only verifier output.
@@ -126,21 +142,21 @@ Object-first storage makes failure recoverable: an interrupted database finaliza
 
 ## Read API
 
-Provide versioned authenticated or public-read endpoints for:
+Provide versioned authenticated or public-read endpoints for the core leaderboard and replay workflow:
 
 - track overall leaderboard;
 - track leaderboard filtered to one vehicle category;
 - current player's per-vehicle bests for a track;
-- Around Me for an overall or vehicle category;
-- Friends for an overall or vehicle category;
 - exact run and replay metadata;
 - a short-lived replay download URL;
 - available vehicle categories and their record holders for a track;
 - optional run history for a player/category for audit or future UI use.
 
+Around Me and Friends endpoints are desirable but do not block the initial authority cutover. Add them only after authoritative submission, Global reads, replay retention, replay retrieval, and operational recovery are reliable.
+
 Reads require cursor-based pagination and deterministic ordering by time, then submission timestamp, then run identity. Do not emulate Steam's fixed top-100 limitation.
 
-The game UI preserves Overall, Around Me, and Friends presentation while adding a vehicle selector and concise "my best by vehicle" view. Ghost selection consumes the same returned entries and replay identities. Persona and avatar failures degrade to a stable Steam-ID-based placeholder without making the leaderboard unavailable.
+The game UI preserves Overall and Global presentation while adding a vehicle selector and concise "my best by vehicle" view. Around Me and Friends may be retained when practical, but may temporarily be hidden if their implementation would delay the reliable core service. Ghost selection consumes the same returned entries and replay identities. Persona and avatar failures degrade to a stable Steam-ID-based placeholder without making the leaderboard unavailable.
 
 ## Cloud Deployment
 
@@ -202,7 +218,8 @@ After import and acceptance validation, the game no longer depends on Steam Lead
 
 - Send verified internal/playtest submissions to the custom service without changing the public 0.3.1 client.
 - Compare custom overall ordering with recoverable Steam data.
-- Exercise replay retrieval, vehicle filters, Around Me, Friends, ghosts, idempotent retry, and deliberate failure recovery.
+- Exercise replay retrieval, vehicle filters, ghosts, idempotent retry, and deliberate failure recovery.
+- Exercise Around Me and Friends if they are included in the 0.3.2 cutover; otherwise keep them out of the acceptance-critical UI.
 - Repair discrepancies before authority changes.
 
 ### Phase D: Historical import
@@ -230,14 +247,17 @@ This phase is desirable but does not block 0.3.2 if the existing trusted Windows
 
 - Concurrent submissions cannot replace a faster per-vehicle best with a slower one.
 - Repeated identical submissions are idempotent and return the same run.
-- Every successfully verified run retains its exact replay even when it improves no best.
+- Every successfully verified completed ranked run retains its exact replay even when it improves no best.
+- A completed ranked run that is slower than the player's current best is still submitted, verified, and archived.
+- Unranked, Practice, custom-track, and non-official-vehicle runs are not uploaded to the ranked archive.
 - One player can retain independent bests for every eligible vehicle on one track.
 - Overall rank uses only that player's fastest eligible vehicle result.
 - Balance-revision digests never mix unintentionally.
 - Every advertised replay downloads and matches its stored SHA-256.
 - Failed object storage, database, verifier, and response delivery recover without duplicate or split-brain results.
 - A lost response after commit is safely recoverable by resubmitting the same replay.
-- Global, Around Me, Friends, pagination, ties, moderation filtering, and ghost selection return deterministic results.
+- Global reads, pagination, ties, moderation filtering, and ghost selection return deterministic results.
+- Around Me and Friends return deterministic results when enabled, but do not block the initial service launch.
 - Persona-name, avatar, and private-friends-list failures do not affect authoritative scores.
 - Historical Steam-only entries degrade clearly when their replay or machine setting is unavailable.
 - Load tests cover realistic board size, burst submissions, replay sizes, and four simultaneous ghost downloads.
@@ -247,6 +267,8 @@ This phase is desirable but does not block 0.3.2 if the existing trusted Windows
 
 - The custom store is authoritative for all verified Time Attack results.
 - Every newly verified run has an immutable metadata record and verified replay object.
+- Every valid completed ranked run is submitted and archived regardless of leaderboard improvement.
+- Unranked and non-official-content runs remain outside the server archive.
 - Each player has at most one current best per exact track/vehicle competitive category.
 - Overall and vehicle-filtered boards are queryable without Steam board proliferation.
 - SteamID64 provides durable ownership while names and avatars remain refreshable presentation data.
