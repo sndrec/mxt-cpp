@@ -27,6 +27,15 @@ class FakeVerifier:
             "game_version": {"major": 0, "compatibility": 3, "patch": 1},
         }
 
+    def manifest_boards(self) -> dict[str, dict[str, Any]]:
+        return {
+            "mxt_ta_test_11111111_r2": {
+                "steam_name": "mxt_ta_test_11111111_r2",
+                "track_slug": "test",
+                "track_gameplay_digest": "sha256:" + "11" * 32,
+            }
+        }
+
 
 class FakeReplayStore:
     def __init__(self) -> None:
@@ -71,7 +80,6 @@ class SteamHistoryImporterTest(unittest.TestCase):
                 },
                 {
                     "board_name": "mxt_ta_test_11111111_r2",
-                    "track_content_id": "mxt:track:official:test",
                     "track_gameplay_digest": "sha256:" + "11" * 32,
                     "track_title": "Test Track",
                     "ruleset_revision": 2,
@@ -114,6 +122,7 @@ class SteamHistoryImporterTest(unittest.TestCase):
             self.assertEqual(replay_store.calls[0][1]["steam_id"], entries[0]["steam_id"])
             self.assertEqual(score_store.calls[0]["provenance"], "steam_import_score_only")
             self.assertEqual(score_store.calls[0]["unavailable_reason"], "missing_replay_attachment")
+            self.assertEqual(score_store.calls[0]["track_content_id"], "mxt:track:official:test")
 
 
 if __name__ == "__main__":

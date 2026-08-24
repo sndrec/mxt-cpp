@@ -99,9 +99,14 @@ func _on_leaderboard_request_completed(request_id: int, result: Dictionary) -> v
 
 func _collect_entry(board: Dictionary, entry: Dictionary) -> void:
 	var ugc_handle := int(entry.get("ugc_handle", 0))
+	var track_content_id := String(board.get("track_content_id", ""))
+	if track_content_id.is_empty():
+		var track_slug := String(board.get("track_slug", ""))
+		if !track_slug.is_empty():
+			track_content_id = "mxt:track:official:" + track_slug
 	var record := {
 		"board_name": String(board.get("steam_name", "")),
-		"track_content_id": String(board.get("track_content_id", "")),
+		"track_content_id": track_content_id,
 		"track_gameplay_digest": String(board.get("track_gameplay_digest", "")),
 		"track_title": TimeAttackRulesClass.board_title(board),
 		"ruleset_revision": int(board.get("ruleset_revision", TimeAttackRulesClass.RULESET_REVISION)),

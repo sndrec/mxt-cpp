@@ -75,6 +75,7 @@ class SteamHistoryImporter:
 
     def run(self) -> dict[str, Any]:
         snapshot = self._read_snapshot()
+        official_boards = self.replay_verifier.manifest_boards()
         entries = snapshot.get("entries", [])
         if not isinstance(entries, list):
             raise HistoricalImportError("snapshot entries are invalid")
@@ -110,7 +111,7 @@ class SteamHistoryImporter:
                     report["counts"]["replay_backed_imported"] += 1
                     self._record(report, entry, "replay_backed_imported", "", outcome)
                 else:
-                    outcome = self._import_score_only(snapshot, entry)
+                    outcome = self._import_score_only(snapshot, entry, official_boards)
                     report["counts"]["score_only_imported"] += 1
                     self._record(report, entry, "score_only_imported", "", outcome)
             except (HistoricalImportError, ReplayVerificationError, AuthoritativeStoreError, OSError) as exc:
@@ -178,8 +179,29 @@ class SteamHistoryImporter:
         }
         return self.replay_store.archive_verified_run(replay_bytes, metadata)
 
-    def _import_score_only(self, snapshot: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    def _import_score_only(
+        self,
+        snapshot: dict[str, Any],
+        entry: dict[str, Any],
+        official_boards: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
         steam_id = self._steam_id(entry)
+        board_id = str(entry.get("board_name", ""))
+        board = official_boards.get(board_id)
+        if board is None:
+            raise HistoricalImportError("historical score is not on an official leaderboard")
+        track_digest = str(entry.get("track_gameplay_digest", ""))
+        if track_digest != str(board.get("track_gameplay_digest", "")):
+            raise HistoricalImportError("historical score track digest does not match the official manifest")
+        track_slug = str(board.get("track_slug", ""))
+        track_content_id = str(board.get("track_content_id", ""))
+        if not track_content_id and track_slug:
+            track_content_id = f"mxt:track:official:{track_slug}"
+        if not track_content_id:
+            raise HistoricalImportError("official leaderboard has no track content identity")
+        snapshot_track_content_id = str(entry.get("track_content_id", ""))
+        if snapshot_track_content_id and snapshot_track_content_id != track_content_id:
+            raise HistoricalImportError("historical score track content identity does not match the official manifest")
         source_details = entry.get("source_details", [])
         if not isinstance(source_details, list):
             raise HistoricalImportError("historical Steam details are invalid")
@@ -187,9 +209,9 @@ class SteamHistoryImporter:
             "schema_version": 1,
             "steam_id": steam_id,
             "auth_app_id": int(snapshot.get("steam_app_id", 0)),
-            "board_id": str(entry.get("board_name", "")),
-            "track_content_id": str(entry.get("track_content_id", "")),
-            "track_gameplay_digest": str(entry.get("track_gameplay_digest", "")),
+            "board_id": board_id,
+            "track_content_id": track_content_id,
+            "track_gameplay_digest": track_digest,
             "track_title": str(entry.get("track_title", "")),
             "score_milliseconds": int(entry.get("score_milliseconds", 0)),
             "ruleset_revision": int(entry.get("ruleset_revision", 0)),
