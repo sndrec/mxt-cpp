@@ -9,6 +9,7 @@ export default defineConfig({
         bindings: {
           INGEST_SECRET: "test-ingest-secret-with-sufficient-entropy",
           MIGRATION_SECRET: "test-migration-secret-with-sufficient-entropy",
+          ADMIN_SECRET: "test-admin-secret-with-sufficient-entropy",
           REPLAY_URL_SECRET: "test-replay-url-secret-with-sufficient-entropy",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
         },

@@ -2,3 +2,5 @@
 # Set production values with `wrangler secret put`; never commit live secrets.
 INGEST_SECRET=replace-with-a-long-random-development-secret
 REPLAY_URL_SECRET=replace-with-a-different-long-random-development-secret
+MIGRATION_SECRET=replace-with-a-migration-only-development-secret
+ADMIN_SECRET=replace-with-an-admin-only-development-secret

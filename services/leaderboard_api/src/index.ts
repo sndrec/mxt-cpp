@@ -1,6 +1,7 @@
 import { signHmac, verifyHmac } from "./crypto";
 import { importHistoricalScore } from "./historical";
 import { publicEntry, readAroundPlayer, readLeaderboard } from "./leaderboards";
+import { applyModeration } from "./moderation";
 import { readCategories, readPlayerBests } from "./reads";
 import { archiveVerifiedRun, replayRow, storeReplay } from "./storage";
 import { API_VERSION } from "./types";
@@ -9,6 +10,7 @@ import {
   parseBoardId,
   parseCursor,
   parseHistoricalScoreImport,
+  parseModerationRequest,
   parsePositiveInteger,
   parseRunId,
   parseSteamId,
@@ -89,7 +91,16 @@ async function handleIngest(request: Request, env: Env, requestId: string): Prom
   if (request.body === null) throw new ApiError(400, "missing_replay_body");
 
   const objectKey = await storeReplay(env, envelope, request.body);
-  const archive = await archiveVerifiedRun(env, envelope, objectKey, now);
+  let archive;
+  try {
+    archive = await archiveVerifiedRun(env, envelope, objectKey, now);
+  } catch (error) {
+    if (error instanceof Error && error.message === "competitive_vehicle_digest_conflict") {
+      throw new ApiError(409, error.message,
+        "This vehicle digest does not belong to the board's competitive revision.");
+    }
+    throw error;
+  }
   console.log(JSON.stringify({
     event: "verified_run_archived",
     request_id: requestId,
@@ -154,6 +165,50 @@ async function handleHistoricalScoreImport(request: Request, env: Env, requestId
     changed: imported.changed,
   }));
   return jsonResponse({ ok: true, replay_available: false, ...imported }, 200, requestId);
+}
+
+async function handleModeration(request: Request, env: Env, requestId: string): Promise<Response> {
+  if (request.headers.get("Content-Type") !== "application/json") {
+    throw new ApiError(415, "invalid_content_type");
+  }
+  const timestampText = requiredHeader(request, "X-MXT-Admin-Timestamp", 32);
+  const signature = requiredHeader(request, "X-MXT-Admin-Signature", 128).toLowerCase();
+  if (!/^[0-9]+$/.test(timestampText)) throw new ApiError(401, "invalid_admin_timestamp");
+  const timestamp = Number(timestampText);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > SIGNATURE_WINDOW_SECONDS) {
+    throw new ApiError(401, "expired_admin_signature");
+  }
+  const lengthText = request.headers.get("Content-Length") ?? "";
+  if (!/^[0-9]+$/.test(lengthText) || Number(lengthText) <= 0 || Number(lengthText) > 65_536) {
+    throw new ApiError(413, "invalid_admin_record_size");
+  }
+  const body = await request.text();
+  if (!await verifyHmac(env.ADMIN_SECRET, `${timestampText}\n${body}`, signature)) {
+    throw new ApiError(401, "invalid_admin_signature");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    throw new ApiError(400, "invalid_metadata");
+  }
+  let moderation;
+  try {
+    moderation = parseModerationRequest(parsed);
+  } catch (error) {
+    throw new ApiError(400, error instanceof Error ? error.message : "invalid_metadata");
+  }
+  try {
+    const result = await applyModeration(env, moderation, now);
+    console.log(JSON.stringify({ event: "moderation_applied", request_id: requestId, ...result }));
+    return jsonResponse({ ok: true, ...result }, 200, requestId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "moderation_target_not_found") {
+      throw new ApiError(404, error.message);
+    }
+    throw error;
+  }
 }
 
 async function handleLeaderboard(url: URL, env: Env, boardId: string, requestId: string): Promise<Response> {
@@ -279,6 +334,9 @@ async function route(request: Request, env: Env, requestId: string): Promise<Res
   }
   if (request.method === "POST" && url.pathname === "/v1/admin/import-historical-score") {
     return handleHistoricalScoreImport(request, env, requestId);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/admin/moderation") {
+    return handleModeration(request, env, requestId);
   }
   let match = /^\/v1\/leaderboards\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && match?.[1] !== undefined) {

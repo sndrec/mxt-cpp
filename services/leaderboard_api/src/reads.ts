@@ -29,6 +29,10 @@ export async function readCategories(env: Env, boardId: string): Promise<Categor
         ) AS category_rank
       FROM player_vehicle_bests best
       JOIN verified_runs r ON r.run_id = best.run_id
+      JOIN board_vehicle_roster roster
+        ON roster.board_id = r.board_id
+        AND roster.vehicle_content_id = r.vehicle_content_id
+        AND roster.vehicle_gameplay_digest = r.vehicle_gameplay_digest
       JOIN players p ON p.steam_id = r.steam_id
       WHERE r.board_id = ?1
         AND r.moderation_state = 'visible'
@@ -66,6 +70,10 @@ export async function readPlayerBests(
       '' AS historical_unavailable_reason
     FROM player_vehicle_bests best
     JOIN verified_runs r ON r.run_id = best.run_id
+    JOIN board_vehicle_roster roster
+      ON roster.board_id = r.board_id
+      AND roster.vehicle_content_id = r.vehicle_content_id
+      AND roster.vehicle_gameplay_digest = r.vehicle_gameplay_digest
     JOIN players p ON p.steam_id = r.steam_id
     WHERE r.board_id = ?1
       AND r.steam_id = ?2

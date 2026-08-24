@@ -96,6 +96,16 @@ export async function archiveVerifiedRun(
       receivedUnix,
     ),
     env.DB.prepare(`
+      INSERT OR IGNORE INTO board_vehicle_roster (
+        board_id, vehicle_content_id, vehicle_gameplay_digest, first_seen_unix
+      ) VALUES (?1, ?2, ?3, ?4)
+    `).bind(
+      envelope.board_id,
+      envelope.vehicle_content_id,
+      envelope.vehicle_gameplay_digest,
+      receivedUnix,
+    ),
+    env.DB.prepare(`
       INSERT OR IGNORE INTO replay_objects (replay_sha256, object_key, byte_length, created_unix)
       VALUES (?1, ?2, ?3, ?4)
     `).bind(envelope.replay_sha256, objectKey, envelope.replay_byte_length, receivedUnix),
@@ -107,13 +117,18 @@ export async function archiveVerifiedRun(
         game_version_major, game_version_compatibility, game_version_patch,
         replay_sha256, replay_byte_length, captured_persona_name,
         received_unix, source_timestamp_unix, provenance
-      ) VALUES (
+      ) SELECT
         ?1, ?2, ?3, ?4, ?5,
         ?6, ?7, ?8,
         ?9, ?10, ?11,
         ?12, ?13, ?14,
         ?15, ?16, ?17,
         ?18, ?19, ?20
+      WHERE EXISTS (
+        SELECT 1 FROM board_vehicle_roster
+        WHERE board_id = ?3
+          AND vehicle_content_id = ?6
+          AND vehicle_gameplay_digest = ?7
       )
     `).bind(
       runId,
@@ -141,7 +156,9 @@ export async function archiveVerifiedRun(
       INSERT INTO player_vehicle_bests (
         track_gameplay_digest, ruleset_revision, vehicle_gameplay_digest,
         steam_id, run_id, score_milliseconds, received_unix
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+      FROM verified_runs
+      WHERE run_id = ?5
       ON CONFLICT (track_gameplay_digest, ruleset_revision, vehicle_gameplay_digest, steam_id)
       DO UPDATE SET
         run_id = excluded.run_id,
@@ -159,8 +176,16 @@ export async function archiveVerifiedRun(
     ),
   ];
   const results = await env.DB.batch(statements);
-  const runCreated = (results[3]?.meta.changes ?? 0) > 0;
-  const vehicleBestChanged = (results[4]?.meta.changes ?? 0) > 0;
+  const roster = await env.DB.prepare(`
+    SELECT vehicle_gameplay_digest
+    FROM board_vehicle_roster
+    WHERE board_id = ?1 AND vehicle_content_id = ?2
+  `).bind(envelope.board_id, envelope.vehicle_content_id).first<{ vehicle_gameplay_digest: string }>();
+  if (roster === null || roster.vehicle_gameplay_digest !== envelope.vehicle_gameplay_digest) {
+    throw new Error("competitive_vehicle_digest_conflict");
+  }
+  const runCreated = (results[4]?.meta.changes ?? 0) > 0;
+  const vehicleBestChanged = (results[5]?.meta.changes ?? 0) > 0;
   const best = await env.DB.prepare(`
     SELECT run_id, score_milliseconds
     FROM player_vehicle_bests

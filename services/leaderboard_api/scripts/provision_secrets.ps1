@@ -43,14 +43,18 @@ function Get-OrCreateSecret([string]$Path) {
 $ingestPath = Join-Path $secretRoot "$Environment-ingest-secret.txt"
 $replayUrlPath = Join-Path $secretRoot "$Environment-replay-url-secret.txt"
 $migrationPath = Join-Path $secretRoot "$Environment-migration-secret.txt"
+$adminPath = Join-Path $secretRoot "$Environment-admin-secret.txt"
 $ingestSecret = Get-OrCreateSecret $ingestPath
 $replayUrlSecret = Get-OrCreateSecret $replayUrlPath
 $migrationSecret = Get-OrCreateSecret $migrationPath
+$adminSecret = Get-OrCreateSecret $adminPath
 Set-WorkerSecret 'INGEST_SECRET' $ingestSecret
 Set-WorkerSecret 'REPLAY_URL_SECRET' $replayUrlSecret
 Set-WorkerSecret 'MIGRATION_SECRET' $migrationSecret
+Set-WorkerSecret 'ADMIN_SECRET' $adminSecret
 
 Write-Host "Provisioned $Environment Worker secrets."
 Write-Host "Verifier ingest secret: $ingestPath"
 Write-Host "Replay URL secret: $replayUrlPath"
 Write-Host "Migration secret: $migrationPath"
+Write-Host "Admin secret: $adminPath"

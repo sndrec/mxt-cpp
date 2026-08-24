@@ -6,6 +6,7 @@ import {
   STEAM_ID_PATTERN,
   type LeaderboardCursor,
   type HistoricalScoreImport,
+  type ModerationRequest,
   type VerifiedRunEnvelope,
 } from "./types";
 
@@ -170,6 +171,33 @@ export function parseHistoricalScoreImport(parsed: unknown): HistoricalScoreImpo
     source_details: details as number[],
     unavailable_reason: requiredString(parsed, "unavailable_reason", 128),
     provenance,
+  };
+}
+
+export function parseModerationRequest(parsed: unknown): ModerationRequest {
+  if (!isRecord(parsed)) throw new Error("invalid_metadata");
+  boundedInteger(parsed, "schema_version", API_VERSION, API_VERSION);
+  const targetKind = requiredString(parsed, "target_kind", 32);
+  if (targetKind !== "run" && targetKind !== "historical_score" && targetKind !== "player") {
+    throw new Error("invalid_target_kind");
+  }
+  const targetId = requiredString(parsed, "target_id", 128);
+  if (targetKind === "player") {
+    if (!STEAM_ID_PATTERN.test(targetId)) throw new Error("invalid_target_id");
+  } else if (!RUN_ID_PATTERN.test(targetId)) {
+    throw new Error("invalid_target_id");
+  }
+  const state = requiredString(parsed, "state", 32);
+  if (state !== "visible" && state !== "quarantined" && state !== "hidden") {
+    throw new Error("invalid_moderation_state");
+  }
+  return {
+    schema_version: API_VERSION,
+    target_kind: targetKind,
+    target_id: targetId,
+    state,
+    reason: requiredString(parsed, "reason", 512),
+    operator: requiredString(parsed, "operator", 128),
   };
 }
 

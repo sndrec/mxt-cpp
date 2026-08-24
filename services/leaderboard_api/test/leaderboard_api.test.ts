@@ -5,6 +5,7 @@ import type { VerifiedRunEnvelope } from "../src/types";
 
 const INGEST_SECRET = "test-ingest-secret-with-sufficient-entropy";
 const MIGRATION_SECRET = "test-migration-secret-with-sufficient-entropy";
+const ADMIN_SECRET = "test-admin-secret-with-sufficient-entropy";
 const BASE_URL = "https://leaderboards.example.test";
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -44,6 +45,21 @@ async function importHistoricalScore(record: Record<string, unknown>): Promise<R
       "Content-Type": "application/json",
       "X-MXT-Migration-Signature": await signature(`${timestamp}\n${body}`, MIGRATION_SECRET),
       "X-MXT-Migration-Timestamp": timestamp,
+    },
+    body,
+  }));
+}
+
+async function moderate(record: Record<string, unknown>): Promise<Response> {
+  const body = JSON.stringify(record);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  return exports.default.fetch(new Request(`${BASE_URL}/v1/admin/moderation`, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(new TextEncoder().encode(body).byteLength),
+      "Content-Type": "application/json",
+      "X-MXT-Admin-Signature": await signature(`${timestamp}\n${body}`, ADMIN_SECRET),
+      "X-MXT-Admin-Timestamp": timestamp,
     },
     body,
   }));
@@ -109,6 +125,8 @@ async function clearStorage(): Promise<void> {
     env.DB.prepare("DELETE FROM historical_scores"),
     env.DB.prepare("DELETE FROM verified_runs"),
     env.DB.prepare("DELETE FROM replay_objects"),
+    env.DB.prepare("DELETE FROM board_vehicle_roster"),
+    env.DB.prepare("DELETE FROM moderation_actions"),
     env.DB.prepare("DELETE FROM boards"),
     env.DB.prepare("DELETE FROM players"),
   ]);
@@ -275,6 +293,24 @@ describe("custom leaderboard authority", () => {
     expect(playerBests.entries.map((entry) => entry.score_milliseconds)).toEqual([62_000, 58_000]);
   });
 
+  it("never mixes two gameplay digests for one vehicle lineage in a board revision", async () => {
+    const originalReplay = new TextEncoder().encode("original all rounder revision");
+    const changedReplay = new TextEncoder().encode("rebalanced all rounder revision");
+    const original = await envelope(originalReplay);
+    const changed = await envelope(changedReplay, {
+      steam_id: "76561198000000002",
+      vehicle_gameplay_digest: `sha256:${"44".repeat(32)}`,
+    });
+    expect((await ingest(originalReplay, original)).status).toBe(200);
+    const response = await ingest(changedReplay, changed);
+    expect(response.status).toBe(409);
+    expect(await response.json<Record<string, unknown>>()).toMatchObject({
+      error: "competitive_vehicle_digest_conflict",
+    });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM verified_runs").first<number>("count")).toBe(1);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM player_vehicle_bests").first<number>("count")).toBe(1);
+  });
+
   it("rejects unsigned replay uploads before storing anything", async () => {
     const replay = new TextEncoder().encode("untrusted replay");
     const metadata = await envelope(replay);
@@ -283,6 +319,30 @@ describe("custom leaderboard authority", () => {
     const runCount = await env.DB.prepare("SELECT COUNT(*) AS count FROM verified_runs").first<number>("count");
     expect(runCount).toBe(0);
     expect((await env.REPLAYS.list()).objects).toHaveLength(0);
+  });
+
+  it("soft-hides a run, repairs the best pointer, and audits the action", async () => {
+    const fastReplay = new TextEncoder().encode("moderated fast replay");
+    const fallbackReplay = new TextEncoder().encode("visible fallback replay");
+    const fast = await envelope(fastReplay, { score_milliseconds: 50_000 });
+    const fallback = await envelope(fallbackReplay, { score_milliseconds: 60_000 });
+    expect((await ingest(fallbackReplay, fallback)).status).toBe(200);
+    const accepted = await (await ingest(fastReplay, fast)).json<{ run_id: string }>();
+    const response = await moderate({
+      schema_version: 1,
+      target_kind: "run",
+      target_id: accepted.run_id,
+      state: "quarantined",
+      reason: "test investigation",
+      operator: "vitest",
+    });
+    expect(response.status).toBe(200);
+    const board = await (await exports.default.fetch(
+      `${BASE_URL}/v1/leaderboards/${fast.board_id}?scope=global`,
+    )).json<{ entries: Array<Record<string, unknown>> }>();
+    expect(board.entries).toHaveLength(1);
+    expect(board.entries[0]?.score_milliseconds).toBe(60_000);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM moderation_actions").first<number>("count")).toBe(1);
   });
 
   it("imports replay-unavailable Steam history without advertising a replay", async () => {

@@ -58,6 +58,15 @@ export type HistoricalScoreImport = Readonly<{
   provenance: "steam_import_score_only";
 }>;
 
+export type ModerationRequest = Readonly<{
+  schema_version: 1;
+  target_kind: "run" | "historical_score" | "player";
+  target_id: string;
+  state: "visible" | "quarantined" | "hidden";
+  reason: string;
+  operator: string;
+}>;
+
 export type LeaderboardCursor = Readonly<{
   score_milliseconds: number;
   received_unix: number;
