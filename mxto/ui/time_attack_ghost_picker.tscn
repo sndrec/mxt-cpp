@@ -63,7 +63,7 @@ theme_override_constants/separation = 6
 layout_mode = 2
 size_flags_horizontal = 3
 toggle_mode = true
-text = "Global Top 100"
+text = "Global"
 
 [node name="AroundMe" type="Button" parent="Center/Panel/Margin/Content/Views"]
 layout_mode = 2
@@ -87,6 +87,13 @@ text = "Local Replays"
 layout_mode = 2
 custom_minimum_size = Vector2(120, 0)
 text = "Refresh"
+
+[node name="LoadMore" type="Button" parent="Center/Panel/Margin/Content/Views"]
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+disabled = true
+text = "Load More"
 
 [node name="Entries" type="Tree" parent="Center/Panel/Margin/Content"]
 custom_minimum_size = Vector2(0, 390)

@@ -25,6 +25,7 @@ const NAV_ARR_SECONDS := 0.09
 @onready var friends_button: Button = $Center/Panel/Margin/Content/Views/Friends
 @onready var local_button: Button = $Center/Panel/Margin/Content/Views/Local
 @onready var refresh_button: Button = $Center/Panel/Margin/Content/Views/Refresh
+@onready var load_more_button: Button = $Center/Panel/Margin/Content/Views/LoadMore
 
 var game_manager: GameManager
 var selection_model: TimeAttackGhostSelection
@@ -37,6 +38,8 @@ var message_override := ""
 var nav_direction := Vector2i.ZERO
 var nav_repeat_seconds := 0.0
 var local_replay_catalog := LocalReplayCatalogClass.new()
+var next_cursor := ""
+var loading_cursor := ""
 
 
 func _ready() -> void:
@@ -46,6 +49,7 @@ func _ready() -> void:
 	friends_button.hide()
 	local_button.pressed.connect(_request.bind("local"))
 	refresh_button.pressed.connect(func(): _request(active_request_type))
+	load_more_button.pressed.connect(_load_more)
 	retry_button.pressed.connect(_retry_selected)
 	clear_button.pressed.connect(_clear_selection)
 	done_button.pressed.connect(close)
@@ -115,6 +119,10 @@ func _request(request_type: String) -> void:
 		(pair[0] as Button).set_pressed_no_signal(String(pair[1]) == request_type)
 	visible_entries.clear()
 	item_by_digest.clear()
+	next_cursor = ""
+	loading_cursor = ""
+	load_more_button.visible = false
+	load_more_button.disabled = true
 	entry_tree.clear()
 	var root := entry_tree.create_item()
 	var loading := entry_tree.create_item(root)
@@ -128,29 +136,57 @@ func _request(request_type: String) -> void:
 	game_manager.leaderboard_client.request_entries(steam_board_name, request_type)
 
 
+func _load_more() -> void:
+	if game_manager == null or game_manager.leaderboard_client == null \
+			or active_request_type != "global" or next_cursor.is_empty():
+		return
+	load_more_button.disabled = true
+	message_override = "Loading more Global entries…"
+	_update_status()
+	loading_cursor = next_cursor
+	game_manager.leaderboard_client.request_entries(steam_board_name, active_request_type, "", loading_cursor)
+
+
 func _on_entries_received(request_board: String, request_type: String, result: Dictionary) -> void:
 	if !visible or request_board != steam_board_name or request_type != active_request_type:
 		return
-	entry_tree.clear()
-	visible_entries.clear()
-	item_by_digest.clear()
-	var root := entry_tree.create_item()
+	var requested_cursor := String(result.get("requested_cursor", ""))
+	if !requested_cursor.is_empty() and requested_cursor != loading_cursor:
+		return
+	var appending := !requested_cursor.is_empty()
+	if appending:
+		loading_cursor = ""
+	var root := entry_tree.get_root()
+	if !appending or root == null:
+		entry_tree.clear()
+		visible_entries.clear()
+		item_by_digest.clear()
+		root = entry_tree.create_item()
 	if !bool(result.get("ok", false)):
-		var unavailable := entry_tree.create_item(root)
-		unavailable.set_text(2, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
-		message_override = "Leaderboard unavailable. Use Refresh to try again."
+		if !appending:
+			var unavailable := entry_tree.create_item(root)
+			unavailable.set_text(2, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
+			message_override = "Leaderboard unavailable. Use Refresh to try again."
+		else:
+			message_override = "Could not load more entries. Try again."
+		load_more_button.disabled = next_cursor.is_empty()
 		_update_status()
 		return
 	var entries_value = result.get("entries", [])
 	var entries: Array = entries_value if typeof(entries_value) == TYPE_ARRAY else []
-	_populate_entries(entries, true)
+	next_cursor = String(result.get("next_cursor", ""))
+	load_more_button.visible = request_type == "global" and !next_cursor.is_empty()
+	load_more_button.disabled = next_cursor.is_empty()
+	_populate_entries(entries, true, appending)
 
 
-func _populate_entries(entries: Array, decorate_leaderboard: bool) -> void:
-	entry_tree.clear()
-	visible_entries.clear()
-	item_by_digest.clear()
-	var root := entry_tree.create_item()
+func _populate_entries(entries: Array, decorate_leaderboard: bool, append := false) -> void:
+	var root := entry_tree.get_root()
+	if !append or root == null:
+		entry_tree.clear()
+		visible_entries.clear()
+		item_by_digest.clear()
+		root = entry_tree.create_item()
 	for entry_value in entries:
 		if typeof(entry_value) != TYPE_DICTIONARY:
 			continue
@@ -465,7 +501,7 @@ func _accept_focused() -> void:
 
 
 func _view_controls() -> Array[Control]:
-	return [global_button, around_button, local_button, refresh_button]
+	return [global_button, around_button, local_button, refresh_button, load_more_button]
 
 
 func _action_controls() -> Array[Control]:
@@ -476,7 +512,7 @@ func _friendly_mode(mode: String) -> String:
 	match mode:
 		"around_user": return "Around Me"
 		"local": return "Local Replays"
-		_: return "Global Top 100"
+		_: return "Global"
 
 
 func _format_score(milliseconds: int) -> String:

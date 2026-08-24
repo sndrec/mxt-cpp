@@ -13,6 +13,7 @@ const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_pr
 @onready var entry_tree: Tree = $Entries
 @onready var details: RichTextLabel = $History/DetailsScroll/Details
 @onready var watch_button: Button = $EntryActions/WatchReplay
+@onready var load_more_button: Button = $EntryActions/LoadMore
 
 var game_manager: GameManager
 var client: LeaderboardClient
@@ -21,6 +22,8 @@ var active_board_name := ""
 var active_request_type := "global"
 var visible_entries: Array = []
 var mode_buttons: Dictionary = {}
+var next_cursor := ""
+var loading_cursor := ""
 
 
 func _ready() -> void:
@@ -38,6 +41,7 @@ func _ready() -> void:
 	$History/Actions/RetryPending.pressed.connect(_retry_pending)
 	$History/Actions/ClearRejected.pressed.connect(_clear_rejected)
 	watch_button.pressed.connect(_watch_selected)
+	load_more_button.pressed.connect(_load_more)
 	track_option.item_selected.connect(_on_track_selected)
 	vehicle_option.item_selected.connect(_on_vehicle_selected)
 	entry_tree.item_selected.connect(_on_entry_selected)
@@ -113,6 +117,8 @@ func _request(request_type: String) -> void:
 	for mode in mode_buttons:
 		(mode_buttons[mode] as Button).set_pressed_no_signal(mode == request_type)
 	visible_entries.clear()
+	next_cursor = ""
+	loading_cursor = ""
 	entry_tree.clear()
 	var root := entry_tree.create_item()
 	var loading := entry_tree.create_item(root)
@@ -120,7 +126,18 @@ func _request(request_type: String) -> void:
 	status_label.text = "Loading %s…" % _board_title(active_board_name)
 	summary_label.text = ""
 	watch_button.disabled = true
+	load_more_button.disabled = true
+	load_more_button.visible = false
 	client.request_entries(active_board_name, active_request_type, vehicle_digest)
+
+
+func _load_more() -> void:
+	if client == null or active_request_type != "global" or next_cursor.is_empty():
+		return
+	load_more_button.disabled = true
+	status_label.text = "Loading more %s entries…" % _board_title(active_board_name)
+	loading_cursor = next_cursor
+	client.request_entries(active_board_name, active_request_type, _selected_vehicle_digest(), loading_cursor)
 
 
 func _on_track_selected(_index: int) -> void:
@@ -168,19 +185,32 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 	if board_name != active_board_name or request_type != active_request_type \
 			or String(result.get("requested_vehicle_gameplay_digest", "")) != _selected_vehicle_digest():
 		return
-	entry_tree.clear()
-	visible_entries.clear()
-	var root := entry_tree.create_item()
+	var requested_cursor := String(result.get("requested_cursor", ""))
+	if !requested_cursor.is_empty() and requested_cursor != loading_cursor:
+		return
+	var appending := !requested_cursor.is_empty()
+	if appending:
+		loading_cursor = ""
+	var root := entry_tree.get_root()
+	if !appending or root == null:
+		entry_tree.clear()
+		visible_entries.clear()
+		root = entry_tree.create_item()
 	if !bool(result.get("ok", false)):
-		var unavailable := entry_tree.create_item(root)
-		unavailable.set_text(1, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
-		status_label.text = "Leaderboard unavailable"
-		summary_label.text = "Check connectivity and use Refresh to try again."
+		if !appending:
+			var unavailable := entry_tree.create_item(root)
+			unavailable.set_text(1, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
+			status_label.text = "Leaderboard unavailable"
+			summary_label.text = "Check connectivity and use Refresh to try again."
+		else:
+			status_label.text = "Could not load more entries. Try again."
+		load_more_button.disabled = next_cursor.is_empty()
 		return
 	var entries: Array = result.get("entries", [])
 	var local_steam_id := game_manager.steam_service.get_steam_id() if game_manager.steam_service != null else 0
-	var local_entry: Dictionary = {}
 	for value in entries:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
 		var entry: Dictionary = LeaderboardEntryPresenterClass.decorate(game_manager, value as Dictionary)
 		visible_entries.append(entry)
 		var item := entry_tree.create_item(root)
@@ -191,10 +221,18 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 		item.set_text(3, String(entry.get("_display_version", "Legacy / unknown")))
 		item.set_text(4, _format_score(int(entry.get("score_milliseconds", 0))))
 		if int(entry.get("steam_id", 0)) == local_steam_id:
-			local_entry = entry
 			for column in range(entry_tree.columns):
 				item.set_custom_color(column, Color(0.45, 0.86, 1.0))
+	next_cursor = String(result.get("next_cursor", ""))
+	load_more_button.visible = request_type == "global" and !next_cursor.is_empty()
+	load_more_button.disabled = next_cursor.is_empty()
 	status_label.text = "%s · %s · %s" % [_board_title(board_name), _selected_vehicle_name(), _friendly_mode(request_type)]
+	var local_entry: Dictionary = {}
+	for entry_value in visible_entries:
+		var candidate: Dictionary = entry_value
+		if int(candidate.get("steam_id", 0)) == local_steam_id:
+			local_entry = candidate
+			break
 	if !local_entry.is_empty():
 		summary_label.text = "Your verified best: #%d · %s" % [int(local_entry.get("rank", 0)), _format_score(int(local_entry.get("score_milliseconds", 0)))]
 	else:
@@ -305,7 +343,7 @@ func _show_submission_status(status: Dictionary) -> void:
 func _friendly_mode(mode: String) -> String:
 	match mode:
 		"around_user": return "Around Me"
-		_: return "Global Top 100"
+		_: return "Global"
 
 
 func _board_title(board_name: String) -> String:

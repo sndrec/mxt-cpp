@@ -34,7 +34,7 @@ layout_mode = 2
 
 [node name="Global" type="Button" parent="Controls"]
 layout_mode = 2
-text = "Global Top 100"
+text = "Global"
 
 [node name="AroundMe" type="Button" parent="Controls"]
 layout_mode = 2
@@ -62,6 +62,12 @@ layout_mode = 2
 layout_mode = 2
 disabled = true
 text = "Watch Verified Replay"
+
+[node name="LoadMore" type="Button" parent="EntryActions"]
+visible = false
+layout_mode = 2
+disabled = true
+text = "Load More"
 
 [node name="ReplayHint" type="Label" parent="EntryActions"]
 layout_mode = 2

@@ -227,28 +227,30 @@ func clear_rejected() -> void:
 	_emit_status()
 
 
-func request_entries(board_name: String, request_type: String, vehicle_digest := "") -> int:
+func request_entries(board_name: String, request_type: String, vehicle_digest := "", cursor := "") -> int:
 	var request_id := next_read_request_id
 	next_read_request_id += 1
 	if request_type == "friends":
-		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Friends filtering is not available yet.")
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, vehicle_digest, cursor, "Friends filtering is not available yet.")
 		return request_id
 	var base_url := api_base_url()
 	if base_url.is_empty():
-		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Leaderboard API is not configured.")
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, vehicle_digest, cursor, "Leaderboard API is not configured.")
 		return request_id
 	var url := "%s/v1/leaderboards/%s?scope=%s" % [base_url, board_name.uri_encode(), request_type.uri_encode()]
 	if !vehicle_digest.is_empty():
 		url += "&vehicle_digest=%s" % vehicle_digest.uri_encode()
 	if request_type == "around_user":
 		if steam_service == null or !steam_service.is_initialized():
-			call_deferred("_emit_read_failure", request_id, board_name, request_type, "Steam identity is unavailable.")
+			call_deferred("_emit_read_failure", request_id, board_name, request_type, vehicle_digest, cursor, "Steam identity is unavailable.")
 			return request_id
 		url += "&steam_id=%s" % str(steam_service.get_steam_id()).uri_encode()
 	elif request_type == "global":
 		url += "&limit=100"
+		if !cursor.is_empty():
+			url += "&cursor=%s" % cursor.uri_encode()
 	else:
-		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Unsupported leaderboard view.")
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, vehicle_digest, cursor, "Unsupported leaderboard view.")
 		return request_id
 	var request := HTTPRequest.new()
 	request.name = "LeaderboardRead%d" % request_id
@@ -260,13 +262,14 @@ func request_entries(board_name: String, request_type: String, vehicle_digest :=
 		"board_name": board_name,
 		"request_type": request_type,
 		"vehicle_digest": vehicle_digest,
+		"cursor": cursor,
 		"node": request,
 	}
 	var error := request.request(url, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
 	if error != OK:
 		request.queue_free()
 		read_requests.erase(request_id)
-		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Could not start leaderboard request: %s" % error_string(error))
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, vehicle_digest, cursor, "Could not start leaderboard request: %s" % error_string(error))
 	return request_id
 
 
@@ -320,8 +323,13 @@ func _start_auxiliary_read(url: String, context: Dictionary) -> int:
 	return 0
 
 
-func _emit_read_failure(_request_id: int, board_name: String, request_type: String, message: String) -> void:
-	entries_received.emit(board_name, request_type, {"ok": false, "message": message})
+func _emit_read_failure(_request_id: int, board_name: String, request_type: String, vehicle_digest: String, cursor: String, message: String) -> void:
+	entries_received.emit(board_name, request_type, {
+		"ok": false,
+		"message": message,
+		"requested_vehicle_gameplay_digest": vehicle_digest,
+		"requested_cursor": cursor,
+	})
 
 
 func _emit_categories_failure(board_name: String, message: String) -> void:
@@ -353,6 +361,7 @@ func _on_read_request_completed(result: int, response_code: int, _headers: Packe
 			player_bests_received.emit(String(context.get("board_name", "")), parsed)
 		_:
 			parsed["requested_vehicle_gameplay_digest"] = String(context.get("vehicle_digest", ""))
+			parsed["requested_cursor"] = String(context.get("cursor", ""))
 			entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), parsed)
 
 
