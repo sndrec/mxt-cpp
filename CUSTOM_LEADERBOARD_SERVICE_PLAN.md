@@ -2,7 +2,9 @@
 
 ## Status
 
-Active implementation contract for the 0.3.2 leaderboard migration. The custom service replaces Steam Leaderboards as the authoritative Time Attack store. Steam remains the player identity provider and the one-time source for recoverable historical entries; new scores are not mirrored back to Steam.
+Completed for the 0.3.2 leaderboard migration. The custom service replaces Steam Leaderboards as the authoritative Time Attack store. Steam remains the player identity provider and the one-time source for recoverable historical entries; new scores are not mirrored back to Steam.
+
+The production migration froze 29 Steam boards and 30 retained entries. All 30 entries were imported: 20 with reverified replay objects and 10 as explicitly nonplayable score-only history because Steam no longer had a replay attachment. The final production audit found no invalid or failed imports, and the deployed Windows verifier bundle matched repository commit `695592a3673a83efff2ec7bb1adad4b5f074380b` with healthy local, public-route, and leaderboard-API checks.
 
 ## Objective
 
