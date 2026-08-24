@@ -2250,6 +2250,12 @@ struct OldCornerCollisionSurface {
 	SimTransform surface;
 };
 
+// A corner may remain slightly behind the sampled tangent plane while suspension
+// and orientation settle. Larger pre-existing depth cannot have been created by
+// this tick and must not be treated as a new collision against a newly selected
+// analytic surface.
+static constexpr float ANALYTIC_DEPENETRATION_OLD_DEPTH_TOLERANCE = 5.0f;
+
 static inline bool analytic_depenetration_t_in_surface_domain(const SimVec2 &road_t)
 {
 	return road_t.x > -1.0f &&
@@ -2295,7 +2301,7 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 			out.from_center_floor = true;
 			out.road_t = floor_sample.road_t;
 			out.surface = floor_sample.closest_surface;
-			out.was_above = (LOAD_VEC3(position_old) - floor_sample.closest_surface.origin).dot(floor_sample.closest_surface.basis[1]) >= -5.0f;
+			out.was_above = (LOAD_VEC3(position_old) - floor_sample.closest_surface.origin).dot(floor_sample.closest_surface.basis[1]) >= -ANALYTIC_DEPENETRATION_OLD_DEPTH_TOLERANCE;
 			out.was_inside = floor_sample.road_t.x > -1.0f && floor_sample.road_t.x < 1.0f;
 			return out;
 		}
@@ -2320,7 +2326,7 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 	out.valid = true;
 	out.road_t = use_t;
 	out.surface = use_transform;
-	out.was_above = (LOAD_VEC3(position_old) - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
+	out.was_above = (LOAD_VEC3(position_old) - use_transform.origin).dot(use_transform.basis[1]) >= -ANALYTIC_DEPENETRATION_OLD_DEPTH_TOLERANCE;
 	out.was_inside = use_t.x > -1.0f && use_t.x < 1.0f;
 	return out;
 }
@@ -2676,6 +2682,21 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						float depth = (p0 - plane_pos).dot(normal);
 						if (depth >= 0.0f) continue;
+						ensure_wall_corner_old_world();
+						const float old_depth = (wall_corner_old_world[wc_idx] - plane_pos).dot(normal);
+						if (old_depth < -ANALYTIC_DEPENETRATION_OLD_DEPTH_TOLERANCE) {
+							if (trace_rail) {
+								godot::UtilityFunctions::print(
+									godot::String("MXT_TRACK_ANALYTIC_REJECT tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+									godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+									godot::String(" pass=new cp="), static_cast<int64_t>(use_cp_new),
+									godot::String(" wc="), static_cast<int64_t>(wc_idx),
+									godot::String(" reason=old_corner_behind_new_plane"),
+									godot::String(" old_depth="), old_depth,
+									godot::String(" new_depth="), depth);
+							}
+							continue;
+						}
 						SimVec3 d = normal * (-depth);
 						if (trace_rail) {
 							godot::UtilityFunctions::print(
