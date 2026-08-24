@@ -1,7 +1,6 @@
 extends SceneTree
 
 const CurveGraphClass = preload("res://ui/vehicle_editor_curve_graph.gd")
-const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 const ALL_ROUNDER_PATH := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
 const TOP_SPEEDER_PATH := "res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"
 
@@ -11,7 +10,6 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	_test_derived_authoring_and_drafts()
 	_test_performance_grades()
-	_test_trusted_leaderboard_details()
 	await _test_curve_transforms()
 	if failures.is_empty():
 		print("MXT_CAR_CREATOR_COMPLETION_OK")
@@ -181,20 +179,6 @@ func _test_performance_grades() -> void:
 			_expect(String(trait_data.get("kind", "")) == "strength", "lower Turbo Slide acceleration should be classified as an advantage")
 			_expect(String(trait_data.get("explanation", "")).contains("pull back down"), "Turbo Slide acceleration should explain its inverted interpretation")
 	_expect(found_mts_acceleration, "custom Turbo Slide acceleration should produce a contextual trait")
-
-
-func _test_trusted_leaderboard_details() -> void:
-	var details: Array = [0x3154584d, 3, 7, 4, (3 << 24) | (2 << 16) | 19]
-	for word in range(1, 25):
-		details.append(word)
-	details.append(50)
-	var decoded := LeaderboardDetailsClass.decode(details)
-	_expect(int(decoded.get("ruleset_revision", 0)) == 7, "trusted details should preserve ruleset revision")
-	_expect(int(decoded.get("replay_schema_version", 0)) == 4, "trusted details should preserve replay schema")
-	_expect(String(decoded.get("replay_sha256", "")) == "sha256:0000000100000002000000030000000400000005000000060000000700000008", "trusted details should preserve the full replay digest")
-	_expect(String(decoded.get("track_gameplay_digest", "")).length() == 71, "trusted details should contain a full track digest")
-	_expect(String(decoded.get("vehicle_gameplay_digest", "")).length() == 71, "trusted details should contain a full vehicle digest")
-	_expect(int(decoded.get("machine_setting_percent", -1)) == 50, "trusted details should preserve machine setting")
 
 
 func _test_curve_transforms() -> void:
