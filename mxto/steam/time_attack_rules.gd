@@ -45,24 +45,23 @@ static func manifest() -> Dictionary:
 
 static func board_for_track_digest(gameplay_digest: String) -> Dictionary:
 	for value in manifest().get("boards", []):
-		if typeof(value) == TYPE_DICTIONARY and String(value.get("track_gameplay_digest", "")) == gameplay_digest:
+		if typeof(value) == TYPE_DICTIONARY \
+				and String(value.get("track_source", "official")) == "official" \
+				and String(value.get("track_gameplay_digest", "")) == gameplay_digest:
 			return (value as Dictionary).duplicate(true)
 	return {}
 
 static func track_record_matches_board(record: Dictionary, board: Dictionary) -> bool:
 	if String(record.get("gameplay_digest", "")) != String(board.get("track_gameplay_digest", "")):
 		return false
-	var track_source := String(board.get("track_source", "official"))
-	if track_source == "official":
-		return String(record.get("source", "")) == "official"
-	if track_source == "curated_workshop":
-		return String(record.get("source", "")) == "workshop" \
-			and String(record.get("published_file_id", "")) == String(board.get("published_file_id", ""))
-	return false
+	return String(board.get("track_source", "official")) == "official" \
+		and String(record.get("source", "")) == "official"
 
 static func board_for_name(steam_name: String) -> Dictionary:
 	for value in manifest().get("boards", []):
-		if typeof(value) == TYPE_DICTIONARY and String(value.get("steam_name", "")) == steam_name:
+		if typeof(value) == TYPE_DICTIONARY \
+				and String(value.get("track_source", "official")) == "official" \
+				and String(value.get("steam_name", "")) == steam_name:
 			return (value as Dictionary).duplicate(true)
 	return {}
 
@@ -76,8 +75,8 @@ static func friendly_reason(reason: String) -> String:
 		"modified_time_attack_rules": return "Ranked rules were changed. Restore the standard three-lap Time Attack rules."
 		"debug_or_automation_enabled": return "Debug or automation controls are active. Disable them for a ranked run."
 		"invalid_track_identity": return "The selected track does not have a complete content identity."
-		"track_has_no_ranked_board": return "This track does not currently have a ranked Steam leaderboard."
-		"uncurated_or_mismatched_track": return "The selected track is not the exact official or curated version used by this leaderboard."
+		"track_has_no_ranked_board": return "This track does not currently have a ranked leaderboard."
+		"uncurated_or_mismatched_track": return "The selected track is not the exact official version used by this leaderboard."
 		"unofficial_or_mismatched_vehicle": return "Ranked Time Attack requires an exact official machine. You can switch directly to the All Rounder or practice unranked."
 		"invalid_finish_time": return "The race did not produce a valid finish time."
 		"replay_recording_failed": return "The run finished, but its verification replay could not be saved."

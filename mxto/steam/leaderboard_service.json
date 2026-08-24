@@ -1,5 +1,6 @@
 {
-  "format_revision": 1,
-  "base_url": "https://mxt-leaderboards.rolledoutgame.com",
+  "format_revision": 2,
+  "submission_base_url": "https://mxt-leaderboards.rolledoutgame.com",
+  "api_base_url": "https://mxt-leaderboard-api-production.sndrec32exe.workers.dev",
   "ticket_identity": "mxt-leaderboard-v1"
 }

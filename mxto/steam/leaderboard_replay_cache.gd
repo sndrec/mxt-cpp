@@ -8,7 +8,8 @@ const CACHE_ROOT := "user://leaderboard_replays"
 const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 
 var game_manager: GameManager
-var steam_service: MxtSteamService
+var leaderboard_client: LeaderboardClient
+var http_request: HTTPRequest
 var cache_root := CACHE_ROOT
 
 var next_token := 1
@@ -18,7 +19,7 @@ var queued_digests: Array[String] = []
 var validated_session_requests: Dictionary = {}
 
 var active_digest := ""
-var active_download_request_id := 0
+var active_phase := ""
 var active_download_context: Dictionary = {}
 
 var cache_hit_count := 0
@@ -26,11 +27,14 @@ var downloaded_replay_count := 0
 var downloaded_byte_count := 0
 
 
-func initialize(manager: GameManager, service: MxtSteamService) -> void:
+func initialize(manager: GameManager, client: LeaderboardClient) -> void:
 	game_manager = manager
-	steam_service = service
-	if steam_service != null:
-		steam_service.leaderboard_replay_download_completed.connect(_on_download_completed)
+	leaderboard_client = client
+	http_request = HTTPRequest.new()
+	http_request.name = "LeaderboardReplayRequest"
+	http_request.timeout = 60.0
+	http_request.request_completed.connect(_on_http_request_completed)
+	add_child(http_request)
 
 
 func request_replay(board_name: String, entry: Dictionary) -> int:
@@ -72,18 +76,18 @@ func _build_request(board_name: String, entry: Dictionary) -> Dictionary:
 	var details: Dictionary = (details_value as Dictionary).duplicate(true)
 	var replay_digest := String(details.get("replay_sha256", ""))
 	var digest_hex := _digest_hex(replay_digest)
-	var ugc_handle := int(entry.get("ugc_handle", 0))
-	if digest_hex.is_empty() or ugc_handle == 0 or ugc_handle == -1:
+	var run_id := String(entry.get("run_id", ""))
+	if digest_hex.is_empty() or run_id.is_empty():
 		return {"error": "missing_replay_attachment"}
 	if board_name.is_empty():
 		return {"error": "missing_leaderboard_name"}
 	return {
 		"board_name": board_name,
-		"ugc_handle": ugc_handle,
+		"run_id": run_id,
 		"trusted_details": details,
 		"replay_sha256": replay_digest,
 		"digest_hex": digest_hex,
-		"source_path": cache_root.path_join(digest_hex + ".attachment"),
+		"source_path": cache_root.path_join(digest_hex + ".download"),
 		"cache_path": cache_root.path_join(digest_hex + ".mxt_replay"),
 		"validation_key": _validation_key(board_name, details),
 	}
@@ -131,36 +135,55 @@ func _pump_queue() -> void:
 			var stale_cache_path := String(active_download_context.get("cache_path", ""))
 			if FileAccess.file_exists(stale_cache_path):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(stale_cache_path))
-		if steam_service == null or !steam_service.is_initialized():
-			_fail_waiters(digest, _failure("steam_offline"))
+		if leaderboard_client == null or leaderboard_client.api_base_url().is_empty():
+			_fail_waiters(digest, _failure("leaderboard_api_unavailable"))
 			_finish_active_digest()
 			return
-		active_download_request_id = steam_service.download_leaderboard_replay(
-			int(active_download_context.get("ugc_handle", 0)),
-			MAX_REPLAY_BYTES)
-		if active_download_request_id <= 0:
-			_fail_waiters(digest, _failure("steam_download_start_failed"))
+		active_phase = "authorize"
+		var url := "%s/v1/runs/%s/replay-url" % [
+			leaderboard_client.api_base_url(),
+			String(active_download_context.get("run_id", "")).uri_encode(),
+		]
+		var error := http_request.request(url, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
+		if error != OK:
+			_fail_waiters(digest, _failure("replay_authorization_failed", error_string(error)))
 			_finish_active_digest()
 		return
 
 
-func _on_download_completed(request_id: int, result: Dictionary) -> void:
-	if request_id != active_download_request_id or active_digest.is_empty():
+func _on_http_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	if active_digest.is_empty():
 		return
-	active_download_request_id = 0
 	var digest := active_digest
-	if !bool(result.get("success", false)):
-		_fail_waiters(digest, _failure(
-			"steam_download_failed",
-			String(result.get("message", "Steam replay download failed."))))
+	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
+		var parsed_value = JSON.parse_string(body.get_string_from_utf8())
+		var parsed: Dictionary = parsed_value if typeof(parsed_value) == TYPE_DICTIONARY else {}
+		var message := String(parsed.get("message", parsed.get("error", "Replay request failed.")))
+		_fail_waiters(digest, _failure("replay_download_failed", message))
 		_finish_active_digest()
 		return
-	var bytes_value = result.get("bytes", PackedByteArray())
-	if typeof(bytes_value) != TYPE_PACKED_BYTE_ARRAY:
-		_fail_waiters(digest, _failure("invalid_steam_payload"))
+	if active_phase == "authorize":
+		var authorization_value = JSON.parse_string(body.get_string_from_utf8())
+		if typeof(authorization_value) != TYPE_DICTIONARY or !bool(authorization_value.get("ok", false)):
+			_fail_waiters(digest, _failure("replay_authorization_failed"))
+			_finish_active_digest()
+			return
+		var replay_url := String(authorization_value.get("replay_url", ""))
+		if !replay_url.begins_with("https://"):
+			_fail_waiters(digest, _failure("replay_authorization_failed"))
+			_finish_active_digest()
+			return
+		active_phase = "download"
+		var error := http_request.request(replay_url, PackedStringArray(["Accept: application/vnd.mxt.replay"]), HTTPClient.METHOD_GET)
+		if error != OK:
+			_fail_waiters(digest, _failure("replay_download_failed", error_string(error)))
+			_finish_active_digest()
+		return
+	if active_phase != "download":
+		_fail_waiters(digest, _failure("replay_download_failed"))
 		_finish_active_digest()
 		return
-	var bytes: PackedByteArray = bytes_value
+	var bytes: PackedByteArray = body
 	downloaded_replay_count += 1
 	downloaded_byte_count += bytes.size()
 	_complete_downloaded_waiters(digest, bytes)
@@ -352,7 +375,7 @@ func _write_cache_atomically(path: String, bytes: PackedByteArray) -> bool:
 
 func _finish_active_digest() -> void:
 	active_digest = ""
-	active_download_request_id = 0
+	active_phase = ""
 	active_download_context.clear()
 	call_deferred("_pump_queue")
 
@@ -431,10 +454,9 @@ func _failure(reason: String, detail := "") -> Dictionary:
 		"missing_trusted_replay_metadata": "This leaderboard entry has no trusted replay metadata.",
 		"missing_replay_attachment": "This leaderboard entry does not have a playable replay attached.",
 		"missing_leaderboard_name": "The leaderboard identity is missing.",
-		"steam_offline": "Steam is offline, so the replay cannot be downloaded.",
-		"steam_download_start_failed": "Steam could not start the replay download.",
-		"steam_download_failed": "Steam replay download failed.",
-		"invalid_steam_payload": "Steam returned an invalid replay payload.",
+		"leaderboard_api_unavailable": "The leaderboard replay service is unavailable.",
+		"replay_authorization_failed": "The leaderboard service could not authorize this replay download.",
+		"replay_download_failed": "The leaderboard replay download failed.",
 		"cache_write_failed": "The validated replay could not be written to the local cache.",
 	}
 	return {

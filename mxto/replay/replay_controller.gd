@@ -38,6 +38,7 @@ const REPLAY_INTERFACE_CANVAS_LAYER := 90
 const REPLAY_INPUT_DISPLAY_SCRIPT := preload("res://replay/replay_input_display.gd")
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
+const LegacyLeaderboardReplayReaderClass = preload("res://steam/legacy_leaderboard_replay_reader.gd")
 const REPLAY_DEATH_KO_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_ko.png")
 const REPLAY_DEATH_FALL_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_fall.png")
 const REPLAY_DEATH_EXPLOSION_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_explosion.png")
@@ -688,8 +689,24 @@ func _load_replay_file(path: String) -> Dictionary:
 	game_manager.record_memory_sample("replay_load_begin")
 	var stream := MxtReplayStream.new()
 	if !stream.load_file(path):
-		push_warning("Replay load failed: %s" % stream.get_last_error())
-		return {}
+		if !replay_leaderboard_verify_requested:
+			push_warning("Replay load failed: %s" % stream.get_last_error())
+			return {}
+		var legacy_bytes := FileAccess.get_file_as_bytes(path)
+		var legacy_result := LegacyLeaderboardReplayReaderClass.convert(game_manager, legacy_bytes)
+		if !bool(legacy_result.get("valid", false)):
+			push_warning("Legacy leaderboard replay load failed: %s" % String(legacy_result.get("reason", "invalid_legacy_leaderboard_replay")))
+			return {}
+		stream = legacy_result.get("_native_stream") as MxtReplayStream
+		var legacy_metadata_value = legacy_result.get("_native_metadata", {})
+		if stream == null or typeof(legacy_metadata_value) != TYPE_DICTIONARY:
+			push_warning("Legacy leaderboard replay conversion produced no replay stream.")
+			return {}
+		var legacy_metadata: Dictionary = legacy_metadata_value
+		legacy_metadata["_replay_stream"] = stream
+		replay_playback_source_bytes = legacy_bytes.size()
+		game_manager.record_memory_sample("replay_load_parsed")
+		return legacy_metadata
 	var parsed: Dictionary = stream.get_metadata()
 	replay_playback_source_bytes = int(stream.get_stats().get("source_bytes", 0))
 	if !_replay_schema_is_supported(parsed):
@@ -825,7 +842,6 @@ func _leaderboard_verified_result() -> Dictionary:
 	result["finish_tick"] = finish_tick
 	result["start_tick"] = start_tick
 	result["score_milliseconds"] = TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
-	result["replay_schema_version"] = REPLAY_SCHEMA_VERSION
 	return result
 
 func _build_replay_timeline_controls() -> void:
@@ -1458,6 +1474,8 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			if game_manager.headless_mode:
 				get_tree().quit(1)
 			return
+		if replay.has("legacy_leaderboard_schema_version"):
+			replay_leaderboard_validation["replay_schema_version"] = int(replay.get("legacy_leaderboard_schema_version", -1))
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
 	var track_index := _find_track_index(replay)

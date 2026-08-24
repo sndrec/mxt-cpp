@@ -26,7 +26,8 @@ func _ready() -> void:
 	while ancestor != null and !(ancestor is GameManager):
 		ancestor = ancestor.get_parent()
 	game_manager = ancestor as GameManager
-	mode_buttons = {"global": $Controls/Global, "around_user": $Controls/AroundMe, "friends": $Controls/Friends}
+	mode_buttons = {"global": $Controls/Global, "around_user": $Controls/AroundMe}
+	$Controls/Friends.hide()
 	for mode in mode_buttons:
 		var button: Button = mode_buttons[mode]
 		button.toggle_mode = true
@@ -62,7 +63,10 @@ func _initialize_client() -> void:
 		client.submission_status_changed.connect(_show_submission_status)
 	if !client.entries_received.is_connected(_show_entries):
 		client.entries_received.connect(_show_entries)
-	boards = TimeAttackRulesClass.manifest().get("boards", []).duplicate(true)
+	boards.clear()
+	for value in TimeAttackRulesClass.manifest().get("boards", []):
+		if typeof(value) == TYPE_DICTIONARY and String((value as Dictionary).get("track_source", "official")) == "official":
+			boards.append((value as Dictionary).duplicate(true))
 	track_option.clear()
 	for value in boards:
 		var board: Dictionary = value
@@ -131,11 +135,11 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 	entry_tree.clear()
 	visible_entries.clear()
 	var root := entry_tree.create_item()
-	if !bool(result.get("success", false)):
+	if !bool(result.get("ok", false)):
 		var unavailable := entry_tree.create_item(root)
-		unavailable.set_text(1, "Unavailable: %s" % String(result.get("message", "Steam leaderboard request failed.")))
+		unavailable.set_text(1, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
 		status_label.text = "Leaderboard unavailable"
-		summary_label.text = "Check Steam connectivity and use Refresh to try again."
+		summary_label.text = "Check connectivity and use Refresh to try again."
 		return
 	var entries: Array = result.get("entries", [])
 	var local_steam_id := game_manager.steam_service.get_steam_id() if game_manager.steam_service != null else 0
@@ -145,18 +149,18 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 		visible_entries.append(entry)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
-		item.set_text(0, "#%d" % int(entry.get("global_rank", 0)))
+		item.set_text(0, "#%d" % int(entry.get("rank", 0)))
 		item.set_text(1, String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))))
 		item.set_text(2, String(entry.get("_display_vehicle", "Unknown")))
 		item.set_text(3, String(entry.get("_display_version", "Legacy / unknown")))
-		item.set_text(4, _format_score(int(entry.get("score", 0))))
+		item.set_text(4, _format_score(int(entry.get("score_milliseconds", 0))))
 		if int(entry.get("steam_id", 0)) == local_steam_id:
 			local_entry = entry
 			for column in range(entry_tree.columns):
 				item.set_custom_color(column, Color(0.45, 0.86, 1.0))
 	status_label.text = "%s · %s" % [_board_title(board_name), _friendly_mode(request_type)]
 	if !local_entry.is_empty():
-		summary_label.text = "Your verified best: #%d · %s" % [int(local_entry.get("global_rank", 0)), _format_score(int(local_entry.get("score", 0)))]
+		summary_label.text = "Your verified best: #%d · %s" % [int(local_entry.get("rank", 0)), _format_score(int(local_entry.get("score_milliseconds", 0)))]
 	else:
 		summary_label.text = "You do not have a verified entry in this view."
 	if entries.is_empty():
@@ -198,7 +202,7 @@ func _show_submission_status(status: Dictionary) -> void:
 		lines.append("[color=#ffd166]Pending[/color]  %s · %s · %s old · attempt %d · retry %s%s" % [String(submission.get("track_title", _board_title(String(submission.get("board_name", ""))))), _format_score(int(submission.get("score_milliseconds", 0))), _age_text(now_unix - int(submission.get("created_unix", now_unix))), int(submission.get("attempts", 0)), retry_text, error_suffix])
 	for value in status.get("completed", []):
 		var submission: Dictionary = value
-		var outcome := "Retained Steam best" if bool(submission.get("retained", false)) else "Verified, not faster than retained best"
+		var outcome := "Archived vehicle best" if bool(submission.get("is_vehicle_best", false)) else "Archived ranked attempt"
 		lines.append("[color=#75e6a4]%s[/color]  %s · %s · %s ago" % [outcome, String(submission.get("track_title", _board_title(String(submission.get("board_name", ""))))), _format_score(int(submission.get("score_milliseconds", 0))), _age_text(now_unix - int(submission.get("accepted_unix", now_unix)))])
 	for value in status.get("rejected", []):
 		var submission: Dictionary = value
@@ -209,7 +213,6 @@ func _show_submission_status(status: Dictionary) -> void:
 func _friendly_mode(mode: String) -> String:
 	match mode:
 		"around_user": return "Around Me"
-		"friends": return "Friends"
 		_: return "Global Top 100"
 
 

@@ -35,8 +35,7 @@ func select(board_name: String, entry: Dictionary) -> Dictionary:
 		return _failure("missing_trusted_replay_metadata", "This time has no trusted replay metadata.")
 	var trusted: Dictionary = trusted_value
 	var digest := String(trusted.get("replay_sha256", ""))
-	var ugc_handle := int(entry.get("ugc_handle", 0))
-	if digest.is_empty() or ugc_handle == 0 or ugc_handle == -1:
+	if digest.is_empty() or String(entry.get("run_id", "")).is_empty():
 		return _failure("missing_replay_attachment", "This time does not have a replay attached.")
 	if selected_by_digest.has(digest):
 		update_entry(board_name, entry)
@@ -162,9 +161,8 @@ func update_entry(board_name: String, entry: Dictionary) -> void:
 	selection["entry"] = entry.duplicate(true)
 	selection["steam_id"] = int(entry.get("steam_id", 0))
 	selection["persona_name"] = String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))
-	selection["global_rank"] = int(entry.get("global_rank", 0))
-	selection["score_milliseconds"] = int(entry.get("score", 0))
-	selection["ugc_handle"] = int(entry.get("ugc_handle", 0))
+	selection["global_rank"] = int(entry.get("rank", 0))
+	selection["score_milliseconds"] = int(entry.get("score_milliseconds", 0))
 	selected_by_digest[digest] = selection
 	_emit_changed()
 
@@ -254,9 +252,8 @@ func _selection_record(board_name: String, entry: Dictionary, trusted: Dictionar
 		"board_name": board_name,
 		"steam_id": int(entry.get("steam_id", 0)),
 		"persona_name": String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))),
-		"global_rank": int(entry.get("global_rank", 0)),
-		"score_milliseconds": int(entry.get("score", 0)),
-		"ugc_handle": int(entry.get("ugc_handle", 0)),
+		"global_rank": int(entry.get("rank", 0)),
+		"score_milliseconds": int(entry.get("score_milliseconds", 0)),
 		"replay_sha256": digest,
 		"trusted_details": trusted.duplicate(true),
 		"slot_index": slot_index,

@@ -73,6 +73,22 @@ class SteamWebApi:
         ownership = response.get("appownership", {})
         return isinstance(ownership, dict) and ownership.get("ownsapp") is True
 
+    def get_player_summary(self, steam_id: int) -> dict[str, str]:
+        response = self._request_json(
+            "/ISteamUser/GetPlayerSummaries/v2/",
+            {"steamids": steam_id},
+            post=False,
+        )
+        players = response.get("response", {}).get("players", [])
+        if not isinstance(players, list) or not players or not isinstance(players[0], dict):
+            return {}
+        player = players[0]
+        return {
+            "persona_name": str(player.get("personaname", ""))[:128],
+            "avatar_url": str(player.get("avatarfull", ""))[:512],
+            "profile_url": str(player.get("profileurl", ""))[:512],
+        }
+
     def find_or_create_leaderboard(self, name: str) -> dict[str, Any]:
         return self._request_json(
             "/ISteamLeaderboards/FindOrCreateLeaderboard/v2/",

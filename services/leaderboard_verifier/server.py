@@ -178,7 +178,7 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"}, request_id)
             return
         config = self.server.config
-        if self.headers.get_content_type() != "application/vnd.mxt.replay+json":
+        if self.headers.get_content_type() != "application/vnd.mxt.replay":
             self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="invalid_content_type")
             self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"ok": False, "error": "invalid_content_type"}, request_id)
             return
@@ -275,6 +275,16 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             self.server.log_event("submission_rejected", request_id=request_id, stage="steam_ownership", error="app_not_owned", steam_id=str(steam_id))
             self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "app_not_owned"}, request_id)
             return
+        try:
+            player_summary = config.steam_api.get_player_summary(steam_id)
+        except SteamWebApiError as exc:
+            player_summary = {}
+            self.server.log_event(
+                "player_summary_unavailable",
+                request_id=request_id,
+                steam_id=str(steam_id),
+                message=str(exc),
+            )
         if not self.server.verifier_slots.acquire(blocking=False):
             self.server.log_event("submission_deferred", request_id=request_id, stage="verification", error="verifier_busy")
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "verifier_busy"}, request_id)
@@ -329,9 +339,10 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             "game_version": verified.get("game_version", {}),
             "replay_sha256": replay_digest,
             "replay_byte_length": len(replay_bytes),
-            "persona_name": "",
-            "avatar_url": "",
-            "profile_url": f"https://steamcommunity.com/profiles/{steam_id}",
+            "persona_name": str(player_summary.get("persona_name", "")),
+            "avatar_url": str(player_summary.get("avatar_url", "")),
+            "profile_url": str(player_summary.get("profile_url", "")).strip()
+            or f"https://steamcommunity.com/profiles/{steam_id}",
             "source_timestamp_unix": int(time.time()),
             "provenance": "native_submission",
         }

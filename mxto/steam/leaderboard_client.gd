@@ -5,42 +5,43 @@ signal entries_received(board_name: String, request_type: String, result: Dictio
 signal submission_completed(result: Dictionary)
 
 const CONFIG_PATH := "res://steam/leaderboard_service.json"
-const QUEUE_PATH := "user://steam_leaderboard_submissions.json"
+const QUEUE_PATH := "user://leaderboard_submissions.json"
+const LEGACY_QUEUE_PATH := "user://steam_leaderboard_submissions.json"
 const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
-const MAX_PENDING_SUBMISSIONS := 32
 const MAX_REJECTED_SUBMISSIONS := 32
 const MAX_COMPLETED_SUBMISSIONS := 32
 const RETRY_DELAY_MIN_SECONDS := 30.0
 const RETRY_DELAY_MAX_SECONDS := 600.0
 
 var steam_service: MxtSteamService
-var http_request: HTTPRequest
+var submission_request: HTTPRequest
 var retry_timer: Timer
 var config: Dictionary = {}
 var pending: Array = []
 var rejected: Array = []
 var completed: Array = []
-var read_requests: Dictionary = {}
 var active_ticket_request_id := 0
 var active_ticket_handle := 0
 var active_submission: Dictionary = {}
+var next_read_request_id := 1
+var read_requests: Dictionary = {}
 var last_message := "Leaderboard service is not configured."
-var attachment_hold := false
+
 
 func initialize(service: MxtSteamService) -> void:
 	steam_service = service
 	if steam_service != null:
 		steam_service.web_api_ticket_request_completed.connect(_on_ticket_completed)
-		steam_service.leaderboard_request_completed.connect(_on_leaderboard_request_completed)
 		steam_service.status_changed.connect(func(_status): _pump_submission_queue())
 	call_deferred("_pump_submission_queue")
 
+
 func _ready() -> void:
-	http_request = HTTPRequest.new()
-	http_request.name = "SubmissionRequest"
-	http_request.timeout = 180.0
-	http_request.request_completed.connect(_on_http_request_completed)
-	add_child(http_request)
+	submission_request = HTTPRequest.new()
+	submission_request.name = "SubmissionRequest"
+	submission_request.timeout = 180.0
+	submission_request.request_completed.connect(_on_submission_request_completed)
+	add_child(submission_request)
 	retry_timer = Timer.new()
 	retry_timer.name = "RetryTimer"
 	retry_timer.one_shot = true
@@ -49,18 +50,39 @@ func _ready() -> void:
 	_load_config()
 	_load_queue()
 
+
 func _exit_tree() -> void:
 	_cancel_active_ticket()
 
+
 func _load_config() -> void:
 	var value = JSON.parse_string(FileAccess.get_file_as_string(CONFIG_PATH))
-	if typeof(value) == TYPE_DICTIONARY and int(value.get("format_revision", -1)) == 1:
-		config = value as Dictionary
-	else:
-		config = {}
-	var environment_base_url := OS.get_environment("MXT_LEADERBOARD_BASE_URL").strip_edges()
-	if !environment_base_url.is_empty():
-		config["base_url"] = environment_base_url
+	config = value as Dictionary if typeof(value) == TYPE_DICTIONARY and int(value.get("format_revision", -1)) == 2 else {}
+	var submission_override := OS.get_environment("MXT_LEADERBOARD_SUBMISSION_URL").strip_edges()
+	if !submission_override.is_empty():
+		config["submission_base_url"] = submission_override
+	var api_override := OS.get_environment("MXT_LEADERBOARD_API_URL").strip_edges()
+	if !api_override.is_empty():
+		config["api_base_url"] = api_override
+
+
+func api_base_url() -> String:
+	return _validated_base_url(String(config.get("api_base_url", "")))
+
+
+func _submission_url() -> String:
+	var base_url := _validated_base_url(String(config.get("submission_base_url", "")))
+	return base_url + "/v1/time-attack/submit" if !base_url.is_empty() else ""
+
+
+func _validated_base_url(value: String) -> String:
+	var base_url := value.strip_edges().trim_suffix("/")
+	if base_url.begins_with("https://"):
+		return base_url
+	if base_url.begins_with("http://127.0.0.1") or base_url.begins_with("http://localhost"):
+		return base_url
+	return ""
+
 
 func _allowed_replay_path(path: String) -> bool:
 	if path.is_empty() or !FileAccess.file_exists(path):
@@ -73,33 +95,58 @@ func _allowed_replay_path(path: String) -> bool:
 		or absolute_path.begins_with(submission_root + "/") \
 		or absolute_path.begins_with(submission_root + "\\")
 
+
 func _load_queue() -> void:
 	pending.clear()
 	rejected.clear()
 	completed.clear()
-	if !FileAccess.file_exists(QUEUE_PATH):
+	var queue_paths: Array[String] = []
+	if FileAccess.file_exists(QUEUE_PATH):
+		queue_paths.append(QUEUE_PATH)
+	if FileAccess.file_exists(LEGACY_QUEUE_PATH):
+		queue_paths.append(LEGACY_QUEUE_PATH)
+	if queue_paths.is_empty():
 		_emit_status()
 		return
-	var value = JSON.parse_string(FileAccess.get_file_as_string(QUEUE_PATH))
-	if typeof(value) != TYPE_DICTIONARY:
-		_emit_status()
-		return
-	for submission_value in value.get("pending", []):
-		if typeof(submission_value) == TYPE_DICTIONARY:
+	for queue_path in queue_paths:
+		var value = JSON.parse_string(FileAccess.get_file_as_string(queue_path))
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var queue: Dictionary = value
+		for submission_value in queue.get("pending", []):
+			if typeof(submission_value) != TYPE_DICTIONARY:
+				continue
 			var submission: Dictionary = submission_value
-			if _submission_record_valid(submission) and _allowed_replay_path(String(submission.get("replay_path", ""))):
+			if _submission_record_valid(submission) \
+					and _allowed_replay_path(String(submission.get("replay_path", ""))) \
+					and !_queue_contains_replay(pending, String(submission.get("replay_path", ""))):
 				pending.append(submission.duplicate(true))
-	for submission_value in value.get("rejected", []):
-		if typeof(submission_value) == TYPE_DICTIONARY:
-			rejected.append((submission_value as Dictionary).duplicate(true))
-	for submission_value in value.get("completed", []):
-		if typeof(submission_value) == TYPE_DICTIONARY:
-			completed.append((submission_value as Dictionary).duplicate(true))
+		for submission_value in queue.get("rejected", []):
+			if typeof(submission_value) == TYPE_DICTIONARY \
+					and !_queue_contains_replay(rejected, String((submission_value as Dictionary).get("replay_path", ""))):
+				rejected.append((submission_value as Dictionary).duplicate(true))
+		for submission_value in queue.get("completed", []):
+			if typeof(submission_value) == TYPE_DICTIONARY \
+					and !_queue_contains_replay(completed, String((submission_value as Dictionary).get("replay_path", ""))):
+				completed.append((submission_value as Dictionary).duplicate(true))
 	if rejected.size() > MAX_REJECTED_SUBMISSIONS:
 		rejected = rejected.slice(rejected.size() - MAX_REJECTED_SUBMISSIONS)
 	if completed.size() > MAX_COMPLETED_SUBMISSIONS:
 		completed = completed.slice(completed.size() - MAX_COMPLETED_SUBMISSIONS)
+	if FileAccess.file_exists(LEGACY_QUEUE_PATH):
+		_save_queue()
 	_emit_status()
+
+
+func _queue_contains_replay(queue: Array, replay_path: String) -> bool:
+	if replay_path.is_empty():
+		return false
+	for submission_value in queue:
+		if typeof(submission_value) == TYPE_DICTIONARY \
+				and String((submission_value as Dictionary).get("replay_path", "")) == replay_path:
+			return true
+	return false
+
 
 func _save_queue() -> void:
 	var file := FileAccess.open(QUEUE_PATH, FileAccess.WRITE)
@@ -108,12 +155,22 @@ func _save_queue() -> void:
 		_emit_status()
 		return
 	file.store_string(JSON.stringify({
-		"format_revision": 1,
+		"format_revision": 2,
 		"pending": pending,
 		"rejected": rejected,
 		"completed": completed,
 	}, "  "))
+	var write_error := file.get_error()
 	file.close()
+	if write_error != OK:
+		last_message = "Could not persist pending leaderboard submissions."
+		_emit_status()
+		return
+	if FileAccess.file_exists(LEGACY_QUEUE_PATH):
+		var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(LEGACY_QUEUE_PATH))
+		if remove_error != OK:
+			push_warning("Could not remove migrated legacy leaderboard queue: %s" % error_string(remove_error))
+
 
 func _submission_record_valid(submission: Dictionary) -> bool:
 	return !String(submission.get("board_name", "")).is_empty() \
@@ -121,6 +178,7 @@ func _submission_record_valid(submission: Dictionary) -> bool:
 		and !String(submission.get("track_gameplay_digest", "")).is_empty() \
 		and !String(submission.get("vehicle_gameplay_digest", "")).is_empty() \
 		and int(submission.get("ruleset_revision", 0)) > 0
+
 
 func enqueue_submission(eligibility: Dictionary) -> bool:
 	var board_value = eligibility.get("board", {})
@@ -147,45 +205,81 @@ func enqueue_submission(eligibility: Dictionary) -> bool:
 		var existing: Dictionary = existing_value
 		if String(existing.get("replay_path", "")) == replay_path:
 			return true
-	if pending.size() >= MAX_PENDING_SUBMISSIONS:
-		_reject_submission(pending.pop_front(), "pending_queue_full")
 	pending.append(submission)
-	last_message = "Time Attack replay queued for verification."
+	last_message = "Ranked replay queued for verification and archival."
 	_save_queue()
 	_emit_status()
 	_pump_submission_queue()
 	return true
+
 
 func retry_pending_now() -> void:
 	if retry_timer != null:
 		retry_timer.stop()
 	_pump_submission_queue()
 
-func set_attachment_hold(hold: bool) -> void:
-	attachment_hold = hold
-	if !attachment_hold:
-		_pump_submission_queue()
 
 func clear_rejected() -> void:
 	rejected.clear()
 	_save_queue()
 	_emit_status()
 
+
 func request_entries(board_name: String, request_type: String) -> int:
-	if steam_service == null or !steam_service.is_initialized():
-		entries_received.emit(board_name, request_type, {"success": false, "message": "Steam is unavailable."})
-		return 0
-	var range_start := 1
-	var range_end := 100
+	var request_id := next_read_request_id
+	next_read_request_id += 1
+	if request_type == "friends":
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Friends filtering is not available yet.")
+		return request_id
+	var base_url := api_base_url()
+	if base_url.is_empty():
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Leaderboard API is not configured.")
+		return request_id
+	var url := "%s/v1/leaderboards/%s?scope=%s" % [base_url, board_name.uri_encode(), request_type.uri_encode()]
 	if request_type == "around_user":
-		range_start = -5
-		range_end = 5
-	elif request_type == "friends":
-		range_start = 0
-		range_end = 0
-	var request_id := steam_service.request_leaderboard_entries(board_name, request_type, range_start, range_end)
-	read_requests[request_id] = {"board_name": board_name, "request_type": request_type}
+		if steam_service == null or !steam_service.is_initialized():
+			call_deferred("_emit_read_failure", request_id, board_name, request_type, "Steam identity is unavailable.")
+			return request_id
+		url += "&steam_id=%s" % str(steam_service.get_steam_id()).uri_encode()
+	elif request_type == "global":
+		url += "&limit=100"
+	else:
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Unsupported leaderboard view.")
+		return request_id
+	var request := HTTPRequest.new()
+	request.name = "LeaderboardRead%d" % request_id
+	request.timeout = 20.0
+	request.request_completed.connect(_on_read_request_completed.bind(request_id))
+	add_child(request)
+	read_requests[request_id] = {"board_name": board_name, "request_type": request_type, "node": request}
+	var error := request.request(url, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
+	if error != OK:
+		request.queue_free()
+		read_requests.erase(request_id)
+		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Could not start leaderboard request: %s" % error_string(error))
 	return request_id
+
+
+func _emit_read_failure(_request_id: int, board_name: String, request_type: String, message: String) -> void:
+	entries_received.emit(board_name, request_type, {"ok": false, "message": message})
+
+
+func _on_read_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, request_id: int) -> void:
+	var context_value = read_requests.get(request_id, {})
+	if typeof(context_value) != TYPE_DICTIONARY:
+		return
+	var context: Dictionary = context_value
+	read_requests.erase(request_id)
+	var node := context.get("node") as HTTPRequest
+	if node != null:
+		node.queue_free()
+	var parsed_value = JSON.parse_string(body.get_string_from_utf8())
+	var parsed: Dictionary = parsed_value if typeof(parsed_value) == TYPE_DICTIONARY else {}
+	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300 or !bool(parsed.get("ok", false)):
+		var message := String(parsed.get("message", parsed.get("error", "Leaderboard request failed.")))
+		parsed = {"ok": false, "message": message}
+	entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), parsed)
+
 
 func status() -> Dictionary:
 	return {
@@ -194,7 +288,7 @@ func status() -> Dictionary:
 		"rejected_count": rejected.size(),
 		"completed_count": completed.size(),
 		"active": !active_submission.is_empty(),
-		"service_configured": !_service_url().is_empty(),
+		"service_configured": !_submission_url().is_empty() and !api_base_url().is_empty(),
 		"steam_available": steam_service != null and steam_service.is_initialized(),
 		"pending": pending.duplicate(true),
 		"rejected": rejected.duplicate(true),
@@ -202,16 +296,10 @@ func status() -> Dictionary:
 		"next_retry_seconds": retry_timer.time_left if retry_timer != null and !retry_timer.is_stopped() else 0.0,
 	}
 
+
 func _emit_status() -> void:
 	submission_status_changed.emit(status())
 
-func _service_url() -> String:
-	var base_url := String(config.get("base_url", "")).strip_edges().trim_suffix("/")
-	if base_url.begins_with("https://"):
-		return base_url + "/v1/time-attack/submit"
-	if base_url.begins_with("http://127.0.0.1") or base_url.begins_with("http://localhost"):
-		return base_url + "/v1/time-attack/submit"
-	return ""
 
 func _schedule_retry() -> void:
 	if retry_timer == null or pending.is_empty():
@@ -222,15 +310,16 @@ func _schedule_retry() -> void:
 	_save_queue()
 	retry_timer.start(delay)
 
+
 func _pump_submission_queue() -> void:
-	if !is_node_ready() or attachment_hold or pending.is_empty() or active_ticket_request_id != 0 or !active_submission.is_empty():
+	if !is_node_ready() or pending.is_empty() or active_ticket_request_id != 0 or !active_submission.is_empty():
 		return
-	if _service_url().is_empty():
-		last_message = "Leaderboard submission endpoint is not configured; replay remains pending."
+	if _submission_url().is_empty():
+		last_message = "Leaderboard verifier endpoint is not configured; replay remains pending."
 		_emit_status()
 		return
 	if steam_service == null or !steam_service.is_initialized():
-		last_message = "Steam is offline; leaderboard replay remains pending."
+		last_message = "Steam is offline; ranked replay remains pending."
 		_emit_status()
 		_schedule_retry()
 		return
@@ -239,9 +328,10 @@ func _pump_submission_queue() -> void:
 	active_submission["next_retry_unix"] = 0
 	pending[0] = active_submission.duplicate(true)
 	_save_queue()
-	last_message = "Requesting Steam authentication ticket..."
+	last_message = "Requesting Steam authentication ticket…"
 	_emit_status()
 	active_ticket_request_id = steam_service.request_web_api_auth_ticket(String(config.get("ticket_identity", "mxt-leaderboard-v1")))
+
 
 func _on_ticket_completed(request_id: int, result: Dictionary) -> void:
 	if request_id != active_ticket_request_id:
@@ -260,20 +350,21 @@ func _on_ticket_completed(request_id: int, result: Dictionary) -> void:
 		_reject_active("replay_file_empty")
 		return
 	var headers := PackedStringArray([
-		"Content-Type: application/vnd.mxt.replay+json",
+		"Content-Type: application/vnd.mxt.replay",
 		"Authorization: SteamTicket %s" % String(result.get("ticket_hex", "")),
 		"X-MXT-Ticket-Identity: %s" % String(result.get("identity", "")),
 		"X-MXT-Steam-App-ID: %d" % steam_service.get_app_id(),
 		"X-MXT-Board: %s" % String(active_submission.get("board_name", "")),
 		"X-MXT-Claimed-Score-Milliseconds: %d" % int(active_submission.get("score_milliseconds", 0)),
 	])
-	var error := http_request.request_raw(_service_url(), headers, HTTPClient.METHOD_POST, replay_bytes)
+	var error := submission_request.request_raw(_submission_url(), headers, HTTPClient.METHOD_POST, replay_bytes)
 	if error != OK:
 		_cancel_active_ticket()
 		_retry_active("Could not start leaderboard submission: %s" % error_string(error))
 		return
-	last_message = "Uploading replay for trusted verification..."
+	last_message = "Uploading ranked replay for trusted verification…"
 	_emit_status()
+
 
 func _response_header(headers: PackedStringArray, name: String) -> String:
 	var prefix := name.to_lower() + ":"
@@ -283,11 +374,8 @@ func _response_header(headers: PackedStringArray, name: String) -> String:
 			return text.substr(prefix.length()).strip_edges()
 	return ""
 
-func _submission_failure_message(
-		result: int,
-		response_code: int,
-		headers: PackedStringArray,
-		response: Dictionary) -> String:
+
+func _submission_failure_message(result: int, response_code: int, headers: PackedStringArray, response: Dictionary) -> String:
 	var request_id := String(response.get("request_id", _response_header(headers, "X-MXT-Request-ID")))
 	var message := String(response.get("message", "")).strip_edges()
 	if message.is_empty():
@@ -300,27 +388,30 @@ func _submission_failure_message(
 		message = "%s Reference %s." % [message.trim_suffix("."), request_id]
 	return message
 
-func _on_http_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+
+func _on_submission_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
 	_cancel_active_ticket()
 	var response_value = JSON.parse_string(body.get_string_from_utf8())
 	var response: Dictionary = response_value if typeof(response_value) == TYPE_DICTIONARY else {}
-	if result == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300 and bool(response.get("ok", false)):
+	if result == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300 \
+			and bool(response.get("ok", false)) and bool(response.get("archived", false)):
 		var completed_submission := active_submission.duplicate(true)
-		var steam_response: Dictionary = response.get("steam_response", {}) if typeof(response.get("steam_response", {})) == TYPE_DICTIONARY else {}
-		var steam_result: Dictionary = steam_response.get("result", {}) if typeof(steam_response.get("result", {})) == TYPE_DICTIONARY else steam_response
-		var retained := bool(response.get("retained", steam_result.get("score_changed", false)))
 		completed_submission["accepted_unix"] = int(Time.get_unix_time_from_system())
-		completed_submission["retained"] = retained
-		completed_submission["outcome"] = "retained_improved" if retained else "valid_not_best"
+		completed_submission["archived"] = true
+		completed_submission["run_id"] = String(response.get("run_id", ""))
+		completed_submission["run_created"] = bool(response.get("run_created", false))
+		completed_submission["vehicle_best_changed"] = bool(response.get("vehicle_best_changed", false))
+		completed_submission["is_vehicle_best"] = bool(response.get("is_vehicle_best", false))
+		completed_submission["outcome"] = "vehicle_best" if bool(response.get("is_vehicle_best", false)) else "archived_attempt"
 		completed_submission["replay_sha256"] = String(response.get("replay_sha256", ""))
-		completed_submission["global_rank"] = int(response.get("global_rank", steam_result.get("global_rank_new", 0)))
-		completed_submission["previous_global_rank"] = int(response.get("previous_global_rank", steam_result.get("global_rank_previous", 0)))
+		completed_submission["global_rank"] = int(response.get("global_rank", 0))
+		completed_submission["personal_best_milliseconds"] = int(response.get("personal_best_milliseconds", 0))
 		completed.append(completed_submission)
 		if completed.size() > MAX_COMPLETED_SUBMISSIONS:
 			completed.pop_front()
 		if !pending.is_empty() and String((pending[0] as Dictionary).get("replay_path", "")) == String(active_submission.get("replay_path", "")):
 			pending.pop_front()
-		last_message = "Verified score retained as your Steam best." if retained else "Run verified; your existing Steam best is faster."
+		last_message = "Ranked replay archived as your best." if bool(response.get("is_vehicle_best", false)) else "Ranked replay archived; your best is faster."
 		active_submission.clear()
 		_save_queue()
 		_emit_status()
@@ -334,10 +425,12 @@ func _on_http_request_completed(result: int, response_code: int, headers: Packed
 	else:
 		_retry_active(message)
 
+
 func _cancel_active_ticket() -> void:
 	if active_ticket_handle != 0 and steam_service != null:
 		steam_service.cancel_web_api_auth_ticket(active_ticket_handle)
 	active_ticket_handle = 0
+
 
 func _retry_active(message: String) -> void:
 	_cancel_active_ticket()
@@ -350,6 +443,7 @@ func _retry_active(message: String) -> void:
 	_emit_status()
 	_schedule_retry()
 
+
 func _reject_submission(submission_value, reason: String) -> void:
 	if typeof(submission_value) != TYPE_DICTIONARY:
 		return
@@ -360,6 +454,7 @@ func _reject_submission(submission_value, reason: String) -> void:
 	if rejected.size() > MAX_REJECTED_SUBMISSIONS:
 		rejected.pop_front()
 
+
 func _reject_active(reason: String) -> void:
 	_cancel_active_ticket()
 	if !pending.is_empty():
@@ -369,10 +464,3 @@ func _reject_active(reason: String) -> void:
 	_save_queue()
 	_emit_status()
 	_pump_submission_queue()
-
-func _on_leaderboard_request_completed(request_id: int, result: Dictionary) -> void:
-	if !read_requests.has(request_id):
-		return
-	var request: Dictionary = read_requests[request_id]
-	read_requests.erase(request_id)
-	entries_received.emit(String(request.get("board_name", "")), String(request.get("request_type", "")), result)

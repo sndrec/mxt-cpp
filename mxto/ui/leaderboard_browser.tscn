@@ -57,7 +57,7 @@ text = "Watch Verified Replay"
 [node name="ReplayHint" type="Label" parent="EntryActions"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Replay availability is shown by the selected retained entry."
+text = "Replay availability is shown by the selected verified entry."
 
 [node name="History" type="VBoxContainer" parent="."]
 layout_mode = 2

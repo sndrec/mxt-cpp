@@ -43,7 +43,7 @@ func _ready() -> void:
 	_setup_tree()
 	global_button.pressed.connect(_request.bind("global"))
 	around_button.pressed.connect(_request.bind("around_user"))
-	friends_button.pressed.connect(_request.bind("friends"))
+	friends_button.hide()
 	local_button.pressed.connect(_request.bind("local"))
 	refresh_button.pressed.connect(func(): _request(active_request_type))
 	retry_button.pressed.connect(_retry_selected)
@@ -70,7 +70,7 @@ func open_for_track(in_selection_scope: String, in_steam_board_name: String) -> 
 	selection_scope = in_selection_scope
 	steam_board_name = in_steam_board_name
 	selection_model.set_board(selection_scope)
-	for button in [global_button, around_button, friends_button]:
+	for button in [global_button, around_button]:
 		(button as Button).disabled = steam_board_name.is_empty()
 	if steam_board_name.is_empty():
 		active_request_type = "local"
@@ -111,7 +111,7 @@ func _request(request_type: String) -> void:
 	if request_type != "local" and (game_manager.leaderboard_client == null or steam_board_name.is_empty()):
 		return
 	active_request_type = request_type
-	for pair in [[global_button, "global"], [around_button, "around_user"], [friends_button, "friends"], [local_button, "local"]]:
+	for pair in [[global_button, "global"], [around_button, "around_user"], [local_button, "local"]]:
 		(pair[0] as Button).set_pressed_no_signal(String(pair[1]) == request_type)
 	visible_entries.clear()
 	item_by_digest.clear()
@@ -135,9 +135,9 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 	visible_entries.clear()
 	item_by_digest.clear()
 	var root := entry_tree.create_item()
-	if !bool(result.get("success", false)):
+	if !bool(result.get("ok", false)):
 		var unavailable := entry_tree.create_item(root)
-		unavailable.set_text(2, "Unavailable: %s" % String(result.get("message", "Steam leaderboard request failed.")))
+		unavailable.set_text(2, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
 		message_override = "Leaderboard unavailable. Use Refresh to try again."
 		_update_status()
 		return
@@ -166,11 +166,11 @@ func _populate_entries(entries: Array, decorate_leaderboard: bool) -> void:
 		item.set_metadata(0, visible_entries.size() - 1)
 		item.set_cell_mode(0, TreeItem.CELL_MODE_CHECK)
 		item.set_editable(0, bool(entry.get("_replay_available", false)))
-		item.set_text(1, String(entry.get("_display_rank", "#%d" % int(entry.get("global_rank", 0)))))
+		item.set_text(1, String(entry.get("_display_rank", "#%d" % int(entry.get("rank", 0)))))
 		item.set_text(2, String(entry.get("_display_player", entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))))
 		item.set_text(3, String(entry.get("_display_vehicle", "Unknown")))
 		item.set_text(4, String(entry.get("_display_version", "Legacy / unknown")))
-		item.set_text(5, _format_score(int(entry.get("score", 0))))
+		item.set_text(5, _format_score(int(entry.get("score_milliseconds", 0))))
 		if !digest.is_empty():
 			item_by_digest[digest] = item
 	if visible_entries.is_empty():
@@ -465,7 +465,7 @@ func _accept_focused() -> void:
 
 
 func _view_controls() -> Array[Control]:
-	return [global_button, around_button, friends_button, local_button, refresh_button]
+	return [global_button, around_button, local_button, refresh_button]
 
 
 func _action_controls() -> Array[Control]:
@@ -475,7 +475,6 @@ func _action_controls() -> Array[Control]:
 func _friendly_mode(mode: String) -> String:
 	match mode:
 		"around_user": return "Around Me"
-		"friends": return "Friends"
 		"local": return "Local Replays"
 		_: return "Global Top 100"
 

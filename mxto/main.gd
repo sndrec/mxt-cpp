@@ -86,7 +86,6 @@ const SessionMemoryTelemetryClass = preload("res://core/session_memory_telemetry
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
-const LeaderboardReplayServiceClass = preload("res://steam/leaderboard_replay_service.gd")
 const LeaderboardReplayCacheClass = preload("res://steam/leaderboard_replay_cache.gd")
 const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_ghost_controller.gd")
 const LegacyLeaderboardSettingRecoveryClass = preload("res://steam/legacy_leaderboard_setting_recovery.gd")
@@ -115,7 +114,6 @@ var time_attack_previous_best_milliseconds := 0
 var time_attack_last_replay_path := ""
 var time_attack_rank_refresh_board := ""
 var time_attack_rank_refresh_global := ""
-var time_attack_rank_refresh_friends := ""
 var gameplay_camera_zoom_mode := 1
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
@@ -161,7 +159,6 @@ var race_pause_nav_repeat_seconds := 0.0
 var last_process_ticks_usec := 0
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
-var leaderboard_replay_service
 var leaderboard_replay_cache: LeaderboardReplayCache
 var leaderboard_watch_request_token := 0
 var time_attack_ghost_controller: TimeAttackGhostController
@@ -261,15 +258,10 @@ func _ready() -> void:
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
 	LoadTransitionProfilerClass.checkpoint(load_profile, "main_menu_construction")
-	leaderboard_replay_service = LeaderboardReplayServiceClass.new()
-	leaderboard_replay_service.name = "LeaderboardReplayService"
-	add_child(leaderboard_replay_service)
-	leaderboard_replay_service.initialize(steam_service)
-	leaderboard_replay_service.attachment_status_changed.connect(_on_leaderboard_replay_attachment_status_changed)
 	leaderboard_replay_cache = LeaderboardReplayCacheClass.new()
 	leaderboard_replay_cache.name = "LeaderboardReplayCache"
 	add_child(leaderboard_replay_cache)
-	leaderboard_replay_cache.initialize(self, steam_service)
+	leaderboard_replay_cache.initialize(self, leaderboard_client)
 	leaderboard_replay_cache.request_completed.connect(_on_leaderboard_replay_cache_request_completed)
 	time_attack_ghost_controller = TimeAttackGhostControllerClass.new()
 	time_attack_ghost_controller.name = "TimeAttackGhostController"
@@ -298,7 +290,6 @@ func _ready() -> void:
 	replay_controller.initialize()
 	LoadTransitionProfilerClass.checkpoint(load_profile, "replay_practice_and_leaderboards")
 	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
-	_on_leaderboard_replay_attachment_status_changed(leaderboard_replay_service.status())
 	memory_telemetry = SessionMemoryTelemetryClass.new()
 	memory_telemetry.initialize(self)
 	_build_start_sync_drop_panel()
@@ -2375,26 +2366,22 @@ func _on_leaderboard_status_changed(status: Dictionary) -> void:
 
 
 func _on_leaderboard_submission_completed(result: Dictionary) -> void:
-	if bool(result.get("retained", false)) and leaderboard_replay_service != null:
-		leaderboard_replay_service.enqueue_verified_submission(result)
 	if String(result.get("replay_path", "")) != time_attack_last_replay_path:
 		return
-	var message := "Accepted and retained as your Steam best; replay attachment is queued." if bool(result.get("retained", false)) else "Accepted, but your existing Steam best is faster."
+	var message := "Verified replay archived as your vehicle best." if bool(result.get("is_vehicle_best", false)) else "Verified replay archived; your existing best is faster."
 	var rank := int(result.get("global_rank", 0))
 	if rank > 0:
 		message += " Global rank #%d." % rank
 	race_presentation_controller.update_time_attack_submission_status(message)
 	var board_name := String(result.get("board_name", ""))
-	if !board_name.is_empty() and bool(result.get("retained", false)):
+	if !board_name.is_empty():
 		time_attack_rank_refresh_board = board_name
 		time_attack_rank_refresh_global = ""
-		time_attack_rank_refresh_friends = ""
 		leaderboard_client.request_entries(board_name, "around_user")
-		leaderboard_client.request_entries(board_name, "friends")
 
 
 func _on_time_attack_rank_entries_received(board_name: String, request_type: String, response: Dictionary) -> void:
-	if board_name != time_attack_rank_refresh_board or !bool(response.get("success", false)):
+	if board_name != time_attack_rank_refresh_board or !bool(response.get("ok", false)):
 		return
 	var local_steam_id := steam_service.get_steam_id()
 	var entries: Array = response.get("entries", [])
@@ -2402,21 +2389,14 @@ func _on_time_attack_rank_entries_received(board_name: String, request_type: Str
 		for value in entries:
 			var entry: Dictionary = value
 			if int(entry.get("steam_id", 0)) == local_steam_id:
-				time_attack_rank_refresh_global = "Global rank #%d" % int(entry.get("global_rank", 0))
-				break
-	elif request_type == "friends":
-		for index in range(entries.size()):
-			if int((entries[index] as Dictionary).get("steam_id", 0)) == local_steam_id:
-				time_attack_rank_refresh_friends = "friend rank #%d of %d" % [index + 1, entries.size()]
+				time_attack_rank_refresh_global = "Global rank #%d" % int(entry.get("rank", 0))
 				break
 	var parts: Array[String] = []
 	if !time_attack_rank_refresh_global.is_empty():
 		parts.append(time_attack_rank_refresh_global)
-	if !time_attack_rank_refresh_friends.is_empty():
-		parts.append(time_attack_rank_refresh_friends)
 	if !parts.is_empty():
 		race_presentation_controller.update_time_attack_submission_status(
-			"Accepted and retained. %s. Replay attachment will continue automatically." % ", ".join(parts))
+			"Verified replay archived. %s." % ", ".join(parts))
 
 
 func _on_time_attack_race_again_requested() -> void:
@@ -2438,17 +2418,6 @@ func _on_time_attack_save_replay_requested() -> void:
 func _on_time_attack_watch_replay_requested() -> void:
 	if !time_attack_last_replay_path.is_empty():
 		replay_controller.call_deferred("play_replay_file", time_attack_last_replay_path)
-
-
-func _on_leaderboard_replay_attachment_status_changed(status: Dictionary) -> void:
-	if leaderboard_client != null:
-		leaderboard_client.set_attachment_hold(int(status.get("pending_count", 0)) > 0 or bool(status.get("active", false)))
-	if race_presentation_controller == null:
-		return
-	var message := String(status.get("message", ""))
-	if int(status.get("pending_count", 0)) > 0:
-		message += " Attachment work is persisted; it is safe to close the game."
-	race_presentation_controller.update_time_attack_submission_status(message)
 
 
 func _on_leaderboard_replay_watch_requested(board_name: String, entry: Dictionary) -> void:
