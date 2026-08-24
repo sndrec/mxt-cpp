@@ -62,6 +62,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_render_thruster_lights_enabled", "enabled"), &GameSim::set_render_thruster_lights_enabled);
 	ClassDB::bind_method(D_METHOD("set_render_all_car_bodies", "enabled"), &GameSim::set_render_all_car_bodies);
 	ClassDB::bind_method(D_METHOD("set_render_car_body_view_distance", "distance"), &GameSim::set_render_car_body_view_distance);
+	ClassDB::bind_method(D_METHOD("get_render_car_body_view_distance"), &GameSim::get_render_car_body_view_distance);
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
 	ClassDB::bind_method(D_METHOD("get_vehicle_death_states"), &GameSim::get_vehicle_death_states);
 	ClassDB::bind_method(D_METHOD("get_race_leaderboard_window", "player_id", "max_entries", "finished_players", "eliminated_players"), &GameSim::get_race_leaderboard_window);

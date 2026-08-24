@@ -319,6 +319,33 @@ step = 1.0
 value = 360.0
 suffix = " FPS"
 
+[node name="VehicleViewDistanceRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox"]
+layout_mode = 2
+
+[node name="VehicleViewDistanceLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Vehicle View Distance"
+tooltip_text = "How far away other vehicles remain visible. The maximum setting renders every vehicle."
+
+[node name="VehicleViewDistanceSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1.0
+max_value = 3.25
+step = 0.25
+value = 1.0
+tick_count = 10
+ticks_on_borders = true
+tooltip_text = "How far away other vehicles remain visible. The maximum setting renders every vehicle."
+
+[node name="VehicleViewDistanceValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "Current"
+horizontal_alignment = 2
+
 [node name="CurrentDisplayLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox"]
 layout_mode = 2
 text = "Current monitor mode: detecting..."

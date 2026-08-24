@@ -1,6 +1,8 @@
 class_name OptionsMenu
 extends Control
 
+signal vehicle_view_distance_changed(multiplier: float, render_all: bool)
+
 const VOICE_SETTINGS_PATH := "user://voice_chat_settings.json"
 const AUDIO_SETTINGS_PATH := "user://audio_settings.json"
 const GRAPHICS_SETTINGS_PATH := "user://graphics_settings.json"
@@ -13,6 +15,10 @@ const VOICE_SENSITIVITY_DEFAULT := 0.08
 const FPS_LIMIT_MIN := 30
 const FPS_LIMIT_MAX := 1000
 const FPS_LIMIT_DEFAULT := 360
+const VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER := 1.0
+const VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER := 3.0
+const VEHICLE_VIEW_DISTANCE_STEP := 0.25
+const VEHICLE_VIEW_DISTANCE_ALL_VALUE := VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER + VEHICLE_VIEW_DISTANCE_STEP
 
 @onready var close_button: Button = $Shade/Center/Panel/Margin/Root/Header/CloseButton
 @onready var voice_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow/VoiceModeOption
@@ -36,6 +42,8 @@ const FPS_LIMIT_DEFAULT := 360
 @onready var graphics_window_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/WindowModeRow/WindowModeOption
 @onready var graphics_vsync_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VSyncModeRow/VSyncModeOption
 @onready var graphics_fps_limit_spin_box: SpinBox = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/FPSLimitRow/FPSLimitSpinBox
+@onready var graphics_vehicle_view_distance_slider: HSlider = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow/VehicleViewDistanceSlider
+@onready var graphics_vehicle_view_distance_value: Label = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow/VehicleViewDistanceValue
 @onready var graphics_current_display_label: Label = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/CurrentDisplayLabel
 @onready var controller_settings: Control = $Shade/Center/Panel/Margin/Root/Tabs/Controls/ControllerSettings
 
@@ -52,6 +60,8 @@ var audio_controls_loading := false
 var graphics_window_mode := DisplayServer.WINDOW_MODE_WINDOWED
 var graphics_vsync_mode := DisplayServer.VSYNC_ENABLED
 var graphics_fps_limit := FPS_LIMIT_DEFAULT
+var graphics_vehicle_view_distance_multiplier := VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER
+var graphics_render_all_vehicles := false
 var graphics_controls_loading := false
 
 func _ready() -> void:
@@ -67,6 +77,7 @@ func _ready() -> void:
 	graphics_window_mode_option.item_selected.connect(_on_graphics_window_mode_selected)
 	graphics_vsync_mode_option.item_selected.connect(_on_graphics_vsync_mode_selected)
 	graphics_fps_limit_spin_box.value_changed.connect(_on_graphics_fps_limit_changed)
+	graphics_vehicle_view_distance_slider.value_changed.connect(_on_graphics_vehicle_view_distance_changed)
 	if controller_settings != null and controller_settings.has_method("set_embedded_mode"):
 		controller_settings.call("set_embedded_mode", true)
 	_load_voice_settings()
@@ -193,6 +204,8 @@ func _update_graphics_controls() -> void:
 			graphics_vsync_mode_option.select(i)
 			break
 	graphics_fps_limit_spin_box.value = graphics_fps_limit
+	graphics_vehicle_view_distance_slider.value = VEHICLE_VIEW_DISTANCE_ALL_VALUE if graphics_render_all_vehicles else graphics_vehicle_view_distance_multiplier
+	_update_vehicle_view_distance_label()
 	_update_current_display_label()
 	graphics_controls_loading = false
 
@@ -217,6 +230,33 @@ func _on_graphics_fps_limit_changed(value: float) -> void:
 	graphics_fps_limit = clampi(roundi(value), FPS_LIMIT_MIN, FPS_LIMIT_MAX)
 	Engine.max_fps = graphics_fps_limit
 	_save_graphics_settings()
+
+func _on_graphics_vehicle_view_distance_changed(value: float) -> void:
+	if graphics_controls_loading:
+		return
+	graphics_render_all_vehicles = value >= VEHICLE_VIEW_DISTANCE_ALL_VALUE - 0.001
+	if !graphics_render_all_vehicles:
+		graphics_vehicle_view_distance_multiplier = clampf(
+			value,
+			VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER,
+			VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER)
+	_update_vehicle_view_distance_label()
+	vehicle_view_distance_changed.emit(graphics_vehicle_view_distance_multiplier, graphics_render_all_vehicles)
+	_save_graphics_settings()
+
+func _update_vehicle_view_distance_label() -> void:
+	if graphics_render_all_vehicles:
+		graphics_vehicle_view_distance_value.text = "All vehicles"
+	elif is_equal_approx(graphics_vehicle_view_distance_multiplier, VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER):
+		graphics_vehicle_view_distance_value.text = "Current"
+	else:
+		graphics_vehicle_view_distance_value.text = "%.2fx" % graphics_vehicle_view_distance_multiplier
+
+func get_vehicle_view_distance_multiplier() -> float:
+	return graphics_vehicle_view_distance_multiplier
+
+func get_render_all_vehicles() -> bool:
+	return graphics_render_all_vehicles
 
 func _apply_graphics_settings() -> void:
 	Engine.max_fps = graphics_fps_limit
@@ -463,6 +503,8 @@ func _save_graphics_settings() -> void:
 		"window_mode": graphics_window_mode,
 		"vsync_mode": graphics_vsync_mode,
 		"fps_limit": graphics_fps_limit,
+		"vehicle_view_distance_multiplier": graphics_vehicle_view_distance_multiplier,
+		"render_all_vehicles": graphics_render_all_vehicles,
 	}
 	var file := FileAccess.open(GRAPHICS_SETTINGS_PATH, FileAccess.WRITE)
 	if file:
@@ -473,6 +515,8 @@ func _load_graphics_settings() -> void:
 	graphics_window_mode = DisplayServer.WINDOW_MODE_WINDOWED
 	graphics_vsync_mode = DisplayServer.VSYNC_ENABLED
 	graphics_fps_limit = Engine.max_fps
+	graphics_vehicle_view_distance_multiplier = VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER
+	graphics_render_all_vehicles = false
 	if graphics_fps_limit < FPS_LIMIT_MIN or graphics_fps_limit > FPS_LIMIT_MAX:
 		graphics_fps_limit = FPS_LIMIT_DEFAULT
 	if DisplayServer.get_name() != "headless":
@@ -495,3 +539,8 @@ func _load_graphics_settings() -> void:
 	if loaded_vsync_mode >= DisplayServer.VSYNC_DISABLED and loaded_vsync_mode <= DisplayServer.VSYNC_MAILBOX:
 		graphics_vsync_mode = loaded_vsync_mode
 	graphics_fps_limit = clampi(int(data.get("fps_limit", graphics_fps_limit)), FPS_LIMIT_MIN, FPS_LIMIT_MAX)
+	graphics_vehicle_view_distance_multiplier = clampf(
+		float(data.get("vehicle_view_distance_multiplier", graphics_vehicle_view_distance_multiplier)),
+		VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER,
+		VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER)
+	graphics_render_all_vehicles = bool(data.get("render_all_vehicles", graphics_render_all_vehicles))

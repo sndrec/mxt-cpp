@@ -115,6 +115,7 @@ var time_attack_last_replay_path := ""
 var time_attack_rank_refresh_board := ""
 var time_attack_rank_refresh_global := ""
 var gameplay_camera_zoom_mode := 1
+var base_vehicle_render_view_distance := 360.0
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
@@ -180,6 +181,7 @@ func _ready() -> void:
 	var load_profile := LoadTransitionProfilerClass.begin_transition("startup", "game_manager_ready", {
 		"process_age_usec_at_ready": Time.get_ticks_usec(),
 	})
+	base_vehicle_render_view_distance = float(game_sim.get_render_car_body_view_distance())
 	_load_gameplay_camera_settings()
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
@@ -310,6 +312,10 @@ func _ready() -> void:
 		controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
 	if !options_menu.visibility_changed.is_connected(_on_controller_settings_visibility_changed):
 		options_menu.visibility_changed.connect(_on_controller_settings_visibility_changed)
+	var vehicle_view_distance_callable := Callable(self, "_on_vehicle_view_distance_changed")
+	if options_menu.has_signal("vehicle_view_distance_changed") \
+			and !options_menu.is_connected("vehicle_view_distance_changed", vehicle_view_distance_callable):
+		options_menu.connect("vehicle_view_distance_changed", vehicle_view_distance_callable)
 	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
 		track_editor_button.pressed.connect(_on_track_editor_button_pressed)
 	# Rewire the Singleplayer button to its own handler, not the multiplayer host flow
@@ -353,6 +359,9 @@ func _ready() -> void:
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	auto_bumpers_mode = args.has("--auto-bumpers") or user_args.has("--auto-bumpers")
 	debug_runtime_controller.configure_command_line(args, user_args)
+	_on_vehicle_view_distance_changed(
+		float(options_menu.call("get_vehicle_view_distance_multiplier")),
+		bool(options_menu.call("get_render_all_vehicles")))
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
 	if !steam_snapshot_requested and !replay_launch_requested and auto_track_editor_mode:
@@ -1501,6 +1510,11 @@ func _on_car_settings_button_pressed() -> void:
 
 func _on_controller_settings_button_pressed() -> void:
 	options_menu.call("open_settings")
+
+func _on_vehicle_view_distance_changed(multiplier: float, render_all: bool) -> void:
+	game_sim.set_render_car_body_view_distance(
+		base_vehicle_render_view_distance * clampf(multiplier, 1.0, 3.0))
+	game_sim.set_render_all_car_bodies(render_all or debug_runtime_controller.render_all_car_bodies)
 
 func _on_controller_settings_visibility_changed() -> void:
 	if options_menu != null and !options_menu.visible:

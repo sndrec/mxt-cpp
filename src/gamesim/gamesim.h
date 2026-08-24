@@ -615,6 +615,7 @@ namespace godot {
 		void set_render_thruster_lights_enabled(bool enabled);
 		void set_render_all_car_bodies(bool enabled);
 		void set_render_car_body_view_distance(double distance);
+		double get_render_car_body_view_distance() const { return render_car_body_view_distance; }
 		int get_player_race_place(int player_id) const;
 		godot::PackedInt32Array get_vehicle_death_states() const;
 		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries, const godot::Dictionary& finished_players, const godot::Dictionary& eliminated_players) const;
