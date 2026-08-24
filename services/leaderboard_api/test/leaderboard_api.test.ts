@@ -236,6 +236,26 @@ describe("custom leaderboard authority", () => {
     expect(vehicle.entries).toHaveLength(2);
     expect(vehicle.entries[0]?.score_milliseconds).toBe(59_000);
     expect(vehicle.entries[1]?.score_milliseconds).toBe(62_000);
+
+    const categoriesResponse = await exports.default.fetch(
+      `${BASE_URL}/v1/boards/${first.board_id}/categories`,
+    );
+    const categories = await categoriesResponse.json<{ categories: Array<Record<string, unknown>> }>();
+    expect(categories.categories).toHaveLength(2);
+    expect(categories.categories).toContainEqual(expect.objectContaining({
+      vehicle_gameplay_digest: first.vehicle_gameplay_digest,
+      entry_count: 2,
+      record_milliseconds: 59_000,
+      record_steam_id: rival.steam_id,
+      record_persona_name: "Rival Pilot",
+    }));
+
+    const playerBestsResponse = await exports.default.fetch(
+      `${BASE_URL}/v1/boards/${first.board_id}/players/${first.steam_id}/bests`,
+    );
+    const playerBests = await playerBestsResponse.json<{ entries: Array<Record<string, unknown>> }>();
+    expect(playerBests.entries).toHaveLength(2);
+    expect(playerBests.entries.map((entry) => entry.score_milliseconds)).toEqual([62_000, 58_000]);
   });
 
   it("rejects unsigned replay uploads before storing anything", async () => {

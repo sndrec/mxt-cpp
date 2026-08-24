@@ -5,22 +5,45 @@ export type CategoryRow = Readonly<{
   vehicle_gameplay_digest: string;
   entry_count: number;
   record_milliseconds: number;
+  record_run_id: string;
+  record_steam_id: string;
+  record_persona_name: string;
 }>;
 
 export async function readCategories(env: Env, boardId: string): Promise<CategoryRow[]> {
   const result = await env.DB.prepare(`
+    WITH ranked AS (
+      SELECT
+        r.vehicle_content_id,
+        r.vehicle_gameplay_digest,
+        r.score_milliseconds,
+        r.run_id,
+        r.steam_id,
+        p.persona_name,
+        COUNT(*) OVER (
+          PARTITION BY r.vehicle_content_id, r.vehicle_gameplay_digest
+        ) AS entry_count,
+        ROW_NUMBER() OVER (
+          PARTITION BY r.vehicle_content_id, r.vehicle_gameplay_digest
+          ORDER BY r.score_milliseconds, r.received_unix, r.run_id
+        ) AS category_rank
+      FROM player_vehicle_bests best
+      JOIN verified_runs r ON r.run_id = best.run_id
+      JOIN players p ON p.steam_id = r.steam_id
+      WHERE r.board_id = ?1
+        AND r.moderation_state = 'visible'
+        AND p.moderation_state = 'visible'
+    )
     SELECT
       r.vehicle_content_id,
       r.vehicle_gameplay_digest,
-      COUNT(*) AS entry_count,
-      MIN(r.score_milliseconds) AS record_milliseconds
-    FROM player_vehicle_bests best
-    JOIN verified_runs r ON r.run_id = best.run_id
-    JOIN players p ON p.steam_id = r.steam_id
-    WHERE r.board_id = ?1
-      AND r.moderation_state = 'visible'
-      AND p.moderation_state = 'visible'
-    GROUP BY r.vehicle_content_id, r.vehicle_gameplay_digest
+      r.entry_count,
+      r.score_milliseconds AS record_milliseconds,
+      r.run_id AS record_run_id,
+      r.steam_id AS record_steam_id,
+      r.persona_name AS record_persona_name
+    FROM ranked r
+    WHERE r.category_rank = 1
     ORDER BY r.vehicle_content_id, r.vehicle_gameplay_digest
   `).bind(boardId).all<CategoryRow>();
   return result.results;

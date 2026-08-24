@@ -15,6 +15,11 @@ text = "Steam Leaderboards"
 layout_mode = 2
 text = "Select a leaderboard view."
 
+[node name="MyBests" type="Label" parent="."]
+layout_mode = 2
+text = "Your vehicle bests will appear here."
+autowrap_mode = 2
+
 [node name="Controls" type="HBoxContainer" parent="."]
 layout_mode = 2
 
@@ -22,6 +27,10 @@ layout_mode = 2
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="Vehicle" type="OptionButton" parent="Controls"]
+custom_minimum_size = Vector2(210, 0)
+layout_mode = 2
 
 [node name="Global" type="Button" parent="Controls"]
 layout_mode = 2

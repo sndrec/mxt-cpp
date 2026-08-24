@@ -2,6 +2,8 @@ class_name LeaderboardClient extends Node
 
 signal submission_status_changed(status: Dictionary)
 signal entries_received(board_name: String, request_type: String, result: Dictionary)
+signal categories_received(board_name: String, result: Dictionary)
+signal player_bests_received(board_name: String, result: Dictionary)
 signal submission_completed(result: Dictionary)
 
 const CONFIG_PATH := "res://steam/leaderboard_service.json"
@@ -225,7 +227,7 @@ func clear_rejected() -> void:
 	_emit_status()
 
 
-func request_entries(board_name: String, request_type: String) -> int:
+func request_entries(board_name: String, request_type: String, vehicle_digest := "") -> int:
 	var request_id := next_read_request_id
 	next_read_request_id += 1
 	if request_type == "friends":
@@ -236,6 +238,8 @@ func request_entries(board_name: String, request_type: String) -> int:
 		call_deferred("_emit_read_failure", request_id, board_name, request_type, "Leaderboard API is not configured.")
 		return request_id
 	var url := "%s/v1/leaderboards/%s?scope=%s" % [base_url, board_name.uri_encode(), request_type.uri_encode()]
+	if !vehicle_digest.is_empty():
+		url += "&vehicle_digest=%s" % vehicle_digest.uri_encode()
 	if request_type == "around_user":
 		if steam_service == null or !steam_service.is_initialized():
 			call_deferred("_emit_read_failure", request_id, board_name, request_type, "Steam identity is unavailable.")
@@ -251,7 +255,13 @@ func request_entries(board_name: String, request_type: String) -> int:
 	request.timeout = 20.0
 	request.request_completed.connect(_on_read_request_completed.bind(request_id))
 	add_child(request)
-	read_requests[request_id] = {"board_name": board_name, "request_type": request_type, "node": request}
+	read_requests[request_id] = {
+		"kind": "entries",
+		"board_name": board_name,
+		"request_type": request_type,
+		"vehicle_digest": vehicle_digest,
+		"node": request,
+	}
 	var error := request.request(url, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
 	if error != OK:
 		request.queue_free()
@@ -260,8 +270,66 @@ func request_entries(board_name: String, request_type: String) -> int:
 	return request_id
 
 
+func request_categories(board_name: String) -> int:
+	var base_url := api_base_url()
+	if base_url.is_empty():
+		call_deferred("_emit_categories_failure", board_name, "Leaderboard API is not configured.")
+		return 0
+	return _start_auxiliary_read(
+		"%s/v1/boards/%s/categories" % [base_url, board_name.uri_encode()],
+		{"kind": "categories", "board_name": board_name})
+
+
+func request_player_bests(board_name: String) -> int:
+	if steam_service == null or !steam_service.is_initialized():
+		call_deferred("_emit_player_bests_failure", board_name, "Steam identity is unavailable.")
+		return 0
+	var base_url := api_base_url()
+	if base_url.is_empty():
+		call_deferred("_emit_player_bests_failure", board_name, "Leaderboard API is not configured.")
+		return 0
+	return _start_auxiliary_read(
+		"%s/v1/boards/%s/players/%s/bests" % [
+			base_url,
+			board_name.uri_encode(),
+			str(steam_service.get_steam_id()).uri_encode(),
+		],
+		{"kind": "player_bests", "board_name": board_name})
+
+
+func _start_auxiliary_read(url: String, context: Dictionary) -> int:
+	var request_id := next_read_request_id
+	next_read_request_id += 1
+	var request := HTTPRequest.new()
+	request.name = "LeaderboardRead%d" % request_id
+	request.timeout = 20.0
+	request.request_completed.connect(_on_read_request_completed.bind(request_id))
+	add_child(request)
+	context["node"] = request
+	read_requests[request_id] = context
+	var error := request.request(url, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
+	if error == OK:
+		return request_id
+	request.queue_free()
+	read_requests.erase(request_id)
+	var message := "Could not start leaderboard request: %s" % error_string(error)
+	if String(context.get("kind", "")) == "categories":
+		call_deferred("_emit_categories_failure", String(context.get("board_name", "")), message)
+	else:
+		call_deferred("_emit_player_bests_failure", String(context.get("board_name", "")), message)
+	return 0
+
+
 func _emit_read_failure(_request_id: int, board_name: String, request_type: String, message: String) -> void:
 	entries_received.emit(board_name, request_type, {"ok": false, "message": message})
+
+
+func _emit_categories_failure(board_name: String, message: String) -> void:
+	categories_received.emit(board_name, {"ok": false, "message": message})
+
+
+func _emit_player_bests_failure(board_name: String, message: String) -> void:
+	player_bests_received.emit(board_name, {"ok": false, "message": message})
 
 
 func _on_read_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, request_id: int) -> void:
@@ -278,7 +346,14 @@ func _on_read_request_completed(result: int, response_code: int, _headers: Packe
 	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300 or !bool(parsed.get("ok", false)):
 		var message := String(parsed.get("message", parsed.get("error", "Leaderboard request failed.")))
 		parsed = {"ok": false, "message": message}
-	entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), parsed)
+	match String(context.get("kind", "entries")):
+		"categories":
+			categories_received.emit(String(context.get("board_name", "")), parsed)
+		"player_bests":
+			player_bests_received.emit(String(context.get("board_name", "")), parsed)
+		_:
+			parsed["requested_vehicle_gameplay_digest"] = String(context.get("vehicle_digest", ""))
+			entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), parsed)
 
 
 func status() -> Dictionary:

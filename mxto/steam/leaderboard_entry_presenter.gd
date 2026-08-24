@@ -7,6 +7,7 @@ static func decorate(game_manager: GameManager, entry: Dictionary) -> Dictionary
 	var result := entry.duplicate(true)
 	result["_trusted_details"] = _trusted_details(entry)
 	result["_display_vehicle"] = _vehicle_display(game_manager, entry)
+	result["_display_player"] = player_name(entry)
 	result["_display_version"] = _version_display(entry)
 	result["_replay_available"] = !String(entry.get("run_id", "")).is_empty() \
 		and !String(entry.get("replay_sha256", "")).is_empty()
@@ -30,12 +31,12 @@ static func _trusted_details(entry: Dictionary) -> Dictionary:
 
 
 static func _vehicle_display(game_manager: GameManager, entry: Dictionary) -> String:
-	var vehicle_name := _vehicle_name(
+	var display_name := vehicle_name(
 		game_manager,
 		String(entry.get("vehicle_content_id", "")),
 		String(entry.get("vehicle_gameplay_digest", "")))
 	var machine_setting_percent := int(entry.get("machine_setting_percent", -1))
-	return "%s · %d%%" % [vehicle_name, machine_setting_percent] if machine_setting_percent >= 0 else vehicle_name
+	return "%s · %d%%" % [display_name, machine_setting_percent] if machine_setting_percent >= 0 else display_name
 
 
 static func _version_display(entry: Dictionary) -> String:
@@ -51,7 +52,7 @@ static func _version_display(entry: Dictionary) -> String:
 	]
 
 
-static func _vehicle_name(game_manager: GameManager, content_id: String, gameplay_digest: String) -> String:
+static func vehicle_name(game_manager: GameManager, content_id: String, gameplay_digest: String) -> String:
 	if game_manager != null and game_manager.vehicle_content_controller != null:
 		var definition := game_manager.vehicle_content_controller.get_definition(content_id)
 		if definition != null:
@@ -64,6 +65,11 @@ static func _vehicle_name(game_manager: GameManager, content_id: String, gamepla
 			if String(record.get("gameplay_digest", "")) == gameplay_digest:
 				return candidate.name
 	return "Digest %s…" % gameplay_digest.trim_prefix("sha256:").left(8)
+
+
+static func player_name(entry: Dictionary) -> String:
+	var persona_name := String(entry.get("persona_name", "")).strip_edges()
+	return persona_name if !persona_name.is_empty() else "Steam %s" % String(entry.get("steam_id", "Unknown"))
 
 
 static func _compatibility_warning(entry: Dictionary) -> bool:

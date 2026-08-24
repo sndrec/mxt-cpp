@@ -7,7 +7,9 @@ const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_pr
 
 @onready var status_label: Label = $Status
 @onready var summary_label: Label = $Summary
+@onready var my_bests_label: Label = $MyBests
 @onready var track_option: OptionButton = $Controls/Track
+@onready var vehicle_option: OptionButton = $Controls/Vehicle
 @onready var entry_tree: Tree = $Entries
 @onready var details: RichTextLabel = $History/DetailsScroll/Details
 @onready var watch_button: Button = $EntryActions/WatchReplay
@@ -32,11 +34,12 @@ func _ready() -> void:
 		var button: Button = mode_buttons[mode]
 		button.toggle_mode = true
 		button.pressed.connect(_request.bind(mode))
-	$Controls/Refresh.pressed.connect(func(): _request(active_request_type))
+	$Controls/Refresh.pressed.connect(_refresh_selected_board)
 	$History/Actions/RetryPending.pressed.connect(_retry_pending)
 	$History/Actions/ClearRejected.pressed.connect(_clear_rejected)
 	watch_button.pressed.connect(_watch_selected)
 	track_option.item_selected.connect(_on_track_selected)
+	vehicle_option.item_selected.connect(_on_vehicle_selected)
 	entry_tree.item_selected.connect(_on_entry_selected)
 	_setup_tree()
 	call_deferred("_initialize_client")
@@ -63,6 +66,10 @@ func _initialize_client() -> void:
 		client.submission_status_changed.connect(_show_submission_status)
 	if !client.entries_received.is_connected(_show_entries):
 		client.entries_received.connect(_show_entries)
+	if !client.categories_received.is_connected(_show_categories):
+		client.categories_received.connect(_show_categories)
+	if !client.player_bests_received.is_connected(_show_player_bests):
+		client.player_bests_received.connect(_show_player_bests)
 	boards.clear()
 	for value in TimeAttackRulesClass.manifest().get("boards", []):
 		if typeof(value) == TYPE_DICTIONARY and String((value as Dictionary).get("track_source", "official")) == "official":
@@ -74,7 +81,7 @@ func _initialize_client() -> void:
 		track_option.set_item_metadata(track_option.item_count - 1, String(board.get("steam_name", "")))
 	_show_submission_status(client.status())
 	if !boards.is_empty():
-		_request("global")
+		_load_selected_board()
 
 
 func select_board(board_name: String) -> void:
@@ -86,11 +93,15 @@ func select_board(board_name: String) -> void:
 			if String(track_option.get_item_metadata(index)) == board_name:
 				track_option.select(index)
 				break
-	_request(active_request_type)
+	_load_selected_board()
 
 
 func _selected_board() -> String:
 	return "" if track_option.selected < 0 else String(track_option.get_item_metadata(track_option.selected))
+
+
+func _selected_vehicle_digest() -> String:
+	return "" if vehicle_option.selected < 0 else String(vehicle_option.get_item_metadata(vehicle_option.selected))
 
 
 func _request(request_type: String) -> void:
@@ -98,6 +109,7 @@ func _request(request_type: String) -> void:
 		return
 	active_board_name = _selected_board()
 	active_request_type = request_type
+	var vehicle_digest := _selected_vehicle_digest()
 	for mode in mode_buttons:
 		(mode_buttons[mode] as Button).set_pressed_no_signal(mode == request_type)
 	visible_entries.clear()
@@ -108,10 +120,33 @@ func _request(request_type: String) -> void:
 	status_label.text = "Loading %s…" % _board_title(active_board_name)
 	summary_label.text = ""
 	watch_button.disabled = true
-	client.request_entries(active_board_name, active_request_type)
+	client.request_entries(active_board_name, active_request_type, vehicle_digest)
 
 
 func _on_track_selected(_index: int) -> void:
+	_load_selected_board()
+
+
+func _load_selected_board() -> void:
+	if client == null or _selected_board().is_empty():
+		return
+	vehicle_option.clear()
+	vehicle_option.add_item("Overall")
+	vehicle_option.set_item_metadata(0, "")
+	vehicle_option.disabled = true
+	my_bests_label.text = "Loading your vehicle bests…"
+	_refresh_selected_board()
+
+
+func _refresh_selected_board() -> void:
+	if client == null or _selected_board().is_empty():
+		return
+	client.request_categories(_selected_board())
+	client.request_player_bests(_selected_board())
+	_request(active_request_type)
+
+
+func _on_vehicle_selected(_index: int) -> void:
 	_request(active_request_type)
 
 
@@ -130,7 +165,8 @@ func _format_score(score_milliseconds: int) -> String:
 
 
 func _show_entries(board_name: String, request_type: String, result: Dictionary) -> void:
-	if board_name != active_board_name or request_type != active_request_type:
+	if board_name != active_board_name or request_type != active_request_type \
+			or String(result.get("requested_vehicle_gameplay_digest", "")) != _selected_vehicle_digest():
 		return
 	entry_tree.clear()
 	visible_entries.clear()
@@ -150,7 +186,7 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
 		item.set_text(0, "#%d" % int(entry.get("rank", 0)))
-		item.set_text(1, String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))))
+		item.set_text(1, String(entry.get("_display_player", "Unknown")))
 		item.set_text(2, String(entry.get("_display_vehicle", "Unknown")))
 		item.set_text(3, String(entry.get("_display_version", "Legacy / unknown")))
 		item.set_text(4, _format_score(int(entry.get("score_milliseconds", 0))))
@@ -158,7 +194,7 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 			local_entry = entry
 			for column in range(entry_tree.columns):
 				item.set_custom_color(column, Color(0.45, 0.86, 1.0))
-	status_label.text = "%s · %s" % [_board_title(board_name), _friendly_mode(request_type)]
+	status_label.text = "%s · %s · %s" % [_board_title(board_name), _selected_vehicle_name(), _friendly_mode(request_type)]
 	if !local_entry.is_empty():
 		summary_label.text = "Your verified best: #%d · %s" % [int(local_entry.get("rank", 0)), _format_score(int(local_entry.get("score_milliseconds", 0)))]
 	else:
@@ -166,6 +202,62 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 	if entries.is_empty():
 		var empty := entry_tree.create_item(root)
 		empty.set_text(1, "No %s entries yet." % _friendly_mode(request_type).to_lower())
+
+
+func _show_categories(board_name: String, result: Dictionary) -> void:
+	if board_name != _selected_board():
+		return
+	var previous_digest := _selected_vehicle_digest()
+	vehicle_option.clear()
+	vehicle_option.add_item("Overall")
+	vehicle_option.set_item_metadata(0, "")
+	if bool(result.get("ok", false)):
+		for value in result.get("categories", []):
+			if typeof(value) != TYPE_DICTIONARY:
+				continue
+			var category: Dictionary = value
+			var digest := String(category.get("vehicle_gameplay_digest", ""))
+			if digest.is_empty():
+				continue
+			var vehicle_name := LeaderboardEntryPresenterClass.vehicle_name(
+				game_manager,
+				String(category.get("vehicle_content_id", "")),
+				digest)
+			vehicle_option.add_item("%s (%d)" % [vehicle_name, int(category.get("entry_count", 0))])
+			var index := vehicle_option.item_count - 1
+			vehicle_option.set_item_metadata(index, digest)
+			vehicle_option.set_item_tooltip(index, "%s record: %s by %s" % [
+				vehicle_name,
+				_format_score(int(category.get("record_milliseconds", 0))),
+				LeaderboardEntryPresenterClass.player_name(category.merged({
+					"persona_name": category.get("record_persona_name", ""),
+					"steam_id": category.get("record_steam_id", ""),
+				}, true)),
+			])
+			if digest == previous_digest:
+				vehicle_option.select(index)
+	vehicle_option.disabled = vehicle_option.item_count <= 1
+	if previous_digest != "" and _selected_vehicle_digest() != previous_digest:
+		_request(active_request_type)
+
+
+func _show_player_bests(board_name: String, result: Dictionary) -> void:
+	if board_name != _selected_board():
+		return
+	if !bool(result.get("ok", false)):
+		my_bests_label.text = "Your vehicle bests are unavailable."
+		return
+	var best_text: Array[String] = []
+	for value in result.get("entries", []):
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, value as Dictionary)
+		best_text.append("%s  %s" % [
+			String(entry.get("_display_vehicle", "Unknown")),
+			_format_score(int(entry.get("score_milliseconds", 0))),
+		])
+	my_bests_label.text = "Your vehicle bests: %s" % " · ".join(best_text) \
+		if !best_text.is_empty() else "You do not have a verified vehicle best on this track yet."
 
 
 func _on_entry_selected() -> void:
@@ -218,6 +310,11 @@ func _friendly_mode(mode: String) -> String:
 
 func _board_title(board_name: String) -> String:
 	return TimeAttackRulesClass.board_title(TimeAttackRulesClass.board_for_name(board_name))
+
+
+func _selected_vehicle_name() -> String:
+	return vehicle_option.get_item_text(vehicle_option.selected).get_slice(" (", 0) \
+		if vehicle_option.selected >= 0 else "Overall"
 
 
 func _friendly_error(reason: String) -> String:
