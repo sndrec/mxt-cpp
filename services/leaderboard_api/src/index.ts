@@ -2,7 +2,7 @@ import { signHmac, verifyHmac } from "./crypto";
 import { importHistoricalScore } from "./historical";
 import { publicEntry, readAroundPlayer, readLeaderboard } from "./leaderboards";
 import { applyModeration } from "./moderation";
-import { readCategories, readPlayerBests } from "./reads";
+import { readCategories, readPlayerBests, readRun } from "./reads";
 import { archiveVerifiedRun, replayRow, storeReplay } from "./storage";
 import { API_VERSION } from "./types";
 import {
@@ -272,6 +272,12 @@ async function handlePlayerBests(
   }, 200, requestId);
 }
 
+async function handleRun(env: Env, runId: string, requestId: string): Promise<Response> {
+  const row = await readRun(env, runId);
+  if (row === null) throw new ApiError(404, "run_not_found");
+  return jsonResponse({ ok: true, entry: publicEntry(row) }, 200, requestId);
+}
+
 async function handleReplayUrl(request: Request, env: Env, runId: string, requestId: string): Promise<Response> {
   const row = await replayRow(env, runId);
   if (row === null || row.moderation_state !== "visible" || row.player_moderation_state !== "visible") {
@@ -354,6 +360,10 @@ async function route(request: Request, env: Env, requestId: string): Promise<Res
       parseSteamId(decodeURIComponent(match[2])),
       requestId,
     );
+  }
+  match = /^\/v1\/runs\/([^/]+)$/.exec(url.pathname);
+  if (request.method === "GET" && match?.[1] !== undefined) {
+    return handleRun(env, parseRunId(match[1]), requestId);
   }
   match = /^\/v1\/runs\/([^/]+)\/replay-url$/.exec(url.pathname);
   if (request.method === "GET" && match?.[1] !== undefined) {

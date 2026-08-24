@@ -53,6 +53,7 @@ Verify each environment's `/healthz` after deployment. Keep staging and producti
 - `GET /v1/leaderboards/{board_id}` — Global or Around Me board, optionally filtered by vehicle gameplay digest.
 - `GET /v1/boards/{board_id}/categories` — available vehicle categories.
 - `GET /v1/boards/{board_id}/players/{steam_id}/bests` — one player's per-vehicle bests.
+- `GET /v1/runs/{run_id}` — exact visible run metadata, including explicit historical replay availability.
 - `GET /v1/runs/{run_id}/replay-url` — short-lived replay URL authorization.
 - `GET /v1/replays/{run_id}` — signed replay download.
 - `GET /healthz` — service and D1 health.

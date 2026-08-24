@@ -166,6 +166,17 @@ describe("custom leaderboard authority", () => {
     expect(board.entries[0]?.machine_setting_percent).toBe(50);
     const runId = String(board.entries[0]?.run_id ?? "");
 
+    const runResponse = await exports.default.fetch(`${BASE_URL}/v1/runs/${runId}`);
+    expect(runResponse.status).toBe(200);
+    expect(await runResponse.json<Record<string, unknown>>()).toMatchObject({
+      ok: true,
+      entry: {
+        run_id: runId,
+        replay_sha256: metadata.replay_sha256,
+        replay_available: true,
+      },
+    });
+
     const urlResponse = await exports.default.fetch(`${BASE_URL}/v1/runs/${runId}/replay-url`);
     expect(urlResponse.status).toBe(200);
     const urlResult = await urlResponse.json<{ replay_url: string }>();
