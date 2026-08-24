@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -34,6 +35,10 @@ class ServiceConfig:
     maximum_replay_bytes: int
     verifier_concurrency: int
     ticket_reuse_window_seconds: int
+    source_rate_limit: int
+    source_rate_window_seconds: int
+    player_rate_limit: int
+    player_rate_window_seconds: int
     boards: dict[str, dict[str, Any]]
     steam_api: SteamWebApi
     authoritative_store: AuthoritativeLeaderboardStore
@@ -101,6 +106,38 @@ class TicketReplayGuard:
             return True
 
 
+class TokenBucketRateLimiter:
+    MAX_KEYS = 65536
+
+    def __init__(self, capacity: int, refill_seconds: int) -> None:
+        self._capacity = float(capacity)
+        self._tokens_per_second = self._capacity / float(refill_seconds)
+        self._lock = threading.Lock()
+        self._buckets: dict[str, tuple[float, float]] = {}
+
+    def consume(self, key: str) -> tuple[bool, int]:
+        now = time.monotonic()
+        with self._lock:
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                if len(self._buckets) >= self.MAX_KEYS:
+                    oldest_key = min(self._buckets, key=lambda candidate: self._buckets[candidate][1])
+                    del self._buckets[oldest_key]
+                tokens = self._capacity
+            else:
+                previous_tokens, previous_time = bucket
+                tokens = min(
+                    self._capacity,
+                    previous_tokens + (now - previous_time) * self._tokens_per_second,
+                )
+            if tokens >= 1.0:
+                self._buckets[key] = (tokens - 1.0, now)
+                return True, 0
+            self._buckets[key] = (tokens, now)
+            retry_after = max(1, int((1.0 - tokens) / self._tokens_per_second + 0.999))
+            return False, retry_after
+
+
 class LeaderboardHttpServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -109,6 +146,14 @@ class LeaderboardHttpServer(ThreadingHTTPServer):
         self.config = config
         self.verifier_slots = threading.BoundedSemaphore(config.verifier_concurrency)
         self.ticket_guard = TicketReplayGuard(config.ticket_reuse_window_seconds)
+        self.source_rate_limiter = TokenBucketRateLimiter(
+            config.source_rate_limit,
+            config.source_rate_window_seconds,
+        )
+        self.player_rate_limiter = TokenBucketRateLimiter(
+            config.player_rate_limit,
+            config.player_rate_window_seconds,
+        )
         self.event_log = JsonlEventLog(config.log_path)
 
     def log_event(self, event: str, **fields: Any) -> None:
@@ -125,7 +170,13 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format_string: str, *args: Any) -> None:
         print(f"{self.address_string()} - {format_string % args}", flush=True)
 
-    def _json(self, status: HTTPStatus, payload: dict[str, Any], request_id: str = "") -> None:
+    def _json(
+        self,
+        status: HTTPStatus,
+        payload: dict[str, Any],
+        request_id: str = "",
+        retry_after: int = 0,
+    ) -> None:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json")
@@ -134,6 +185,8 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if request_id:
             self.send_header("X-MXT-Request-ID", request_id)
+        if retry_after > 0:
+            self.send_header("Retry-After", str(retry_after))
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
@@ -178,6 +231,22 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"}, request_id)
             return
         config = self.server.config
+        network_source = self._network_source()
+        source_allowed, source_retry_after = self.server.source_rate_limiter.consume(network_source)
+        if not source_allowed:
+            self.server.log_event(
+                "submission_rejected",
+                request_id=request_id,
+                stage="rate_limit",
+                error="network_rate_limited",
+            )
+            self._json(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {"ok": False, "error": "network_rate_limited"},
+                request_id,
+                source_retry_after,
+            )
+            return
         if self.headers.get_content_type() != "application/vnd.mxt.replay":
             self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="invalid_content_type")
             self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"ok": False, "error": "invalid_content_type"}, request_id)
@@ -263,6 +332,22 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             steam_id=str(steam_id),
             duration_msec=round((time.monotonic() - auth_started) * 1000.0, 3),
         )
+        player_allowed, player_retry_after = self.server.player_rate_limiter.consume(str(steam_id))
+        if not player_allowed:
+            self.server.log_event(
+                "submission_rejected",
+                request_id=request_id,
+                stage="rate_limit",
+                error="player_rate_limited",
+                steam_id=str(steam_id),
+            )
+            self._json(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {"ok": False, "error": "player_rate_limited"},
+                request_id,
+                player_retry_after,
+            )
+            return
         try:
             owns_app = config.steam_api.check_app_ownership(steam_id, auth_app_id)
         except SteamWebApiError as exc:
@@ -410,6 +495,20 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             duration_msec=round((time.monotonic() - started) * 1000.0, 3),
         )
 
+    def _network_source(self) -> str:
+        direct_source = self.client_address[0]
+        try:
+            direct_address = ipaddress.ip_address(direct_source)
+        except ValueError:
+            return direct_source
+        if not direct_address.is_loopback:
+            return direct_source
+        forwarded_source = self.headers.get("CF-Connecting-IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(forwarded_source))
+        except ValueError:
+            return direct_source
+
 
 def _required_environment(name: str) -> str:
     value = os.environ.get(name, "").strip()
@@ -500,6 +599,10 @@ def load_config() -> ServiceConfig:
         maximum_replay_bytes=_positive_integer_environment("MXT_MAX_REPLAY_BYTES", 16 * 1024 * 1024),
         verifier_concurrency=_positive_integer_environment("MXT_VERIFIER_CONCURRENCY", 2),
         ticket_reuse_window_seconds=_positive_integer_environment("MXT_TICKET_REUSE_WINDOW_SECONDS", 600),
+        source_rate_limit=_positive_integer_environment("MXT_SOURCE_RATE_LIMIT", 120),
+        source_rate_window_seconds=_positive_integer_environment("MXT_SOURCE_RATE_WINDOW_SECONDS", 60),
+        player_rate_limit=_positive_integer_environment("MXT_PLAYER_RATE_LIMIT", 12),
+        player_rate_window_seconds=_positive_integer_environment("MXT_PLAYER_RATE_WINDOW_SECONDS", 60),
         boards=official_boards,
         steam_api=SteamWebApi(publisher_key, app_id, steam_base_url),
         authoritative_store=AuthoritativeLeaderboardStore(
@@ -523,6 +626,10 @@ def main() -> None:
         authenticated_app_ids=sorted(config.auth_app_ids),
         board_count=len(config.boards),
         verifier_concurrency=config.verifier_concurrency,
+        source_rate_limit=config.source_rate_limit,
+        source_rate_window_seconds=config.source_rate_window_seconds,
+        player_rate_limit=config.player_rate_limit,
+        player_rate_window_seconds=config.player_rate_window_seconds,
         log_path=str(config.log_path),
     )
     print(f"MaxX Throttle leaderboard verifier listening on {config.listen_host}:{config.listen_port}", flush=True)

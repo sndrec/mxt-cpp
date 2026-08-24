@@ -83,7 +83,9 @@ For direct development runs, configure:
 - `MXT_GAME_EXECUTABLE` or `MXT_GODOT_EXE` plus `MXT_GODOT_PROJECT`
 - `MXT_LEADERBOARD_MANIFEST`
 
-Optional tuning includes `MXT_MAX_REPLAY_BYTES`, `MXT_VERIFIER_CONCURRENCY`, `MXT_REPLAY_VERIFY_TIMEOUT_SECONDS`, and `MXT_LEADERBOARD_API_TIMEOUT_SECONDS`.
+Optional tuning includes `MXT_MAX_REPLAY_BYTES`, `MXT_VERIFIER_CONCURRENCY`, `MXT_REPLAY_VERIFY_TIMEOUT_SECONDS`, `MXT_LEADERBOARD_API_TIMEOUT_SECONDS`, `MXT_SOURCE_RATE_LIMIT`, `MXT_SOURCE_RATE_WINDOW_SECONDS`, `MXT_PLAYER_RATE_LIMIT`, and `MXT_PLAYER_RATE_WINDOW_SECONDS`.
+
+The default token buckets allow 120 submissions per network source and 12 per authenticated Steam account per 60 seconds. When the direct peer is loopback (the normal Cloudflare Tunnel deployment), the network bucket uses Cloudflare's validated `CF-Connecting-IP`; a non-loopback peer cannot override its source with that header.
 
 ## Logs
 
