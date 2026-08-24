@@ -387,4 +387,59 @@ describe("custom leaderboard authority", () => {
     });
     expect(board.entries[1]?.replay_available).toBe(true);
   });
+
+  it("handles burst archival, cursor pagination, and four simultaneous replay downloads", async () => {
+    const runIds: string[] = [];
+    const replayByRun = new Map<string, Uint8Array>();
+    const total = 128;
+    for (let batchStart = 0; batchStart < total; batchStart += 8) {
+      const accepted = await Promise.all(Array.from({ length: Math.min(8, total - batchStart) }, async (_, offset) => {
+        const index = batchStart + offset;
+        const replay = new Uint8Array(64 * 1024);
+        replay.fill(index & 0xff);
+        new DataView(replay.buffer).setUint32(0, index, true);
+        const metadata = await envelope(replay, {
+          steam_id: (76561198000100000n + BigInt(index)).toString(),
+          persona_name: `Load Pilot ${index}`,
+          score_milliseconds: 40_000 + index,
+        });
+        const response = await ingest(replay, metadata);
+        expect(response.status).toBe(200);
+        const result = await response.json<{ run_id: string }>();
+        replayByRun.set(result.run_id, replay);
+        return result.run_id;
+      }));
+      runIds.push(...accepted);
+    }
+
+    const seen: string[] = [];
+    let cursor = "";
+    do {
+      const response = await exports.default.fetch(
+        `${BASE_URL}/v1/leaderboards/mxt_ta_test_11111111_r2?scope=global&limit=25${
+          cursor === "" ? "" : `&cursor=${encodeURIComponent(cursor)}`
+        }`,
+      );
+      expect(response.status).toBe(200);
+      const page = await response.json<{ entries: Array<{ run_id: string; rank: number }>; next_cursor: string }>();
+      for (const entry of page.entries) {
+        seen.push(entry.run_id);
+        expect(entry.rank).toBe(seen.length);
+      }
+      cursor = page.next_cursor;
+    } while (cursor !== "");
+    expect(seen).toHaveLength(total);
+    expect(new Set(seen).size).toBe(total);
+
+    const downloaded = await Promise.all(runIds.slice(0, 4).map(async (runId) => {
+      const authorization = await exports.default.fetch(`${BASE_URL}/v1/runs/${runId}/replay-url`);
+      const { replay_url: replayUrl } = await authorization.json<{ replay_url: string }>();
+      const response = await exports.default.fetch(replayUrl);
+      expect(response.status).toBe(200);
+      return { runId, bytes: new Uint8Array(await response.arrayBuffer()) };
+    }));
+    for (const replay of downloaded) {
+      expect(replay.bytes).toEqual(replayByRun.get(replay.runId));
+    }
+  }, 30_000);
 });

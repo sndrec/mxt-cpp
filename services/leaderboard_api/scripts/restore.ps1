@@ -38,7 +38,7 @@ foreach ($record in @($manifest.replay_objects)) {
 Push-Location $serviceRoot
 try {
     $countJson = (& npx.cmd wrangler d1 execute DB --env $Environment --remote --json --command `
-        'SELECT (SELECT COUNT(*) FROM verified_runs) + (SELECT COUNT(*) FROM historical_scores) AS count' | Out-String)
+        'SELECT (SELECT COUNT(*) FROM players) + (SELECT COUNT(*) FROM boards) + (SELECT COUNT(*) FROM replay_objects) + (SELECT COUNT(*) FROM verified_runs) + (SELECT COUNT(*) FROM player_vehicle_bests) + (SELECT COUNT(*) FROM historical_scores) + (SELECT COUNT(*) FROM board_vehicle_roster) + (SELECT COUNT(*) FROM moderation_actions) AS count' | Out-String)
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect restore target.' }
     $countResult = $countJson | ConvertFrom-Json
     if ([long]$countResult[0].results[0].count -ne 0) {
@@ -50,6 +50,9 @@ try {
             --remote --file $localPath --content-type 'application/vnd.mxt.replay' --force
         if ($LASTEXITCODE -ne 0) { throw "R2 restore failed for $($record.object_key)." }
     }
+    $emptySchema = 'DROP TABLE player_vehicle_bests; DROP TABLE historical_scores; DROP TABLE verified_runs; DROP TABLE board_vehicle_roster; DROP TABLE replay_objects; DROP TABLE boards; DROP TABLE players; DROP TABLE moderation_actions; DROP TABLE d1_migrations;'
+    & npx.cmd wrangler d1 execute DB --env $Environment --remote --command $emptySchema --yes
+    if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the empty D1 restore target.' }
     & npx.cmd wrangler d1 execute DB --env $Environment --remote --file $databasePath --yes
     if ($LASTEXITCODE -ne 0) { throw 'D1 restore failed.' }
 } finally {
