@@ -1,0 +1,21 @@
+{
+  "name": "mxt-leaderboard-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "npm run types:check && tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "test": "vitest run",
+    "types": "wrangler types src/worker-configuration.d.ts --include-runtime=false",
+    "types:check": "wrangler types src/worker-configuration.d.ts --include-runtime=false --check"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "latest",
+    "@cloudflare/workers-types": "^5.20260823.1",
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "^4.1.0",
+    "wrangler": "latest"
+  }
+}

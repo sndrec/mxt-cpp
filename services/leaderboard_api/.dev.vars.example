@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local Wrangler development.
+# Set production values with `wrangler secret put`; never commit live secrets.
+INGEST_SECRET=replace-with-a-long-random-development-secret
+REPLAY_URL_SECRET=replace-with-a-different-long-random-development-secret
