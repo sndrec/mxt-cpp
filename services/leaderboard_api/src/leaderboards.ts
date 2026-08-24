@@ -56,7 +56,11 @@ WITH all_candidates AS (
     ${ENTRY_COLUMNS},
     ROW_NUMBER() OVER (
       PARTITION BY steam_id
-      ORDER BY score_milliseconds, received_unix, run_id
+      ORDER BY
+        score_milliseconds,
+        CASE WHEN replay_sha256 <> '' AND replay_byte_length > 0 THEN 0 ELSE 1 END,
+        received_unix,
+        run_id
     ) AS player_choice
   FROM all_candidates
 ), board AS (

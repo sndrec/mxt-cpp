@@ -399,6 +399,50 @@ describe("custom leaderboard authority", () => {
     expect(board.entries[1]?.replay_available).toBe(true);
   });
 
+  it("replaces an equal score-only display row when its verified replay arrives", async () => {
+    const replay = new TextEncoder().encode("recovered historical replay");
+    const verified = await envelope(replay, {
+      steam_id: "76561198000000002",
+      persona_name: "Recovered Pilot",
+      score_milliseconds: 55_000,
+    });
+    const historical = {
+      schema_version: 1,
+      steam_id: verified.steam_id,
+      auth_app_id: verified.auth_app_id,
+      board_id: verified.board_id,
+      track_content_id: verified.track_content_id,
+      track_gameplay_digest: verified.track_gameplay_digest,
+      track_title: verified.track_title,
+      score_milliseconds: verified.score_milliseconds,
+      ruleset_revision: verified.ruleset_revision,
+      persona_name: verified.persona_name,
+      avatar_url: "",
+      profile_url: verified.profile_url,
+      source_timestamp_unix: verified.source_timestamp_unix - 60,
+      source_global_rank: 1,
+      source_ugc_handle: "",
+      source_details: [],
+      unavailable_reason: "missing_replay_attachment",
+      provenance: "steam_import_score_only",
+    };
+    expect((await importHistoricalScore(historical)).status).toBe(200);
+    expect((await ingest(replay, verified)).status).toBe(200);
+
+    const board = await (await exports.default.fetch(
+      `${BASE_URL}/v1/leaderboards/${verified.board_id}?scope=global`,
+    )).json<{ entries: Array<Record<string, unknown>> }>();
+    expect(board.entries).toHaveLength(1);
+    expect(board.entries[0]).toMatchObject({
+      steam_id: verified.steam_id,
+      score_milliseconds: verified.score_milliseconds,
+      replay_available: true,
+      replay_sha256: verified.replay_sha256,
+      historical_unavailable_reason: "",
+      provenance: "native_submission",
+    });
+  });
+
   it("handles burst archival, cursor pagination, and four simultaneous replay downloads", async () => {
     const runIds: string[] = [];
     const replayByRun = new Map<string, Uint8Array>();

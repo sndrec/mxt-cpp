@@ -114,23 +114,7 @@ func _load_queue() -> void:
 		var value = JSON.parse_string(FileAccess.get_file_as_string(queue_path))
 		if typeof(value) != TYPE_DICTIONARY:
 			continue
-		var queue: Dictionary = value
-		for submission_value in queue.get("pending", []):
-			if typeof(submission_value) != TYPE_DICTIONARY:
-				continue
-			var submission: Dictionary = submission_value
-			if _submission_record_valid(submission) \
-					and _allowed_replay_path(String(submission.get("replay_path", ""))) \
-					and !_queue_contains_replay(pending, String(submission.get("replay_path", ""))):
-				pending.append(submission.duplicate(true))
-		for submission_value in queue.get("rejected", []):
-			if typeof(submission_value) == TYPE_DICTIONARY \
-					and !_queue_contains_replay(rejected, String((submission_value as Dictionary).get("replay_path", ""))):
-				rejected.append((submission_value as Dictionary).duplicate(true))
-		for submission_value in queue.get("completed", []):
-			if typeof(submission_value) == TYPE_DICTIONARY \
-					and !_queue_contains_replay(completed, String((submission_value as Dictionary).get("replay_path", ""))):
-				completed.append((submission_value as Dictionary).duplicate(true))
+		_merge_queue_document(value as Dictionary, queue_path == LEGACY_QUEUE_PATH)
 	if rejected.size() > MAX_REJECTED_SUBMISSIONS:
 		rejected = rejected.slice(rejected.size() - MAX_REJECTED_SUBMISSIONS)
 	if completed.size() > MAX_COMPLETED_SUBMISSIONS:
@@ -138,6 +122,38 @@ func _load_queue() -> void:
 	if FileAccess.file_exists(LEGACY_QUEUE_PATH):
 		_save_queue()
 	_emit_status()
+
+
+func _merge_queue_document(queue: Dictionary, recover_legacy_completed: bool) -> void:
+	for submission_value in queue.get("pending", []):
+		if typeof(submission_value) != TYPE_DICTIONARY:
+			continue
+		var submission: Dictionary = submission_value
+		var replay_path := String(submission.get("replay_path", ""))
+		if _submission_record_valid(submission) and _allowed_replay_path(replay_path) \
+				and !_queue_contains_replay(pending, replay_path):
+			pending.append(submission.duplicate(true))
+	for submission_value in queue.get("rejected", []):
+		if typeof(submission_value) == TYPE_DICTIONARY \
+				and !_queue_contains_replay(rejected, String((submission_value as Dictionary).get("replay_path", ""))):
+			rejected.append((submission_value as Dictionary).duplicate(true))
+	for submission_value in queue.get("completed", []):
+		if typeof(submission_value) != TYPE_DICTIONARY:
+			continue
+		var submission: Dictionary = submission_value
+		var replay_path := String(submission.get("replay_path", ""))
+		if recover_legacy_completed and _submission_record_valid(submission) and _allowed_replay_path(replay_path):
+			_erase_queue_replay(completed, replay_path)
+			if !_queue_contains_replay(pending, replay_path):
+				var recovered := submission.duplicate(true)
+				recovered["attempts"] = 0
+				recovered["last_error"] = ""
+				recovered["next_retry_unix"] = 0
+				recovered["recovery_source"] = "legacy_completed_submission"
+				pending.append(recovered)
+			continue
+		if !_queue_contains_replay(completed, replay_path):
+			completed.append(submission.duplicate(true))
 
 
 func _queue_contains_replay(queue: Array, replay_path: String) -> bool:
@@ -148,6 +164,13 @@ func _queue_contains_replay(queue: Array, replay_path: String) -> bool:
 				and String((submission_value as Dictionary).get("replay_path", "")) == replay_path:
 			return true
 	return false
+
+
+func _erase_queue_replay(queue: Array, replay_path: String) -> void:
+	for index in range(queue.size() - 1, -1, -1):
+		if typeof(queue[index]) == TYPE_DICTIONARY \
+				and String((queue[index] as Dictionary).get("replay_path", "")) == replay_path:
+			queue.remove_at(index)
 
 
 func _save_queue() -> void:
