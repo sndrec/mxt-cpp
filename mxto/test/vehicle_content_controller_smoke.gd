@@ -25,7 +25,6 @@ func _run() -> void:
 		"_load_car_definitions",
 		"_scan_local_content_library",
 		"_scan_test_drive_snapshot_library",
-		"_scan_trusted_verifier_workshop_packages",
 		"_car_definition_from_package_record",
 		"_prepare_custom_stamp_render_payload",
 	]:

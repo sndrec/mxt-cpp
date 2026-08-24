@@ -5,17 +5,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$appId = 5001340
 $serverRootPath = [IO.Path]::GetFullPath($ServerRoot)
 $bundleRoot = Join-Path $serverRootPath 'verifier-bundle'
 $bundleLauncher = Join-Path $bundleRoot 'start_windows_bundle.ps1'
 $publisherKey = Join-Path $serverRootPath 'steam_publisher_key.txt'
-$leaderboardIds = Join-Path $serverRootPath 'mxt-leaderboard-ids-5001310.json'
-$curatedPackages = Join-Path $serverRootPath 'curated-workshop-packages.json'
+$leaderboardIngestSecret = Join-Path $serverRootPath 'leaderboard-ingest-secret.txt'
 $tunnelToken = Join-Path $serverRootPath 'cloudflare-tunnel-token.txt'
 $cloudflared = (Get-Command cloudflared.exe -ErrorAction Stop).Source
 $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 
-foreach ($required in @($bundleLauncher, $publisherKey, $leaderboardIds, $tunnelToken)) {
+foreach ($required in @($bundleLauncher, $publisherKey, $leaderboardIngestSecret, $tunnelToken)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required deployment file is missing: $required"
     }
@@ -33,11 +33,10 @@ $verifierArguments = @(
     '-ExecutionPolicy Bypass',
     "-File `"$bundleLauncher`"",
     "-PublisherKeyFile `"$publisherKey`"",
-    "-LeaderboardIdsFile `"$leaderboardIds`""
+    "-LeaderboardIngestSecretFile `"$leaderboardIngestSecret`"",
+    "-AppId $appId",
+    "-AuthenticatedAppIds `"$appId`""
 )
-if (Test-Path -LiteralPath $curatedPackages -PathType Leaf) {
-    $verifierArguments += "-CuratedWorkshopPackagesFile `"$curatedPackages`""
-}
 $verifierAction = New-ScheduledTaskAction `
     -Execute $powershell `
     -Argument ($verifierArguments -join ' ') `
@@ -51,7 +50,7 @@ $tasks = @(
     @{
         Name = 'MaxXThrottleLeaderboardVerifier'
         Action = $verifierAction
-        Description = 'MaxX Throttle trusted Steam leaderboard verifier'
+        Description = 'MaxX Throttle trusted replay verifier and leaderboard archiver'
     },
     @{
         Name = 'MaxXThrottleLeaderboardTunnel'

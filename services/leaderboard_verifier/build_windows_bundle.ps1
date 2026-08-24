@@ -12,6 +12,18 @@ $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $serviceRoot '..\..')).P
 $projectRoot = Join-Path $repositoryRoot 'mxto'
 $manifest = Join-Path $projectRoot 'steam\leaderboards.json'
 $bundleMarkerName = '.mxt-verifier-bundle'
+
+function Get-Sha256Hex([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($BaseContentDirectory)) {
     $BaseContentDirectory = Join-Path $repositoryRoot '..\steamworks-sdk\tools\ContentBuilder\content'
     if (-not (Test-Path -LiteralPath $BaseContentDirectory -PathType Container)) {
@@ -61,7 +73,7 @@ New-Item -ItemType Directory -Path $serviceDestination, $runtimeDestination, $co
 New-Item -ItemType File -Path (Join-Path $stagingRoot $bundleMarkerName) -Force | Out-Null
 
 try {
-    foreach ($name in @('server.py', 'replay_verifier.py', 'steam_web_api.py', 'README.md')) {
+    foreach ($name in @('authoritative_store.py', 'server.py', 'replay_verifier.py', 'steam_web_api.py', 'README.md')) {
         Copy-Item -LiteralPath (Join-Path $serviceRoot $name) -Destination (Join-Path $serviceDestination $name) -Force
     }
     foreach ($name in @('start_windows_bundle.ps1', 'health_check.ps1', 'cloudflared.example.yml')) {
@@ -106,13 +118,14 @@ try {
         'runtime\track\Construction\track.mxt_track',
         'runtime\track\Construction\track.json',
         'config\leaderboards.json',
+        'service\authoritative_store.py',
         'service\server.py',
         'service\replay_verifier.py',
         'service\steam_web_api.py'
     )
     $hashes = [ordered]@{}
     foreach ($relativePath in $identityFiles) {
-        $hashes[$relativePath] = (Get-FileHash -LiteralPath (Join-Path $stagingRoot $relativePath) -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hashes[$relativePath] = Get-Sha256Hex (Join-Path $stagingRoot $relativePath)
     }
     [ordered]@{
         format_revision = 1

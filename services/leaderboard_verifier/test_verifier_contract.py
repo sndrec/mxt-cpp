@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
 import subprocess
 import tempfile
 import unittest
@@ -10,7 +9,6 @@ from pathlib import Path
 from unittest import mock
 
 from replay_verifier import RESULT_PREFIX, ReplayVerifier
-from steam_web_api import leaderboard_details
 
 
 class VerifierContractTests(unittest.TestCase):
@@ -23,6 +21,7 @@ class VerifierContractTests(unittest.TestCase):
             "board_name": "test-board",
             "track_gameplay_digest": track_digest,
             "vehicle_gameplay_digest": vehicle_digest,
+            "machine_setting_percent": 50,
             "score_milliseconds": 12345,
             "ruleset_revision": 7,
             "replay_schema_version": 4,
@@ -40,7 +39,12 @@ class VerifierContractTests(unittest.TestCase):
                             {
                                 "steam_name": "test-board",
                                 "track_gameplay_digest": track_digest,
-                            }
+                            },
+                            {
+                                "steam_name": "custom-board",
+                                "track_source": "curated_workshop",
+                                "track_gameplay_digest": "sha256:" + "44" * 32,
+                            },
                         ]
                     }
                 ),
@@ -55,29 +59,11 @@ class VerifierContractTests(unittest.TestCase):
                 temporary_directory=Path(directory),
             )
             with mock.patch("replay_verifier.subprocess.run", return_value=completed):
+                self.assertEqual(set(verifier.manifest_boards()), {"test-board"})
                 result = verifier.verify(replay_bytes, "test-board", 12345)
         self.assertEqual(
             result["replay_sha256"], "sha256:" + hashlib.sha256(replay_bytes).hexdigest()
         )
-
-    def test_score_details_fit_and_preserve_all_full_digests(self) -> None:
-        verified = {
-            "replay_sha256": "sha256:" + "11" * 32,
-            "track_gameplay_digest": "sha256:" + "22" * 32,
-            "vehicle_gameplay_digest": "sha256:" + "33" * 32,
-            "ruleset_revision": 7,
-            "replay_schema_version": 4,
-            "game_version": {"major": 3, "compatibility": 2, "patch": 19},
-        }
-        packed = leaderboard_details(verified)
-        self.assertEqual(len(packed), 116)
-        self.assertLessEqual(len(packed), 256)
-        words = struct.unpack("<29I", packed)
-        self.assertEqual(words[:5], (0x3154584D, 2, 7, 4, 0x03020013))
-        self.assertEqual(words[5:13], (0x11111111,) * 8)
-        self.assertEqual(words[13:21], (0x22222222,) * 8)
-        self.assertEqual(words[21:29], (0x33333333,) * 8)
-
 
 if __name__ == "__main__":
     unittest.main()

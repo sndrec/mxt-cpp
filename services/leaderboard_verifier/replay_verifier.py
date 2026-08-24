@@ -26,9 +26,8 @@ class ReplayVerifier:
     godot_project: Path | None
     timeout_seconds: float
     temporary_directory: Path | None = None
-    trusted_workshop_packages: tuple[tuple[str, int, Path], ...] = ()
 
-    def _command(self, replay_path: Path, requested_board: str) -> list[str]:
+    def _command(self, replay_path: Path) -> list[str]:
         replay_arguments = [
             "--headless",
             "--replay",
@@ -36,15 +35,8 @@ class ReplayVerifier:
             "--leaderboard-replay-verify",
             "--skip-replay-seek-bake",
         ]
-        trusted_package_arguments: list[str] = []
-        for board_name, published_file_id, package_path in self.trusted_workshop_packages:
-            if board_name == requested_board:
-                trusted_package_arguments.extend(
-                    ["--trusted-workshop-package", str(published_file_id), str(package_path)]
-                )
-                break
         if self.game_executable is not None:
-            return [str(self.game_executable), *replay_arguments, *trusted_package_arguments]
+            return [str(self.game_executable), *replay_arguments]
         if self.godot_executable is not None and self.godot_project is not None:
             return [
                 str(self.godot_executable),
@@ -55,7 +47,6 @@ class ReplayVerifier:
                 str(replay_path),
                 "--leaderboard-replay-verify",
                 "--skip-replay-seek-bake",
-                *trusted_package_arguments,
             ]
         raise ReplayVerificationError("no game verifier executable is configured")
 
@@ -69,7 +60,11 @@ class ReplayVerifier:
             raise ReplayVerificationError("leaderboard manifest has no board list")
         output: dict[str, dict[str, Any]] = {}
         for board in boards:
-            if isinstance(board, dict) and isinstance(board.get("steam_name"), str):
+            if (
+                isinstance(board, dict)
+                and isinstance(board.get("steam_name"), str)
+                and str(board.get("track_source", "official")) == "official"
+            ):
                 output[board["steam_name"]] = board
         return output
 
@@ -95,7 +90,7 @@ class ReplayVerifier:
             creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             try:
                 completed = subprocess.run(
-                    self._command(temp_path, requested_board),
+                    self._command(temp_path),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -134,6 +129,6 @@ class ReplayVerifier:
         if int(verified.get("score_milliseconds", -1)) != claimed_score:
             raise ReplayVerificationError("claimed score does not match the re-simulated score")
         if claimed_score <= 0 or claimed_score > 0x7FFFFFFF:
-            raise ReplayVerificationError("verified score is outside Steam's supported score range")
+            raise ReplayVerificationError("verified score is outside the supported score range")
         verified["replay_sha256"] = replay_sha256
         return verified

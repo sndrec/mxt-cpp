@@ -14,8 +14,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from authoritative_store import AuthoritativeLeaderboardStore, AuthoritativeStoreError
 from replay_verifier import ReplayVerificationError, ReplayVerifier
-from steam_web_api import SteamWebApi, SteamWebApiError, leaderboard_details
+from steam_web_api import SteamWebApi, SteamWebApiError
 
 
 TICKET_PATTERN = re.compile(r"^[0-9a-fA-F]{2,5120}$")
@@ -33,8 +34,9 @@ class ServiceConfig:
     maximum_replay_bytes: int
     verifier_concurrency: int
     ticket_reuse_window_seconds: int
-    board_ids: dict[str, int]
+    boards: dict[str, dict[str, Any]]
     steam_api: SteamWebApi
+    authoritative_store: AuthoritativeLeaderboardStore
     replay_verifier: ReplayVerifier
     log_path: Path
 
@@ -200,7 +202,7 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             self.server.log_event("submission_rejected", request_id=request_id, stage="authentication", error="invalid_authentication_ticket")
             self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "invalid_authentication_ticket"}, request_id)
             return
-        if not BOARD_PATTERN.fullmatch(board_name) or board_name not in config.board_ids:
+        if not BOARD_PATTERN.fullmatch(board_name) or board_name not in config.boards:
             self.server.log_event("submission_rejected", request_id=request_id, stage="headers", error="unknown_leaderboard", board_name=board_name)
             self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_leaderboard"}, request_id)
             return
@@ -304,69 +306,89 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
             game_version=verified.get("game_version", {}),
             duration_msec=round((time.monotonic() - verify_started) * 1000.0, 3),
         )
-        score_write_started = time.monotonic()
-        leaderboard_id = config.board_ids[board_name]
+        archive_started = time.monotonic()
+        board = config.boards[board_name]
+        replay_digest = str(verified.get("replay_sha256", ""))
+        envelope = {
+            "schema_version": 1,
+            "run_kind": "ranked_time_attack",
+            "track_source": "official",
+            "vehicle_source": "official",
+            "steam_id": str(steam_id),
+            "auth_app_id": auth_app_id,
+            "board_id": board_name,
+            "track_content_id": str(verified.get("track_content_id", "")),
+            "track_gameplay_digest": str(verified.get("track_gameplay_digest", "")),
+            "track_title": str(board.get("track_title", board.get("track_slug", board_name))),
+            "vehicle_content_id": str(verified.get("vehicle_content_id", "")),
+            "vehicle_gameplay_digest": str(verified.get("vehicle_gameplay_digest", "")),
+            "machine_setting_percent": int(verified.get("machine_setting_percent", -1)),
+            "score_milliseconds": claimed_score,
+            "ruleset_revision": int(verified.get("ruleset_revision", 0)),
+            "replay_schema_version": int(verified.get("replay_schema_version", 0)),
+            "game_version": verified.get("game_version", {}),
+            "replay_sha256": replay_digest,
+            "replay_byte_length": len(replay_bytes),
+            "persona_name": "",
+            "avatar_url": "",
+            "profile_url": f"https://steamcommunity.com/profiles/{steam_id}",
+            "source_timestamp_unix": int(time.time()),
+            "provenance": "native_submission",
+        }
         self.server.log_event(
-            "submission_steam_write_started",
+            "submission_archive_started",
             request_id=request_id,
             board_name=board_name,
-            leaderboard_id=leaderboard_id,
             steam_id=str(steam_id),
             claimed_score=claimed_score,
+            replay_sha256=replay_digest,
         )
         try:
-            steam_response = config.steam_api.set_leaderboard_score(
-                leaderboard_id,
-                steam_id,
-                claimed_score,
-                leaderboard_details(verified),
-            )
-        except (SteamWebApiError, ValueError) as exc:
+            archive = config.authoritative_store.archive_verified_run(replay_bytes, envelope)
+        except AuthoritativeStoreError as exc:
             self.server.log_event(
                 "submission_failed",
                 request_id=request_id,
-                stage="steam_score_write",
-                error="steam_score_write_failed",
+                stage="authoritative_archive",
+                error="authoritative_archive_failed",
                 exception_type=type(exc).__name__,
                 message=str(exc),
-                leaderboard_id=leaderboard_id,
                 steam_id=str(steam_id),
-                duration_msec=round((time.monotonic() - score_write_started) * 1000.0, 3),
+                replay_sha256=replay_digest,
+                duration_msec=round((time.monotonic() - archive_started) * 1000.0, 3),
             )
             self._json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                {"ok": False, "error": "steam_score_write_failed", "message": str(exc), "request_id": request_id},
+                {"ok": False, "error": "authoritative_archive_failed", "message": str(exc), "request_id": request_id},
                 request_id,
             )
             return
-        steam_result_value = steam_response.get("result", steam_response)
-        steam_result = steam_result_value if isinstance(steam_result_value, dict) else {}
-        retained = bool(steam_result.get("score_changed", False))
-        global_rank = int(steam_result.get("global_rank_new", 0) or 0)
-        previous_global_rank = int(steam_result.get("global_rank_previous", 0) or 0)
         self.server.log_event(
-            "submission_steam_write_completed",
+            "submission_archive_completed",
             request_id=request_id,
             board_name=board_name,
-            leaderboard_id=leaderboard_id,
             steam_id=str(steam_id),
-            retained=retained,
-            global_rank=global_rank,
-            previous_global_rank=previous_global_rank,
-            duration_msec=round((time.monotonic() - score_write_started) * 1000.0, 3),
+            run_id=str(archive.get("run_id", "")),
+            run_created=bool(archive.get("run_created", False)),
+            vehicle_best_changed=bool(archive.get("vehicle_best_changed", False)),
+            global_rank=int(archive.get("global_rank", 0) or 0),
+            duration_msec=round((time.monotonic() - archive_started) * 1000.0, 3),
         )
         self._json(
             HTTPStatus.OK,
             {
                 "ok": True,
+                "archived": True,
                 "steam_id": str(steam_id),
                 "board_name": board_name,
                 "score_milliseconds": claimed_score,
-                "replay_sha256": str(verified["replay_sha256"]),
-                "retained": retained,
-                "global_rank": global_rank,
-                "previous_global_rank": previous_global_rank,
-                "steam_response": steam_response,
+                "replay_sha256": replay_digest,
+                "run_id": str(archive.get("run_id", "")),
+                "run_created": bool(archive.get("run_created", False)),
+                "vehicle_best_changed": bool(archive.get("vehicle_best_changed", False)),
+                "is_vehicle_best": bool(archive.get("is_vehicle_best", False)),
+                "personal_best_milliseconds": int(archive.get("personal_best_milliseconds", 0) or 0),
+                "global_rank": int(archive.get("global_rank", 0) or 0),
             },
             request_id,
         )
@@ -400,52 +422,6 @@ def _positive_integer_environment(name: str, default: int | None = None) -> int:
     return value
 
 
-def _load_board_ids(path: Path, app_id: int) -> dict[str, int]:
-    parsed = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(parsed, dict) or int(parsed.get("app_id", -1)) != app_id:
-        raise RuntimeError("leaderboard ID file App ID does not match MXT_STEAM_APP_ID")
-    boards = parsed.get("boards", {})
-    if not isinstance(boards, dict) or not boards:
-        raise RuntimeError("leaderboard ID file contains no boards")
-    return {str(name): int(value) for name, value in boards.items() if int(value) > 0}
-
-
-def _load_trusted_workshop_packages(
-    path_text: str,
-    manifest_boards: dict[str, dict[str, Any]],
-) -> tuple[tuple[str, int, Path], ...]:
-    expected_digests = {
-        str(board["track_gameplay_digest"])
-        for board in manifest_boards.values()
-        if str(board.get("track_source", "official")) == "curated_workshop"
-    }
-    if not expected_digests:
-        return ()
-    if not path_text:
-        raise RuntimeError("MXT_CURATED_WORKSHOP_PACKAGES is required for curated boards")
-    path = Path(path_text).resolve()
-    parsed = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(parsed, dict):
-        raise RuntimeError("curated Workshop package map must be a JSON object")
-    package_paths: dict[str, Path] = {}
-    for gameplay_digest, package_path_text in parsed.items():
-        if not str(gameplay_digest).startswith("sha256:"):
-            raise RuntimeError("curated Workshop package map keys must be gameplay digests")
-        package_path = Path(str(package_path_text)).resolve()
-        if not package_path.is_dir():
-            raise RuntimeError(f"curated Workshop package directory does not exist: {package_path}")
-        package_paths[str(gameplay_digest)] = package_path
-    if set(package_paths) != expected_digests:
-        raise RuntimeError("curated Workshop package map must exactly match curated manifest gameplay digests")
-    output: list[tuple[str, int, Path]] = []
-    for board_name, board in manifest_boards.items():
-        if str(board.get("track_source", "official")) != "curated_workshop":
-            continue
-        digest = str(board["track_gameplay_digest"])
-        output.append((board_name, int(board["published_file_id"]), package_paths[digest]))
-    return tuple(sorted(output))
-
-
 def load_config() -> ServiceConfig:
     service_root = Path(__file__).resolve().parent
     repository_root = service_root.parents[1]
@@ -458,7 +434,8 @@ def load_config() -> ServiceConfig:
     if not auth_app_ids or any(value <= 0 for value in auth_app_ids):
         raise RuntimeError("MXT_STEAM_AUTH_APP_IDS must contain positive comma-separated App IDs")
     publisher_key = _required_environment("MXT_STEAM_PUBLISHER_KEY")
-    board_ids_path = Path(_required_environment("MXT_STEAM_LEADERBOARD_IDS")).resolve()
+    authoritative_url = _required_environment("MXT_LEADERBOARD_API_URL")
+    authoritative_secret = _required_environment("MXT_LEADERBOARD_INGEST_SECRET")
     game_executable_text = os.environ.get("MXT_GAME_EXECUTABLE", "").strip()
     godot_executable_text = os.environ.get("MXT_GODOT_EXE", "").strip()
     godot_project_text = os.environ.get("MXT_GODOT_PROJECT", str(repository_root / "mxto")).strip()
@@ -477,7 +454,6 @@ def load_config() -> ServiceConfig:
     ).resolve()
     steam_base_url = os.environ.get("MXT_STEAM_API_BASE", "https://partner.steam-api.com").strip()
     timeout_seconds = float(os.environ.get("MXT_REPLAY_VERIFY_TIMEOUT_SECONDS", "120"))
-    board_ids = _load_board_ids(board_ids_path, app_id)
     manifest_reader = ReplayVerifier(
         manifest_path=manifest_path,
         game_executable=game_executable,
@@ -486,20 +462,19 @@ def load_config() -> ServiceConfig:
         timeout_seconds=timeout_seconds,
     )
     manifest_boards = manifest_reader.manifest_boards()
-    manifest_board_names = set(manifest_boards)
-    if set(board_ids) != manifest_board_names:
-        raise RuntimeError("leaderboard ID file must contain exactly the boards in the checked-in manifest")
-    trusted_workshop_packages = _load_trusted_workshop_packages(
-        os.environ.get("MXT_CURATED_WORKSHOP_PACKAGES", "").strip(),
-        manifest_boards,
-    )
+    official_boards = {
+        name: board
+        for name, board in manifest_boards.items()
+        if str(board.get("track_source", "official")) == "official"
+    }
+    if not official_boards:
+        raise RuntimeError("leaderboard manifest contains no official ranked boards")
     replay_verifier = ReplayVerifier(
         manifest_path=manifest_path,
         game_executable=game_executable,
         godot_executable=godot_executable,
         godot_project=godot_project,
         timeout_seconds=timeout_seconds,
-        trusted_workshop_packages=trusted_workshop_packages,
     )
     log_path = Path(
         os.environ.get("MXT_LEADERBOARD_LOG_PATH", str(service_root.parent / "logs" / "leaderboard-service.jsonl"))
@@ -511,11 +486,16 @@ def load_config() -> ServiceConfig:
         auth_app_ids=auth_app_ids,
         publisher_key=publisher_key,
         ticket_identity=os.environ.get("MXT_STEAM_TICKET_IDENTITY", "mxt-leaderboard-v1"),
-        maximum_replay_bytes=_positive_integer_environment("MXT_MAX_REPLAY_BYTES", 64 * 1024 * 1024),
+        maximum_replay_bytes=_positive_integer_environment("MXT_MAX_REPLAY_BYTES", 16 * 1024 * 1024),
         verifier_concurrency=_positive_integer_environment("MXT_VERIFIER_CONCURRENCY", 2),
         ticket_reuse_window_seconds=_positive_integer_environment("MXT_TICKET_REUSE_WINDOW_SECONDS", 600),
-        board_ids=board_ids,
+        boards=official_boards,
         steam_api=SteamWebApi(publisher_key, app_id, steam_base_url),
+        authoritative_store=AuthoritativeLeaderboardStore(
+            authoritative_url,
+            authoritative_secret,
+            float(os.environ.get("MXT_LEADERBOARD_API_TIMEOUT_SECONDS", "30")),
+        ),
         replay_verifier=replay_verifier,
         log_path=log_path,
     )
@@ -530,7 +510,7 @@ def main() -> None:
         listen_port=config.listen_port,
         app_id=config.app_id,
         authenticated_app_ids=sorted(config.auth_app_ids),
-        board_count=len(config.board_ids),
+        board_count=len(config.boards),
         verifier_concurrency=config.verifier_concurrency,
         log_path=str(config.log_path),
     )

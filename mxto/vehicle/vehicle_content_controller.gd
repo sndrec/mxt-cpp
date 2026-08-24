@@ -61,7 +61,6 @@ func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: Cust
 	LoadTransitionProfilerClass.checkpoint(load_profile, "initial_workshop_catalog", {
 		"workshop_item_count": initial_workshop_items.size(),
 	})
-	_scan_trusted_verifier_workshop_packages()
 	reload_definitions()
 	runtime_content_loaded = true
 	LoadTransitionProfilerClass.end_transition(load_profile, {
@@ -549,27 +548,6 @@ func create_test_drive_snapshot(package_root: String) -> Dictionary:
 	return content_catalog.snapshot_draft_package(
 		package_root,
 		ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH))
-
-func _scan_trusted_verifier_workshop_packages() -> void:
-	var args := OS.get_cmdline_args()
-	var user_args := OS.get_cmdline_user_args()
-	if !(args.has("--leaderboard-replay-verify") or user_args.has("--leaderboard-replay-verify")):
-		return
-	for source_args in [args, user_args]:
-		var index := 0
-		while index < source_args.size():
-			if String(source_args[index]) != "--trusted-workshop-package":
-				index += 1
-				continue
-			if index + 2 >= source_args.size():
-				push_error("--trusted-workshop-package requires a Workshop ID and package path")
-				return
-			var published_file_id := int(source_args[index + 1])
-			var package_path := String(source_args[index + 2])
-			var result: Dictionary = content_catalog.add_workshop_package(package_path, published_file_id)
-			if !bool(result.get("valid", false)):
-				push_error("Trusted verifier package %d failed validation: %s" % [published_file_id, str(result.get("errors", []))])
-			index += 3
 
 func _on_workshop_items_changed(items: Array) -> void:
 	workshop_refresh_sequence += 1
