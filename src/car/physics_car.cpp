@@ -2389,6 +2389,41 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES) &&
 		(soa->global_start + soa_index) == 0;
 	const bool trace_rail = trace_rail_for_car(soa, soa_index);
+	if (trace_rail && track) {
+		const int current_cp = soa->current_collision_checkpoint[soa_index];
+		const int previous_cp = current_cp >= 0 && current_cp < static_cast<int>(track->canonical_prev.size())
+			? track->canonical_prev[current_cp]
+			: -1;
+		const int current_segment = current_cp >= 0 && current_cp < track->num_checkpoints
+			? track->checkpoints[current_cp].road_segment
+			: -1;
+		const int previous_segment = previous_cp >= 0 && previous_cp < track->num_checkpoints
+			? track->checkpoints[previous_cp].road_segment
+			: -1;
+		const TrackSegment* current_segment_ptr = current_segment >= 0 ? &track->segments[current_segment] : nullptr;
+		const TrackSegment* previous_segment_ptr = previous_segment >= 0 ? &track->segments[previous_segment] : nullptr;
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RAIL_SEGMENT_CONTEXT tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" cp="), static_cast<int64_t>(current_cp),
+			godot::String(" segment="), static_cast<int64_t>(current_segment),
+			godot::String(" analytic="), current_segment_ptr && current_segment_ptr->analytic_collision_enabled,
+			godot::String(" shape="), static_cast<int64_t>(current_segment_ptr && current_segment_ptr->road_shape ? current_segment_ptr->road_shape->shape_type : -1),
+			godot::String(" rails=("), current_segment_ptr ? current_segment_ptr->left_rail_height : 0.0f,
+			godot::String(","), current_segment_ptr ? current_segment_ptr->right_rail_height : 0.0f, godot::String(")"),
+			godot::String(" prev_cp="), static_cast<int64_t>(previous_cp),
+			godot::String(" prev_segment="), static_cast<int64_t>(previous_segment),
+			godot::String(" prev_analytic="), previous_segment_ptr && previous_segment_ptr->analytic_collision_enabled,
+			godot::String(" prev_shape="), static_cast<int64_t>(previous_segment_ptr && previous_segment_ptr->road_shape ? previous_segment_ptr->road_shape->shape_type : -1),
+			godot::String(" prev_rails=("), previous_segment_ptr ? previous_segment_ptr->left_rail_height : 0.0f,
+			godot::String(","), previous_segment_ptr ? previous_segment_ptr->right_rail_height : 0.0f, godot::String(")"),
+			godot::String(" floor_cp="), static_cast<int64_t>(center_floor_sample.cp_idx),
+			godot::String(" floor_t=("), center_floor_sample.road_t.x, godot::String(","), center_floor_sample.road_t.y, godot::String(")"),
+			godot::String(" floor_terrain=0x"), godot::String::num_int64(static_cast<int64_t>(center_floor_sample.terrain), 16),
+			godot::String(" floor_hole="), center_floor_sample_is_hole,
+			godot::String(" height="), soa->height_above_track[soa_index],
+			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16));
+	}
 	// A hit beyond this segment remains invalid here; it only requests a separate test against the segment now under the car.
 	bool old_rail_sweep_exited_longitudinal_domain = false;
 	auto trace_analytic_rail_context = [&](const char *pass_name, int cp_idx, const SimVec2 &sample_t,
@@ -2491,6 +2526,17 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		sample_old_corner_collision_surface(soa, soa_index, scratch);
 	const int use_cp_old = old_collision.cp;
 	const bool old_valid = old_collision.valid;
+	if (trace_rail) {
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RAIL_OLD_SURFACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" valid="), old_valid,
+			godot::String(" cp="), static_cast<int64_t>(use_cp_old),
+			godot::String(" from_center_floor="), old_collision.from_center_floor,
+			godot::String(" was_above="), old_collision.was_above,
+			godot::String(" was_inside="), old_collision.was_inside,
+			godot::String(" t=("), old_collision.road_t.x, godot::String(","), old_collision.road_t.y, godot::String(")"));
+	}
 	{
 		SimVec2 use_t;
 		SimTransform use_transform;
@@ -2631,8 +2677,16 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 					depenetration.x == 0.0f &&
 					depenetration.y == 0.0f &&
 					depenetration.z == 0.0f;
-				if ((!old_center_floor_pass_was_duplicate || old_rail_sweep_exited_longitudinal_domain) &&
-					was_above && !center_floor_sample_is_hole) {
+				bool current_position_exited_old_checkpoint = false;
+				if (old_valid && use_cp_old >= 0 && use_cp_old < track->num_checkpoints) {
+					const CollisionCheckpoint &old_checkpoint = track->checkpoints[use_cp_old];
+					const SimVec3 current_probe = machine_position + depenetration;
+					current_position_exited_old_checkpoint =
+						!old_checkpoint.start_plane.is_point_over(current_probe) ||
+						old_checkpoint.end_plane.is_point_over(current_probe);
+				}
+				if ((!old_center_floor_pass_was_duplicate || old_rail_sweep_exited_longitudinal_domain ||
+					current_position_exited_old_checkpoint) && was_above && !center_floor_sample_is_hole) {
 					use_cp_new = track->get_best_checkpoint(machine_position + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
 					new_valid = use_cp_new != -1;
 					if (new_valid)
