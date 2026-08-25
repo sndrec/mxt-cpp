@@ -46,7 +46,7 @@ class MxtReplayStream : public RefCounted {
 
 	static constexpr uint32_t TIMELINE_CHUNK_FRAMES = 256;
 	static constexpr uint32_t FILE_BLOCK_FRAMES = 256;
-	static constexpr uint32_t MAX_RACERS = 256;
+	static constexpr uint32_t MAX_RACERS = 1024;
 	static constexpr uint64_t MAX_FRAMES = 60ull * 60ull * 60ull;
 
 	Array roster_ids;
