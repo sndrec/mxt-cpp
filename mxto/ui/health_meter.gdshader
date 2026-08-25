@@ -19,14 +19,26 @@ void fragment() {
 	float dist_from_middle = distance(0.5, use_uv.y);
 	float energy_position = use_uv.x * max_health_amount;
 	float segment_anchor = health_amount - health_to_deplete;
-	float segment_phase = fract((segment_anchor - energy_position) / max(boost_energy_cost, 0.001));
+	float safe_boost_energy_cost = max(boost_energy_cost, 0.001);
+	float segment_phase = fract((segment_anchor - energy_position) / safe_boost_energy_cost);
 	float segment_val = distance(segment_phase, 0.5);
-	float segment_bevel = pow(segment_val * 2.0, 16.0);
-	float seg_mix = max(dist_from_middle, segment_val);
-	seg_mix = pow(seg_mix * 2.0, 16.0);
+	float periodic_edge_proximity = segment_val * 2.0;
+	float left_edge_proximity = clamp(
+		1.0 - 2.0 * energy_position / safe_boost_energy_cost,
+		0.0,
+		1.0
+	);
+	float periodic_bevel = pow(periodic_edge_proximity, 6.0);
+	float left_edge_bevel = pow(left_edge_proximity, 6.0);
+	float seg_mix = max(dist_from_middle * 2.0, periodic_edge_proximity);
+	seg_mix = pow(max(seg_mix, left_edge_proximity), 16.0);
 	vec2 segment_uv = vec2(segment_phase, use_uv.y);
-	float segment_normal_x = segment_bevel * sign(segment_phase - 0.5);
-	float gradient_distortion = segment_normal_x + (segment_uv.x - segment_uv.y) * 0.4;
+	float periodic_normal_x = periodic_bevel * sign(segment_phase - 0.5) * -1.2;
+	float left_edge_normal_x = left_edge_bevel * -1.2;
+	float segment_normal_x = left_edge_bevel > periodic_bevel
+		? left_edge_normal_x
+		: periodic_normal_x;
+	float gradient_distortion = segment_normal_x + (segment_uv.x - segment_uv.y) * 0.5;
 	float gradient_x = clamp(UV.x + gradient_distortion * 0.2, 0.0, 1.0);
 	vec3 boost_available_color = texture(boost_available_gradient, vec2(gradient_x, 0.0)).rgb;
 	boost_available_color = boost_available_color * (1.0 - seg_mix * 0.4) - seg_mix * 0.2;
@@ -44,8 +56,9 @@ void fragment() {
 		min(use_uv.y / edge_pixel_width.y, (1.0 - use_uv.y) / edge_pixel_width.y)
 	);
 	float shape_coverage = smoothstep(-0.5, 0.5, edge_distance_pixels);
-	float border_coverage = 1.0 - smoothstep(1.5, 2.5, edge_distance_pixels);
+	float border_coverage = 1.0 - smoothstep(0, 15, edge_distance_pixels);
+	border_coverage = pow(border_coverage, 2.0);
 	vec4 meter_color = final_color + vec4(vec3(clamp(pow(dist_from_middle, 2.0), 0.0, 1.0)), 0.0);
-	COLOR = mix(meter_color, vec4(1.0), border_coverage);
+	COLOR = meter_color + border_coverage * 0.15;
 	COLOR.a *= shape_coverage;
 }
