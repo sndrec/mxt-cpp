@@ -32,6 +32,7 @@ static func allocate_player_regions(player_ids: Array, manifests: Dictionary) ->
 static func build_atlas_image(player_records: Array, authored_palettes: Dictionary = {}) -> Dictionary:
 	var atlas := Image.create(ATLAS_SIZE.x, ATLAS_SIZE.y, false, Image.FORMAT_RGBA8)
 	atlas.fill(Color(1.0, 1.0, 1.0, 0.0))
+	var image_builder := NativeCustomStampImageBuilder.new()
 	var rects_by_player := {}
 	for record in player_records:
 		if typeof(record) != TYPE_DICTIONARY:
@@ -53,7 +54,8 @@ static func build_atlas_image(player_records: Array, authored_palettes: Dictiona
 			var palette := _palette_for_blob(stamp_blob, authored_palettes)
 			if palette.is_empty():
 				return {"ok": false, "error": "missing palette", "player_id": player_id, "hash": stamp_blob.stamp_hash}
-			_blit_blob(atlas, stamp_blob, placement, region_origin, palette)
+			if !_blit_blob(atlas, stamp_blob, placement, region_origin, palette, image_builder):
+				return {"ok": false, "error": "failed to build custom stamp image", "player_id": player_id, "hash": stamp_blob.stamp_hash}
 			player_rects[stamp_blob.stamp_hash] = {
 				"rect": _normalized_rect(placement["rect"], region_origin),
 				"rotated": bool(placement.get("rotated", false)),
@@ -118,33 +120,21 @@ static func _insert_region(node: Dictionary, width: int, height: int) -> Diction
 	node["down"] = {"x": int(node["x"]), "y": int(node["y"]) + height, "w": node_w, "h": node_h - height, "used": false}
 	return {"x": int(node["x"]), "y": int(node["y"])}
 
-static func _blit_blob(atlas: Image, blob: CustomStampBlob, placement: Dictionary, region_origin: Vector2i, palette: PackedColorArray) -> void:
+static func _blit_blob(atlas: Image, blob: CustomStampBlob, placement: Dictionary, region_origin: Vector2i, palette: PackedColorArray, image_builder: NativeCustomStampImageBuilder) -> bool:
 	var raw := blob.decompress_indices()
 	var rect: Rect2i = placement["rect"]
 	var rotated := bool(placement.get("rotated", false))
 	var region_size: Vector2i = placement.get("region_size", ATLAS_SIZE)
-	for y in range(blob.height):
-		for x in range(blob.width):
-			var index := _index_at(raw, y * blob.width + x, blob.bits_per_pixel)
-			var colour := Color(1.0, 1.0, 1.0, 0.0)
-			if index > 0 and index < palette.size():
-				colour = palette[index]
-			var dest := Vector2i(rect.position.x + x, rect.position.y + y)
-			if rotated:
-				dest = Vector2i(rect.position.x + y, rect.position.y + blob.width - 1 - x)
-			if dest.x < 0 or dest.y < 0 or dest.x >= region_size.x or dest.y >= region_size.y:
-				continue
-			dest += region_origin
-			if dest.x >= 0 and dest.y >= 0 and dest.x < ATLAS_SIZE.x and dest.y < ATLAS_SIZE.y:
-				atlas.set_pixel(dest.x, dest.y, colour)
-
-static func _index_at(raw: PackedByteArray, pixel_index: int, bits_per_pixel: int) -> int:
-	if bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:
-		var packed := int(raw[int(pixel_index / 2)])
-		if (pixel_index & 1) == 0:
-			return packed & 0x0f
-		return (packed >> 4) & 0x0f
-	return int(raw[pixel_index])
+	if rect.position.x < 0 or rect.position.y < 0 or rect.end.x > region_size.x or rect.end.y > region_size.y:
+		return false
+	var destination := region_origin + rect.position
+	if destination.x < 0 or destination.y < 0 or destination.x + rect.size.x > ATLAS_SIZE.x or destination.y + rect.size.y > ATLAS_SIZE.y:
+		return false
+	var stamp_image := image_builder.build_indexed_image(raw, blob.width, blob.height, blob.bits_per_pixel, palette, rotated)
+	if stamp_image == null or stamp_image.get_size() != rect.size:
+		return false
+	atlas.blit_rect(stamp_image, Rect2i(Vector2i.ZERO, rect.size), destination)
+	return true
 
 static func _palette_for_blob(blob: CustomStampBlob, authored_palettes: Dictionary) -> PackedColorArray:
 	if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:

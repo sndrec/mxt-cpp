@@ -10,6 +10,7 @@
 #include "gamesim/gamesim.h"
 #include "camera/fzgx_gameplay_camera.h"
 #include "netcode/netcode_session.h"
+#include "render/native_custom_stamp_image_builder.h"
 #include "render/native_stamp_mesh_builder.h"
 #include "replay/replay_stream.h"
 #include "audio/opus_voice_codec.h"
@@ -33,6 +34,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(GameSim);
 	GDREGISTER_CLASS(FzgxGameplayCamera);
 	GDREGISTER_CLASS(NetcodeSession);
+	GDREGISTER_CLASS(NativeCustomStampImageBuilder);
 	GDREGISTER_CLASS(NativeStampMeshBuilder);
 	GDREGISTER_CLASS(MxtReplayStream);
 	GDREGISTER_CLASS(OpusVoiceCodec);
