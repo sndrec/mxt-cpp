@@ -79,22 +79,7 @@ uniform vec3 uv1_scale;
 global uniform float fog_dist;
 varying vec3 WORLD_VERTEX;
 
-uint hash_u32(uint value) {
-	value ^= value >> 16u;
-	value *= 2246822519u;
-	value ^= value >> 13u;
-	value *= 3266489917u;
-	value ^= value >> 16u;
-	return value;
-}
-
-float dither_random(vec2 pixel, uint time_seed) {
-	uvec2 coordinate = uvec2(floor(pixel));
-	uint seed = coordinate.x * 1597334677u;
-	seed ^= coordinate.y * 3812015801u;
-	seed ^= time_seed * 2798796415u;
-	return float(hash_u32(seed)) * (1.0 / 4294967296.0);
-}
+#include \"res://asset/shader/ordered_dither.gdshaderinc\"
 
 void vertex() {
 	UV = UV * uv1_scale.xy;
@@ -109,8 +94,9 @@ void fragment() {
 	fog_mix = clamp(pow(fog_mix, 1.5), 0.0, 1.0);
 	fog_mix = sin(fog_mix * PI * 0.5);
 	float alpha_prob = 1.0 - fog_mix;
-	float rnd = dither_random(FRAGCOORD.xy, uint(floor(TIME * 1000.0)));
-	if (rnd > alpha_prob) {
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (alpha_prob < threshold) {
 		discard;
 	}
 	ALBEDO = albedo.rgb * albedo_tex.rgb;
@@ -141,22 +127,7 @@ uniform vec3 uv1_scale;
 uniform vec3 uv1_offset;
 global uniform float fog_dist;
 
-uint hash_u32(uint value) {
-	value ^= value >> 16u;
-	value *= 2246822519u;
-	value ^= value >> 13u;
-	value *= 3266489917u;
-	value ^= value >> 16u;
-	return value;
-}
-
-float dither_random(vec2 pixel, uint time_seed) {
-	uvec2 coordinate = uvec2(floor(pixel));
-	uint seed = coordinate.x * 1597334677u;
-	seed ^= coordinate.y * 3812015801u;
-	seed ^= time_seed * 2798796415u;
-	return float(hash_u32(seed)) * (1.0 / 4294967296.0);
-}
+#include \"res://asset/shader/ordered_dither.gdshaderinc\"
 
 void vertex() {
 	UV = UV * uv1_scale.xy + uv1_offset.xy;
@@ -172,8 +143,9 @@ void fragment() {
 	fog_mix = sin(fog_mix * PI * 0.5);
 	float alpha_prob = min(1.0, length(VERTEX) * 0.0006) * 0.6;
 	alpha_prob *= albedo_tex.a * (1.0 - fog_mix);
-	float rnd = dither_random(FRAGCOORD.xy, uint(floor(TIME * 1000.0)));
-	if (rnd > alpha_prob) {
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (alpha_prob < threshold) {
 		discard;
 	}
 }
