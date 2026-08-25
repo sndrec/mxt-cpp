@@ -25,12 +25,9 @@ vec3 hsv2rgb(vec3 c)
 }
 
 void fragment() {
+	const float meter_skew = 0.05;
 	vec2 use_uv = UV;
-	use_uv.x += UV.y * -0.05;
-	use_uv.x *= 1.05;
-	if (use_uv.x < 0.0){
-		discard;
-	};
+	use_uv.x = (UV.x - UV.y * meter_skew) / (1.0 - meter_skew);
 	float dist_from_middle = distance(0.5, use_uv.y);
 	float energy_position = use_uv.x * max_health_amount;
 	float segment_anchor = health_amount - health_to_deplete;
@@ -50,11 +47,14 @@ void fragment() {
 	if (can_boost){
 		final_color = mix(empty, bar_color, cutoff);
 	}
-	vec2 border_width = 2.0 * fwidth(UV);
-	float border = max(
-		max(1.0 - step(border_width.x, use_uv.x), 1.0 - step(border_width.x, 1.0 - UV.x)),
-		max(1.0 - step(border_width.y, UV.y), 1.0 - step(border_width.y, 1.0 - UV.y))
+	vec2 edge_pixel_width = max(fwidth(use_uv), vec2(0.000001));
+	float edge_distance_pixels = min(
+		min(use_uv.x / edge_pixel_width.x, (1.0 - use_uv.x) / edge_pixel_width.x),
+		min(use_uv.y / edge_pixel_width.y, (1.0 - use_uv.y) / edge_pixel_width.y)
 	);
+	float shape_coverage = smoothstep(-0.5, 0.5, edge_distance_pixels);
+	float border_coverage = 1.0 - smoothstep(1.5, 2.5, edge_distance_pixels);
 	vec4 meter_color = final_color + vec4(vec3(clamp(pow(dist_from_middle, 2.0), 0.0, 1.0)), 0.0);
-	COLOR = mix(meter_color, vec4(1.0), border);
+	COLOR = mix(meter_color, vec4(1.0), border_coverage);
+	COLOR.a *= shape_coverage;
 }
