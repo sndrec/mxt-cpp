@@ -88,3 +88,5 @@ shader_parameter/texture_albedo = ExtResource("1_uybpi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/cross_hatch = ExtResource("2_cross")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true

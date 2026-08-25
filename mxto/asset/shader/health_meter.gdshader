@@ -24,9 +24,9 @@ vec3 hsv2rgb(vec3 c)
 }
 
 void fragment() {
-	vec3 rainbow = hsv2rgb(vec3(UV.x, 1.0, 1.0));
 	float dist_from_middle = distance(0.5, UV.y);
-	float segment_val = clamp((sin(max_health_amount * UV.x * 0.5 + PI * 0.5) - 0.95) * 5.0, 0.0, 1.0) * dist_from_middle * 5.0;
+	float segment_val = clamp((sin(max_health_amount * UV.x * 0.5 + PI * 0.5) - 0.8) * 1.0, 0.0, 1.0) * dist_from_middle * 5.0;
+	vec3 rainbow = hsv2rgb(vec3(UV.x + segment_val * 0.15, 1.0, 1.0));
 	vec4 segments = vec4(segment_val, segment_val, segment_val, 0.0);
 	float cutoff = clamp((health_amount / max_health_amount - UV.x) * 512.0, 0.0, 1.0);
 	float deplete_cutoff = clamp(((health_amount - health_to_deplete) / max_health_amount - UV.x) * 512.0, 0.0, 1.0);
@@ -36,5 +36,5 @@ void fragment() {
 	if (can_boost){
 		final_color = mix(empty, bar_color, cutoff);
 	}
-	COLOR = final_color + segments + vec4(vec3(clamp(pow(dist_from_middle, 2.0), 0.0, 1.0)), 0.0);
+	COLOR = final_color + vec4(vec3(clamp(pow(dist_from_middle, 2.0), 0.0, 1.0)), 0.0);
 }

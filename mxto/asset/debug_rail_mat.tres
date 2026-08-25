@@ -83,3 +83,5 @@ shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("1_7fqbe")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 16, 1)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true

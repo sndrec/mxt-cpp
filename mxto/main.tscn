@@ -109,6 +109,8 @@ shader = SubResource("Shader_yaehf")
 shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("16_yaehf")
 shader_parameter/uv1_scale = Vector3(16, 16, 8)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_074og"]
 material = SubResource("ShaderMaterial_074og")
@@ -158,6 +160,8 @@ shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("17_yaehf")
 shader_parameter/uv1_scale = Vector3(16, 16, 8)
 shader_parameter/uv1_offset = Vector3(0, 0, 0)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_82xsv"]
 material = SubResource("ShaderMaterial_cegan")
@@ -170,9 +174,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=1280320779]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=725799279]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1654804343]
+[node name="GameSim" type="GameSim" parent="." unique_id=253165976]
 
 [node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
