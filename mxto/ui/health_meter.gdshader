@@ -18,7 +18,10 @@ void fragment() {
 	float segment_val = distance(segment_phase, 0.5);
 	float seg_mix = max(dist_from_middle, segment_val);
 	seg_mix = pow(seg_mix * 2.0, 16.0);
-	vec3 boost_available_color = texture(boost_available_gradient, vec2(UV.x, 0.0)).rgb;
+	vec2 segment_uv = vec2(segment_phase, use_uv.y);
+	float gradient_distortion = seg_mix + (segment_uv.x - segment_uv.y) * 0.4;
+	float gradient_x = clamp(UV.x + gradient_distortion * 0.2, 0.0, 1.0);
+	vec3 boost_available_color = texture(boost_available_gradient, vec2(gradient_x, 0.0)).rgb;
 	boost_available_color = boost_available_color * (1.0 - seg_mix * 0.4) - seg_mix * 0.2;
 	float cutoff = clamp((health_amount / max_health_amount - use_uv.x) * 512.0, 0.0, 1.0);
 	float deplete_cutoff = clamp(((health_amount - health_to_deplete) / max_health_amount - use_uv.x) * 512.0, 0.0, 1.0);
