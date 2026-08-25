@@ -61,16 +61,27 @@ shader_parameter/zenith_color = Color(0.018, 0.022, 0.032, 1)
 environment = SubResource("Environment_garage_preview")
 
 [node name="KeyLight" type="DirectionalLight3D" parent="." unique_id=1524291590]
-transform = Transform3D(0.81915206, 0.4055798, 0.4055798, 0, 0.70710677, -0.70710677, -0.57357645, 0.579228, 0.579228, 0, 0, 0)
-light_energy = 4.0
+transform = Transform3D(0.70710677, -0.61237246, 0.35355335, 0, 0.49999997, 0.86602545, -0.70710677, -0.61237246, 0.35355335, 0, 0, 0)
+light_energy = 2.0
+
+[node name="RearFillLight4" type="DirectionalLight3D" parent="." unique_id=1883896455]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+light_energy = 0.25
+
+[node name="RearFillLight3" type="DirectionalLight3D" parent="." unique_id=1116272039]
+light_energy = 0.25
+
+[node name="RearFillLight2" type="DirectionalLight3D" parent="." unique_id=1711933922]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+light_energy = 0.25
 
 [node name="RearFillLight" type="DirectionalLight3D" parent="." unique_id=63677489]
-transform = Transform3D(-0.81915206, 0.32898995, -0.46984634, 0, 0.81915206, 0.57357645, 0.57357645, 0.46984634, -0.6710101, 0, 0, 0)
-light_energy = 1.15
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0, 0, 0)
+light_energy = 0.25
 
 [node name="SideFillLight" type="DirectionalLight3D" parent="." unique_id=2137639809]
-transform = Transform3D(-0.81915206, 0.1961747, 0.53898555, 0, 0.9396926, -0.34202012, -0.57357645, -0.28016648, -0.76975113, 0, 0, 0)
-light_energy = 0.85
+transform = Transform3D(1, 0, 0, 0, -4.3711385e-08, -0.99999994, 0, 0.99999994, -4.3711385e-08, 0, 0, 0)
+light_energy = 0.25
 
 [node name="GridFloor" type="MeshInstance3D" parent="." unique_id=2106339495]
 mesh = SubResource("PlaneMesh_garage_floor")

@@ -4,7 +4,10 @@ render_mode ambient_light_disabled;//, skip_vertex_transform;
 stencil_mode write, compare_always, 1;
 
 uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
+uniform sampler2D in_lightwarp_2 : filter_nearest_mipmap_anisotropic, repeat_disable;
+uniform sampler2D in_lightwarp_2_fresnel : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
+uniform sampler2D in_specwarp_fresnel : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_paint_mask : filter_linear_mipmap_anisotropic, repeat_disable;
@@ -109,7 +112,7 @@ void fragment() {
 		EMISSION = final_colour;
 	} else {
 		ALBEDO = final_colour;// * fres;
-		EMISSION = in_overlay_colour + COLOR.rgb;
+		EMISSION = in_overlay_colour;
 	}
 }
 
@@ -121,12 +124,17 @@ void light() {
 	float spec	= pow(ndoth, 8.0) * ATTENUATION;
 	spec = (spec + light_val) * 0.5;
 	float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
-	float fres_outline = fresnel(16.0, NORMAL, VIEW);
-	light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
-	light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
+	float fres_outline = fresnel(2.0, NORMAL, VIEW);
+	vec3 final_light_val = texture(in_lightwarp, vec2(clamp(light_val, 0.0, 1.0), 0.0f)).rgb;
+	//light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
+	//light_val = clamp(light_val - fres_outline * 2.0, 0.0, 1.0);
 	//light_val = clamp(light_val + spec * 0.1, 0.0, 1.0);
+	vec3 final_light_val_2 = texture(in_lightwarp_2, vec2(clamp(light_val + spec * 0.1, 0.0, 1.0), 0.0f)).rgb;
+	final_light_val_2 *= texture(in_lightwarp_2_fresnel, vec2(fres_outline, 0.0)).rgb;
+	DIFFUSE_LIGHT += (final_light_val + final_light_val_2) * LIGHT_COLOR * 0.333;// * 0.3;
+	
 	float cross_hatch_float = (lighting_aligned_hatch(use_screen_pixel, normalize(hatch_normal), LIGHT) - 0.5) * 0.05;
-	vec3 final_light_val = texture(in_lightwarp, vec2(clamp(light_val + cross_hatch_float, 0.0, 1.0), 0.0f)).rgb;
-	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 0.333;// * 0.3;
-	SPECULAR_LIGHT += texture(in_specwarp, vec2(clamp(spec + cross_hatch_float, 0.0, 1.0), 0.0f)).rgb;
+	vec3 spec_add = texture(in_specwarp, vec2(clamp(spec, 0.0, 1.0), 0.0f)).rgb * final_light_val * LIGHT_COLOR * 0.333;
+	spec_add *= texture(in_specwarp_fresnel, vec2(fres_outline, 0.0)).rgb;
+	SPECULAR_LIGHT += spec_add;
 }

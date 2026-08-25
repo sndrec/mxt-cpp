@@ -7,7 +7,7 @@
 [ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="5_o2b3b"]
 [ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="6_4nwwe"]
 [ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="7_7mhr5"]
-[ext_resource type="Texture2D" path="res://asset/tex/crosshatch/1.png" id="8_cross"]
+[ext_resource type="Texture2D" uid="uid://cafmvnk2if4am" path="res://asset/tex/crosshatch/1.png" id="8_cross"]
 
 [sub_resource type="Gradient" id="Gradient_o2b3b"]
 offsets = PackedFloat32Array(1)
@@ -16,13 +16,28 @@ colors = PackedColorArray(1, 1, 1, 1)
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_7mhr5"]
 gradient = SubResource("Gradient_o2b3b")
 
-[sub_resource type="Gradient" id="Gradient_2dwnx"]
+[sub_resource type="Gradient" id="Gradient_4nwwe"]
 interpolation_mode = 1
-offsets = PackedFloat32Array(0, 0.176259, 0.719424, 0.983213)
-colors = PackedColorArray(0.22, 0.22, 0.22, 1, 0, 0, 0, 1, 0.47, 0.47, 0.47, 1, 1, 1, 1, 1)
+offsets = PackedFloat32Array(0.5, 0.788889, 0.979532)
+colors = PackedColorArray(0, 0, 0, 1, 0.521141, 0.521141, 0.521141, 1, 1, 1, 1, 1)
 
-[sub_resource type="GradientTexture1D" id="GradientTexture1D_q1c51"]
-gradient = SubResource("Gradient_2dwnx")
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_axuya"]
+gradient = SubResource("Gradient_4nwwe")
+
+[sub_resource type="Gradient" id="Gradient_4xbnr"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.36666667, 0.67777777, 0.77037036)
+colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_8oi14"]
+gradient = SubResource("Gradient_4xbnr")
+
+[sub_resource type="Gradient" id="Gradient_4geww"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.35555556)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_a3d87"]
+gradient = SubResource("Gradient_4geww")
 
 [sub_resource type="Gradient" id="Gradient_b6mle"]
 interpolation_mode = 1
@@ -32,44 +47,64 @@ colors = PackedColorArray(1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1)
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_up21o"]
 gradient = SubResource("Gradient_b6mle")
 
-[sub_resource type="Gradient" id="Gradient_up21o"]
+[sub_resource type="Gradient" id="Gradient_amunn"]
 interpolation_mode = 1
-offsets = PackedFloat32Array(0, 0.948148)
-colors = PackedColorArray(0, 0, 0, 1, 0.84, 0.46396, 0.1764, 1)
+offsets = PackedFloat32Array(0.08888889, 0.7407407, 0.8888889, 0.9925926)
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1)
 
-[sub_resource type="GradientTexture1D" id="GradientTexture1D_4nwwe"]
-gradient = SubResource("Gradient_up21o")
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_nflje"]
+gradient = SubResource("Gradient_amunn")
+
+[sub_resource type="Gradient" id="Gradient_o5i4f"]
+interpolation_mode = 2
+offsets = PackedFloat32Array(0.18148148, 0.65555555)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_t8qet"]
+gradient = SubResource("Gradient_o5i4f")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_up21o"]
 render_priority = 1
 shader = ExtResource("1_b6mle")
-shader_parameter/in_lightwarp = SubResource("GradientTexture1D_q1c51")
-shader_parameter/in_specwarp = SubResource("GradientTexture1D_4nwwe")
+shader_parameter/in_lightwarp = SubResource("GradientTexture1D_axuya")
+shader_parameter/in_lightwarp_2 = SubResource("GradientTexture1D_8oi14")
+shader_parameter/in_lightwarp_2_fresnel = SubResource("GradientTexture1D_a3d87")
+shader_parameter/in_specwarp = SubResource("GradientTexture1D_nflje")
+shader_parameter/in_specwarp_fresnel = SubResource("GradientTexture1D_t8qet")
 shader_parameter/in_normal = ExtResource("2_qmnnx")
 shader_parameter/in_albedo = SubResource("GradientTexture1D_7mhr5")
 shader_parameter/in_paint_mask = SubResource("GradientTexture1D_up21o")
+shader_parameter/use_mesh_normals = false
 shader_parameter/cross_hatch = ExtResource("8_cross")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
-shader_parameter/livery_colour_strength = 0.0
-shader_parameter/livery_primary_colour = Color(1, 1, 1, 1)
-shader_parameter/livery_secondary_colour = Color(1, 1, 1, 1)
-shader_parameter/livery_accent_colour = Color(1, 1, 1, 1)
+shader_parameter/livery_colour_strength = 1.0
+shader_parameter/livery_primary_colour = Color(0.87, 0.66903, 0.20010002, 1)
+shader_parameter/livery_secondary_colour = Color(0.1829, 0.40001997, 0.59, 1)
+shader_parameter/livery_accent_colour = Color(0.8022583, 0.26569986, 0.13911137, 1)
+shader_parameter/diagnostic_mode = 0
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_faj4t"]
 render_priority = 0
 shader = ExtResource("4_up21o")
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_6e66t"]
 render_priority = -1
 shader = ExtResource("5_o2b3b")
 shader_parameter/base_outline_width = 1.0
 shader_parameter/trail_colour = Color(0.41, 0.1763, 0.0205, 1)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4psuq"]
 render_priority = -1
 shader = ExtResource("6_4nwwe")
 shader_parameter/base_outline_width = 1.0
 shader_parameter/outline_color = Color(0.41, 0.1763, 0.0205, 1)
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [node name="Node3D" type="Node3D" unique_id=59055563]
 

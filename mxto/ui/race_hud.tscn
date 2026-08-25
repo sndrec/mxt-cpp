@@ -18,8 +18,8 @@ outline_color = Color(0, 0, 0, 1)
 [sub_resource type="Gradient" id="Gradient_energy_meter"]
 interpolation_mode = 2
 interpolation_color_space = 1
-offsets = PackedFloat32Array(0, 0.11111111, 0.26666668, 0.46296296, 0.6148148, 0.7777778, 0.91851854)
-colors = PackedColorArray(0.34208658, 0, 0.17359453, 1, 0.8432599, 4.813075e-08, 0.4373656, 1, 1, 0.36173975, 0.24679643, 1, 0.29390544, 0.71602243, 0, 1, 0.40371332, 0.8312646, 1, 1, 0.86039454, 0.31650665, 1.0142753, 1, 1, 0.34204102, 0.31732348, 1)
+offsets = PackedFloat32Array(0, 0.12592593, 0.29259259, 0.43333334, 0.62222224, 0.73703706, 1)
+colors = PackedColorArray(0.94038117, 1.21289495e-05, 0.518021, 1, 1, 0.23000002, 0.30699992, 1, 1, 0.5866667, 0.19999999, 1, 0.41899997, 1, 0.17000002, 1, 0.27999997, 0.27999997, 1, 1, 0.7810002, 0.26999998, 1, 1, 1, 0.53852403, 0.49821866, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_energy_meter"]
 gradient = SubResource("Gradient_energy_meter")
