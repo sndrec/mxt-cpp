@@ -65,7 +65,7 @@ func create_stamp_material(base_material: Material = null, visibility_mask: Text
 	material.set_shader_parameter("stamp_visibility_mask", visibility_mask if visibility_mask != null else _get_white_visibility_mask())
 	var base_shader_material := base_material as ShaderMaterial
 	if base_shader_material != null:
-		for parameter in ["in_albedo", "in_normal", "in_lightwarp", "in_specwarp", "cross_hatch"]:
+		for parameter in ["in_albedo", "in_normal", "in_lightwarp", "in_lightwarp_2", "in_lightwarp_2_fresnel", "in_specwarp", "in_specwarp_fresnel"]:
 			var value = base_shader_material.get_shader_parameter(parameter)
 			if value != null:
 				material.set_shader_parameter(parameter, value)
