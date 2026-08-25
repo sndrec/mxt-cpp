@@ -21,10 +21,12 @@ void fragment() {
 	float segment_anchor = health_amount - health_to_deplete;
 	float segment_phase = fract((segment_anchor - energy_position) / max(boost_energy_cost, 0.001));
 	float segment_val = distance(segment_phase, 0.5);
+	float segment_bevel = pow(segment_val * 2.0, 16.0);
 	float seg_mix = max(dist_from_middle, segment_val);
 	seg_mix = pow(seg_mix * 2.0, 16.0);
 	vec2 segment_uv = vec2(segment_phase, use_uv.y);
-	float gradient_distortion = seg_mix + (segment_uv.x - segment_uv.y) * 0.4;
+	float segment_normal_x = segment_bevel * sign(segment_phase - 0.5);
+	float gradient_distortion = segment_normal_x + (segment_uv.x - segment_uv.y) * 0.4;
 	float gradient_x = clamp(UV.x + gradient_distortion * 0.2, 0.0, 1.0);
 	vec3 boost_available_color = texture(boost_available_gradient, vec2(gradient_x, 0.0)).rgb;
 	boost_available_color = boost_available_color * (1.0 - seg_mix * 0.4) - seg_mix * 0.2;
