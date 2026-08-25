@@ -5,6 +5,9 @@ render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, 
 uniform sampler2D plasma_texture : filter_linear_mipmap, repeat_disable;
 uniform sampler2D depth_texture : hint_depth_texture, repeat_disable, filter_nearest;
 uniform float depth_fade_distance : hint_range(0.01, 2.0, 0.01) = 0.35;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 vec3 srgb_to_linear(vec3 color) {
 	vec3 low = color / 12.92;
@@ -48,7 +51,12 @@ void fragment() {
 		0.0,
 		depth_fade_distance,
 		scene_depth - plasma_depth);
+	float coverage = depth_fade * COLOR.a * track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 
-	ALBEDO = srgb_to_linear(gx_accumulated) * depth_fade / reference_overlap;
-	ALPHA = 1.0;
+	ALBEDO = srgb_to_linear(gx_accumulated) / reference_overlap;
 }

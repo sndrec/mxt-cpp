@@ -334,11 +334,10 @@ func _process(delta: float) -> void:
 			_hide_label(index)
 			continue
 		var fade_ratio := clampf(float(slot.get("fade_elapsed", 0.0)) / FADE_SECONDS, 0.0, 1.0) if state == "fading" else 0.0
-		var transparency := lerpf(BASE_TRANSPARENCY, 1.0, fade_ratio)
+		var visibility := 1.0 - lerpf(BASE_TRANSPARENCY, 1.0, fade_ratio)
 		var slot_index := clampi(int(slot.get("slot_index", index)), 0, SLOT_COLORS.size() - 1)
 		var color := SLOT_COLORS[slot_index]
 		var transform := sim.get_player_render_transform(int(slot.get("racer_id", -1)))
-		render_manager.set_manual_car_transparency(index, transparency)
 		render_manager.submit_manual_car(
 			index,
 			transform,
@@ -349,7 +348,8 @@ func _process(delta: float) -> void:
 			false,
 			false,
 			false,
-			false)
+			false,
+			visibility)
 		_update_label(index, transform, 1.0 - fade_ratio, camera, hud_hidden)
 	var render_us := Time.get_ticks_usec() - render_start_us
 	render_frame_count += 1

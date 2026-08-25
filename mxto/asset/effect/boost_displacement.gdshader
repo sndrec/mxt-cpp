@@ -1,10 +1,13 @@
 shader_type spatial;
 
-render_mode unshaded, blend_mix, skip_vertex_transform, depth_test_disabled;
+render_mode unshaded, skip_vertex_transform, depth_test_disabled, depth_draw_never;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color,filter_linear_mipmap,repeat_enable;
 global uniform sampler2D vehicle_screen_tex : repeat_disable, filter_linear_mipmap;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 void vertex()
 {
@@ -21,6 +24,11 @@ void vertex()
 
 void fragment() {
 	vec3 particle_tex = texture(texture_albedo, UV).rgb;
+	float coverage = particle_tex.r * COLOR.a * track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 	ALBEDO = texture(vehicle_screen_tex, SCREEN_UV + vec2((particle_tex.r - 0.5) * -(SCREEN_UV.x - 0.5), (particle_tex.r - 0.5) * -(SCREEN_UV.y - 0.5)) * COLOR.r).rgb * 2.0;
-	ALPHA = particle_tex.r * COLOR.a;
 }

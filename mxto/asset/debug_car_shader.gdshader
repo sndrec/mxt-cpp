@@ -1,13 +1,22 @@
 // NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
 
 uniform vec4 albedo : source_color;
 uniform float shininess		: hint_range(1.0, 256.0) = 32.0;	// higher = tighter highlight
 uniform float spec_strength	: hint_range(0.0, 10.0) = 2.0;	// overall multiplier
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 void fragment() {
+	float coverage = track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 	ALBEDO = albedo.rgb;
 	ROUGHNESS = 1.0;
 }

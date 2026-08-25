@@ -4,14 +4,20 @@
 
 [sub_resource type="Shader" id="Shader_q4p32"]
 code = "shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_disabled, unshaded;
+render_mode depth_draw_always, cull_disabled, unshaded;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform ivec2 albedo_texture_size;
 uniform float point_size : hint_range(0.1, 128.0, 0.1);
+global uniform float fog_dist;
+
+#include \"res://asset/shader/ordered_dither.gdshaderinc\"
+
+varying flat float instance_visibility;
 
 void vertex() {
+	instance_visibility = INSTANCE_CUSTOM.a;
 	float thrust_scale = max(INSTANCE_CUSTOM.x, 0.0);
 	VERTEX.x *= (sin(TIME * 120.0 + INSTANCE_CUSTOM.y) * 0.1 + 1.2) * thrust_scale;
 	VERTEX.y *= (cos(TIME * 90.0 + INSTANCE_CUSTOM.y) * 0.02 + 0.75) * thrust_scale;
@@ -43,12 +49,14 @@ void fragment() {
 	float albedo_float = albedo_tex.r + 0.49;
 	float outline = round(albedo_float);
 	float inline = round(albedo_float - 0.1);
-	ALPHA = outline;
-	ALBEDO = vec3(outline * 0.5 + inline) * vec3(0.3, 0.7, 1.0) * 0.75;
-	DEPTH = FRAGCOORD.z * 1.1;
-	if (outline <= 0.0) {
+	float coverage = outline * instance_visibility * track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
 		discard;
 	}
+	ALBEDO = vec3(outline * 0.5 + inline) * vec3(0.3, 0.7, 1.0) * 0.75;
+	DEPTH = FRAGCOORD.z * 1.1;
 }
 "
 

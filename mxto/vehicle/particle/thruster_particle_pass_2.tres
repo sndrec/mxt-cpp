@@ -4,7 +4,7 @@
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_front, unshaded;
+render_mode depth_draw_always, cull_front, unshaded;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
@@ -24,6 +24,9 @@ uniform vec3 uv1_scale;
 uniform vec3 uv1_offset;
 uniform vec3 uv2_scale;
 uniform vec3 uv2_offset;
+global uniform float fog_dist;
+
+#include \"res://asset/shader/ordered_dither.gdshaderinc\"
 
 void vertex() {
 	UV = UV * uv1_scale.xy + uv1_offset.xy;
@@ -34,6 +37,12 @@ void vertex() {
 
 void fragment() {
 	vec2 base_uv = UV;
+	float coverage = track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 
 	vec4 albedo_tex = texture(texture_albedo, base_uv);
 

@@ -1,10 +1,13 @@
 shader_type spatial;
 
-render_mode unshaded, blend_mix, skip_vertex_transform, cull_back, depth_draw_never, world_vertex_coords;
+render_mode unshaded, skip_vertex_transform, cull_back, depth_draw_never, world_vertex_coords;
 stencil_mode read, compare_not_equal, 1;
 
 uniform float base_outline_width;
 uniform vec3 trail_colour : source_color;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 varying flat vec2	v_line_o;			// screen-space origin  (0-1)
 varying flat vec2	v_line_d;			// screen-space direction tail-o
 varying float use_outline_width;
@@ -56,9 +59,14 @@ void fragment() {
 	// param along the projected line, 0 at origin, 1 at tail
 	if (length(in_velocity) < 0.001)
 	{
-		ALBEDO = vec3(0.0);
-		ALPHA = 0.0;
+		discard;
 	}else{
+		float coverage = track_distance_fade_coverage(VERTEX, fog_dist) * COLOR.a;
+		float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+		threshold = mix(0.5, threshold, dither_strength);
+		if (coverage < threshold) {
+			discard;
+		}
 		vec2 scaled_suv = SCREEN_UV * VIEWPORT_SIZE;
 		float len2	= max(dot(v_line_d, v_line_d), 1e-8);
 		float t		= dot(scaled_suv - v_line_o, v_line_d) / len2;
@@ -81,9 +89,6 @@ void fragment() {
 
 		/* final 2-D UV */
 		vec2 uv			= vec2(x, t);
-		float alpha_scale = min(0.0, length(in_velocity) * 0.01);
-		//ALPHA = min(1.0, alpha_scale + pow(1.0 - t * 0.7, 4.0));
 		ALBEDO = trail_colour + COLOR.rgb;
-		ALPHA = 1.0;
 	}
 }

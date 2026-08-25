@@ -11,6 +11,9 @@ uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disabl
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 varying vec4 stamp_mask_data;
 varying float stamp_source_flag;
@@ -78,8 +81,10 @@ void fragment() {
 	vec4 stamp = mix(base_stamp, custom_stamp, step(0.5, stamp_source_flag)) * COLOR;
 	vec2 visibility_mask = texture(stamp_visibility_mask, stamp_mask_data.xy).rg;
 	float visibility = mix(1.0, step(visibility_mask.r - stamp_mask_data.w, stamp_mask_data.z), step(0.5, visibility_mask.g));
-	float stamp_alpha = clamp(stamp.a * visibility, 0.0, 1.0);
-	if (stamp_alpha <= 0.5) {
+	float coverage = clamp(stamp.a * visibility, 0.0, 1.0) * track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
 		discard;
 	}
 	vec3 stamp_multiply = clamp(stamp.rgb, vec3(0.0), vec3(1.0));

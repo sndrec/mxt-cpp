@@ -16,6 +16,9 @@ uniform vec3 livery_primary_colour : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 livery_secondary_colour : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 livery_accent_colour : source_color = vec3(1.0, 1.0, 1.0);
 uniform int diagnostic_mode = 0;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 varying vec2 use_screen_pixel;
 varying vec3 hatch_normal;
@@ -71,6 +74,12 @@ float lighting_aligned_hatch(vec2 screen_pixel, vec3 normal, vec3 light_directio
 }
 
 void fragment() {
+	float coverage = track_distance_fade_coverage(VERTEX, fog_dist) * COLOR.a;
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 	use_screen_pixel = SCREEN_UV * VIEWPORT_SIZE;
 	vec3 normal_1 = texture(in_normal, UV).rgb * 2.0 - 1.0;
 	//vec3 normal_2 = texture(in_normal, UV + vec2(-0.002, 0.001)).rgb * 2.0 - 1.0;

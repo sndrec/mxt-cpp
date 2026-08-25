@@ -349,7 +349,7 @@ func begin_manual_submit() -> void:
 		var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 		thruster_multimesh.visible_instance_count = 0
 
-func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true, isolated: bool = false, submit_shadow: bool = true, submit_thrusters: bool = true) -> void:
+func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true, isolated: bool = false, submit_shadow: bool = true, submit_thrusters: bool = true, visibility: float = 1.0) -> void:
 	if index < 0 or index >= car_archetype_indices.size() or index >= car_slots.size():
 		return
 	var archetype_index := car_archetype_indices[index]
@@ -357,14 +357,15 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 	if archetype_index < 0 or archetype_index >= archetypes.size() or slot < 0:
 		return
 	var archetype: Dictionary = archetypes[archetype_index]
-	_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], Vector3.ZERO, body_overlay)
+	visibility = clampf(visibility, 0.0, 1.0)
+	_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], Vector3.ZERO, body_overlay, visibility)
 	if _pass_has_mesh(archetype[PASS_STAMP]):
-		_set_pass_instance(archetype[PASS_STAMP], slot, body_transform * archetype[PASS_STAMP]["local_transform"], Vector3.ZERO, Color.WHITE)
+		_set_pass_instance(archetype[PASS_STAMP], slot, body_transform * archetype[PASS_STAMP]["local_transform"], Vector3.ZERO, Color.WHITE, visibility)
 	if submit_outlines:
-		_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
-		_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
+		_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay, visibility)
+		_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK, visibility)
 	if submit_shadow:
-		_set_pass_instance(archetype["shadow"], slot, body_transform * archetype["shadow"]["local_transform"], Vector3.ZERO, Color.WHITE)
+		_set_pass_instance(archetype["shadow"], slot, body_transform * archetype["shadow"]["local_transform"], Vector3.ZERO, Color.WHITE, visibility)
 	for pass_name in [PASS_MAIN]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
@@ -392,21 +393,8 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 			var thruster_slot := slot * thruster_locals.size() + i
 			thruster_multimesh.set_instance_transform(thruster_slot, body_transform * thruster_locals[i])
 			thruster_multimesh.set_instance_color(thruster_slot, Color(thrust, thrust, thrust, thrust))
-			thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, 1.0))
+			thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, visibility))
 		thruster_multimesh.visible_instance_count = max(thruster_multimesh.visible_instance_count, slot * thruster_locals.size() + thruster_locals.size())
-
-func set_manual_car_transparency(index: int, transparency: float) -> void:
-	if index < 0 or index >= car_archetype_indices.size():
-		return
-	var archetype_index := car_archetype_indices[index]
-	if archetype_index < 0 or archetype_index >= archetypes.size():
-		return
-	var archetype: Dictionary = archetypes[archetype_index]
-	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, PASS_STAMP, "thruster"]:
-		var pass_data: Dictionary = archetype[pass_name]
-		var node: GeometryInstance3D = pass_data.get("node", null)
-		if node != null:
-			node.transparency = clampf(transparency, 0.0, 1.0)
 
 func get_native_render_bindings() -> Dictionary:
 	var multimeshes: Array = []
@@ -816,12 +804,13 @@ func _park_multimesh_instances(multimesh: MultiMesh, start: int, end: int) -> vo
 		multimesh.set_instance_color(i, Color(0.0, 0.0, 0.0, 0.0))
 		multimesh.set_instance_custom_data(i, Color(0.0, 0.0, 0.0, 0.0))
 
-func _set_pass_instance(pass_data: Dictionary, slot: int, transform: Transform3D, custom_vec: Vector3, color: Color) -> void:
+func _set_pass_instance(pass_data: Dictionary, slot: int, transform: Transform3D, custom_vec: Vector3, color: Color, visibility: float) -> void:
 	var multimesh: MultiMesh = pass_data["multimesh"]
 	if multimesh.mesh == null:
 		return
 	multimesh.set_instance_transform(slot, transform)
 	multimesh.set_instance_custom_data(slot, Color(custom_vec.x, custom_vec.y, custom_vec.z, 1.0))
+	color.a *= visibility
 	multimesh.set_instance_color(slot, color)
 
 func _pass_has_mesh(pass_data: Dictionary) -> bool:

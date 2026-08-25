@@ -3,6 +3,9 @@ shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, skip_vertex_transform;
 
 uniform sampler2D spark_texture : source_color, filter_linear, repeat_disable;
+global uniform float fog_dist;
+
+#include "res://asset/shader/ordered_dither.gdshaderinc"
 
 varying flat float brightness_compensation;
 
@@ -41,8 +44,13 @@ void vertex() {
 
 void fragment() {
 	vec4 spark = texture(spark_texture, UV);
+	float coverage = spark.a * COLOR.a * track_distance_fade_coverage(VERTEX, fog_dist);
+	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
+	threshold = mix(0.5, threshold, dither_strength);
+	if (coverage < threshold) {
+		discard;
+	}
 	vec3 color = spark.rgb * COLOR.rgb * brightness_compensation;
 	ALBEDO = color;
 	EMISSION = color;
-	ALPHA = spark.a * COLOR.a;
 }
