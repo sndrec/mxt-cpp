@@ -8,7 +8,12 @@ uniform float boost_energy_cost = 15.0;
 uniform sampler2D boost_available_gradient : source_color, filter_linear, repeat_disable;
 
 void fragment() {
-	const float meter_skew = 0.05;
+	const float edge_horizontal_per_vertical = 0.3;
+	vec2 base_uv_pixel_width = max(fwidth(UV), vec2(0.000001));
+	float meter_skew = min(
+		edge_horizontal_per_vertical * base_uv_pixel_width.x / base_uv_pixel_width.y,
+		0.95
+	);
 	vec2 use_uv = UV;
 	use_uv.x = (UV.x - UV.y * meter_skew) / (1.0 - meter_skew);
 	float dist_from_middle = distance(0.5, use_uv.y);
