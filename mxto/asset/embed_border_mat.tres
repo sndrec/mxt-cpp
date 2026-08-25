@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://asset/shader/track_solid.gdshader" id="1_border"]
+
+[resource]
+resource_name = "embed_border"
+render_priority = 0
+shader = ExtResource("1_border")
+shader_parameter/albedo = Color(0.6, 0.6, 0.6, 1)
+shader_parameter/emission_color = Color(0, 0, 0, 1)
+shader_parameter/emission_energy = 1.0
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true

@@ -5,6 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://bcxct02is641s" path="res://asset/dashplate/chevrons.png" id="2_vie6p"]
 [ext_resource type="Shader" uid="uid://bu8p2alsewfwi" path="res://asset/dashplate/treadmill.gdshader" id="4_h1gqj"]
 [ext_resource type="Texture2D" uid="uid://dxo0eo5r1bwdo" path="res://asset/dashplate/treadmill.png" id="5_a5fms"]
+[ext_resource type="Shader" path="res://asset/shader/track_solid.gdshader" id="6_solid"]
 
 [sub_resource type="Gradient" id="Gradient_1uod1"]
 interpolation_color_space = 1
@@ -24,13 +25,14 @@ shader_parameter/booster_color_ramp = SubResource("GradientTexture1D_uhon1")
 shader_parameter/booster_intensity = 1.0
 shader_parameter/boost_time = 0.0
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6wn1s"]
+[sub_resource type="ShaderMaterial" id="StandardMaterial3D_6wn1s"]
 resource_name = "Material.002"
-cull_mode = 2
-albedo_color = Color(0.29544, 0.29544, 0.29544, 1)
-emission_enabled = true
-emission = Color(0.93774, 0.536197, 7.70092e-07, 1)
-emission_energy_multiplier = 2.0
+shader = ExtResource("6_solid")
+shader_parameter/albedo = Color(0.29544, 0.29544, 0.29544, 1)
+shader_parameter/emission_color = Color(0.93774, 0.536197, 7.70092e-07, 1)
+shader_parameter/emission_energy = 2.0
+shader_parameter/dither_strength = 1.0
+shader_parameter/screen_space_dither = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_octq2"]
 render_priority = 0

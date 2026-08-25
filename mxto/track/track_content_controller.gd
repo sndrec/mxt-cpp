@@ -443,6 +443,8 @@ func _track_material_for_name(material_name: String) -> Material:
 		return preload("res://asset/debug_track_mat.tres")
 	if material_name == "track_rail":
 		return preload("res://asset/debug_rail_mat.tres")
+	if material_name == "embed_border":
+		return preload("res://asset/embed_border_mat.tres")
 	if material_name == "embed_dirt":
 		return preload("res://asset/dirt_mat.tres")
 	if material_name == "embed_recharge":
