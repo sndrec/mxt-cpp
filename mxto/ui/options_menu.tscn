@@ -346,6 +346,35 @@ layout_mode = 2
 text = "Current"
 horizontal_alignment = 2
 
+[node name="Scale3DRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox"]
+layout_mode = 2
+
+[node name="Scale3DLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/Scale3DRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "3D Render Scale"
+tooltip_text = "Resolution scale used to render the 3D scene."
+
+[node name="Scale3DSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/Scale3DRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.25
+max_value = 2.0
+step = 0.05
+value = 2.0
+tooltip_text = "Resolution scale used to render the 3D scene."
+
+[node name="Scale3DSpinBox" type="SpinBox" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/Scale3DRow"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+min_value = 0.25
+max_value = 2.0
+step = 0.05
+value = 2.0
+suffix = "x"
+tooltip_text = "Enter a 3D render scale from 0.25x to 2.00x."
+
 [node name="CurrentDisplayLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox"]
 layout_mode = 2
 text = "Current monitor mode: detecting..."

@@ -19,6 +19,9 @@ const VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER := 1.0
 const VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER := 3.0
 const VEHICLE_VIEW_DISTANCE_STEP := 0.25
 const VEHICLE_VIEW_DISTANCE_ALL_VALUE := VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER + VEHICLE_VIEW_DISTANCE_STEP
+const SCALING_3D_SCALE_MIN := 0.25
+const SCALING_3D_SCALE_MAX := 2.0
+const SCALING_3D_SCALE_STEP := 0.05
 
 @onready var close_button: Button = $Shade/Center/Panel/Margin/Root/Header/CloseButton
 @onready var voice_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow/VoiceModeOption
@@ -44,6 +47,8 @@ const VEHICLE_VIEW_DISTANCE_ALL_VALUE := VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER + 
 @onready var graphics_fps_limit_spin_box: SpinBox = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/FPSLimitRow/FPSLimitSpinBox
 @onready var graphics_vehicle_view_distance_slider: HSlider = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow/VehicleViewDistanceSlider
 @onready var graphics_vehicle_view_distance_value: Label = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VehicleViewDistanceRow/VehicleViewDistanceValue
+@onready var graphics_3d_scale_slider: HSlider = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/Scale3DRow/Scale3DSlider
+@onready var graphics_3d_scale_spin_box: SpinBox = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/Scale3DRow/Scale3DSpinBox
 @onready var graphics_current_display_label: Label = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/CurrentDisplayLabel
 @onready var controller_settings: Control = $Shade/Center/Panel/Margin/Root/Tabs/Controls/ControllerSettings
 
@@ -62,6 +67,7 @@ var graphics_vsync_mode := DisplayServer.VSYNC_ENABLED
 var graphics_fps_limit := FPS_LIMIT_DEFAULT
 var graphics_vehicle_view_distance_multiplier := VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER
 var graphics_render_all_vehicles := false
+var graphics_3d_scale := SCALING_3D_SCALE_MAX
 var graphics_controls_loading := false
 
 func _ready() -> void:
@@ -78,6 +84,8 @@ func _ready() -> void:
 	graphics_vsync_mode_option.item_selected.connect(_on_graphics_vsync_mode_selected)
 	graphics_fps_limit_spin_box.value_changed.connect(_on_graphics_fps_limit_changed)
 	graphics_vehicle_view_distance_slider.value_changed.connect(_on_graphics_vehicle_view_distance_changed)
+	graphics_3d_scale_slider.value_changed.connect(_on_graphics_3d_scale_changed)
+	graphics_3d_scale_spin_box.value_changed.connect(_on_graphics_3d_scale_changed)
 	if controller_settings != null and controller_settings.has_method("set_embedded_mode"):
 		controller_settings.call("set_embedded_mode", true)
 	_load_voice_settings()
@@ -206,6 +214,8 @@ func _update_graphics_controls() -> void:
 	graphics_fps_limit_spin_box.value = graphics_fps_limit
 	graphics_vehicle_view_distance_slider.value = VEHICLE_VIEW_DISTANCE_ALL_VALUE if graphics_render_all_vehicles else graphics_vehicle_view_distance_multiplier
 	_update_vehicle_view_distance_label()
+	graphics_3d_scale_slider.value = graphics_3d_scale
+	graphics_3d_scale_spin_box.value = graphics_3d_scale
 	_update_current_display_label()
 	graphics_controls_loading = false
 
@@ -258,8 +268,23 @@ func get_vehicle_view_distance_multiplier() -> float:
 func get_render_all_vehicles() -> bool:
 	return graphics_render_all_vehicles
 
+func _on_graphics_3d_scale_changed(value: float) -> void:
+	if graphics_controls_loading:
+		return
+	graphics_3d_scale = clampf(
+		snappedf(value, SCALING_3D_SCALE_STEP),
+		SCALING_3D_SCALE_MIN,
+		SCALING_3D_SCALE_MAX)
+	graphics_controls_loading = true
+	graphics_3d_scale_slider.set_value_no_signal(graphics_3d_scale)
+	graphics_3d_scale_spin_box.set_value_no_signal(graphics_3d_scale)
+	graphics_controls_loading = false
+	_apply_graphics_3d_scale()
+	_save_graphics_settings()
+
 func _apply_graphics_settings() -> void:
 	Engine.max_fps = graphics_fps_limit
+	_apply_graphics_3d_scale()
 	if DisplayServer.get_name() == "headless":
 		_update_current_display_label()
 		return
@@ -274,6 +299,11 @@ func _apply_graphics_window_mode() -> void:
 func _apply_graphics_vsync_mode() -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_vsync_mode(graphics_vsync_mode)
+
+func _apply_graphics_3d_scale() -> void:
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.scaling_3d_scale = graphics_3d_scale
 
 func _update_current_display_label() -> void:
 	if DisplayServer.get_name() == "headless":
@@ -505,6 +535,7 @@ func _save_graphics_settings() -> void:
 		"fps_limit": graphics_fps_limit,
 		"vehicle_view_distance_multiplier": graphics_vehicle_view_distance_multiplier,
 		"render_all_vehicles": graphics_render_all_vehicles,
+		"scaling_3d_scale": graphics_3d_scale,
 	}
 	var file := FileAccess.open(GRAPHICS_SETTINGS_PATH, FileAccess.WRITE)
 	if file:
@@ -517,6 +548,10 @@ func _load_graphics_settings() -> void:
 	graphics_fps_limit = Engine.max_fps
 	graphics_vehicle_view_distance_multiplier = VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER
 	graphics_render_all_vehicles = false
+	graphics_3d_scale = clampf(
+		get_viewport().scaling_3d_scale,
+		SCALING_3D_SCALE_MIN,
+		SCALING_3D_SCALE_MAX)
 	if graphics_fps_limit < FPS_LIMIT_MIN or graphics_fps_limit > FPS_LIMIT_MAX:
 		graphics_fps_limit = FPS_LIMIT_DEFAULT
 	if DisplayServer.get_name() != "headless":
@@ -544,3 +579,7 @@ func _load_graphics_settings() -> void:
 		VEHICLE_VIEW_DISTANCE_MIN_MULTIPLIER,
 		VEHICLE_VIEW_DISTANCE_MAX_MULTIPLIER)
 	graphics_render_all_vehicles = bool(data.get("render_all_vehicles", graphics_render_all_vehicles))
+	graphics_3d_scale = clampf(
+		snappedf(float(data.get("scaling_3d_scale", graphics_3d_scale)), SCALING_3D_SCALE_STEP),
+		SCALING_3D_SCALE_MIN,
+		SCALING_3D_SCALE_MAX)
