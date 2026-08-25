@@ -99,6 +99,7 @@ var air_tilt := 0.0
 var energy := 0.0
 var calced_max_energy := 100.0
 var boost_energy_use_rate := 1.0
+var manual_boost_duration_seconds := 1.0
 var s_boost_charge := 0
 var s_boost_charge_max := 60
 var s_boost_active := false
@@ -339,7 +340,8 @@ func apply_sim_state(
 	in_track_surface_pos: Vector3,
 	in_calced_max_energy: float = 100.0,
 	in_attack_cooldown_frames: int = 0,
-	in_boost_energy_use_rate: float = 1.0
+	in_boost_energy_use_rate: float = 1.0,
+	in_manual_boost_duration_seconds: float = 1.0
 ) -> void:
 	position_current = in_position_current
 	position_old = in_position_old
@@ -394,6 +396,7 @@ func apply_sim_state(
 	calced_max_energy = in_calced_max_energy
 	attack_cooldown_frames = in_attack_cooldown_frames
 	boost_energy_use_rate = in_boost_energy_use_rate
+	manual_boost_duration_seconds = in_manual_boost_duration_seconds
 	if !is_processing():
 		_apply_low_cost_visual_state()
 

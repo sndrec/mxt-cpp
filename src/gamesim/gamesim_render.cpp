@@ -112,6 +112,7 @@ static godot::Transform3D build_camera_transform(const godot::Vector3& position,
 		visual_args[50] = car.soa->calced_max_energy[car.soa_index];
 		visual_args[51] = static_cast<int>(car.soa->attack_cooldown_frames[car.soa_index]);
 		visual_args[52] = car.soa->boost_energy_use_mult[car.soa_index];
+		visual_args[53] = car.soa->stat_manual_boost_duration_seconds[car.soa_index];
 	}
 
 static inline godot::AABB gd_aabb(const SimAABB& b)
@@ -1810,7 +1811,7 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		godot::Array local_visual_args;
-		local_visual_args.resize(53);
+		local_visual_args.resize(54);
 		for (int i = 0; i < vis_cars.size(); i++) {
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {

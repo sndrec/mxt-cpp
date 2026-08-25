@@ -572,8 +572,10 @@ func _process( _delta:float ) -> void:
 	health_meter_shader.set_shader_parameter(
 		"can_boost",
 		boost_unlocked_from_start or car.lap > 1)
-	var boost_health_total_cost : float = float(car.boost_frames_manual) * 0.1666666667 * boost_energy_use_rate
-	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
+	var remaining_boost_energy_cost := float(car.boost_frames_manual) * 0.1666666667 * boost_energy_use_rate
+	health_meter_shader.set_shader_parameter("health_to_deplete", remaining_boost_energy_cost)
+	var full_boost_energy_cost := car.manual_boost_duration_seconds * 10.0 * boost_energy_use_rate
+	health_meter_shader.set_shader_parameter("boost_energy_cost", full_boost_energy_cost)
 	
 	var time_until_start : float = float(official_start_tick - use_tick) / 60
 	countdown_arrow.rotation_degrees = 360 - minf(270, (time_until_start * 90))
