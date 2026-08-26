@@ -1087,6 +1087,23 @@ godot::Transform3D GameSim::get_car_render_transform(int car_index) const
 	return gd_transform(render_transform);
 }
 
+godot::Transform3D GameSim::get_bumper_render_transform(int bumper_slot) const
+{
+	const int render_index = num_cars + bumper_slot;
+	if (bumper_slot < 0 ||
+			bumper_slot >= bumper_count ||
+			render_index >= static_cast<int>(render_final_current_transforms.size()) ||
+			render_index >= static_cast<int>(render_final_prev_transforms.size())) {
+		return godot::Transform3D();
+	}
+	Engine* engine = Engine::get_singleton();
+	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	return gd_transform(interpolate_sim_transform(
+		render_final_prev_transforms[render_index],
+		render_final_current_transforms[render_index],
+		alpha));
+}
+
 godot::Transform3D GameSim::get_saved_player_voice_transform(int player_id, int target_tick) const
 {
 	if (target_tick < 0) {

@@ -291,6 +291,7 @@ struct NetStateReader {
 	X(uint16_t, boost_duration_dash_frames) \
 	X(uint32_t, last_hit_tick) \
 	X(uint32_t, last_machine_hit_tick) \
+	X(uint32_t, last_bumper_hit_tick) \
 	X(uint8_t, spinattack_direction) \
 	X(uint8_t, brake_timer) \
 	X(uint32_t, terrain_state) \
@@ -325,6 +326,7 @@ struct NetStateReader {
 	X(uint8_t, pending_super_sparks) \
 	X(bool, has_last_hit_tick) \
 	X(bool, has_last_machine_hit_tick) \
+	X(bool, has_last_bumper_hit_tick) \
 	X(bool, machine_crashed) \
 	X(bool, s_boost_active) \
 	X(bool, broken_lap_rollback_pending) \

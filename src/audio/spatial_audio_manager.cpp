@@ -27,6 +27,27 @@ static constexpr float MXT_ENGINE_DOPPLER_MAX_PITCH = 1.08f;
 static constexpr float MXT_ENGINE_REAR_APPROACH_MAX_GAIN_DB = 15.0f;
 static constexpr float MXT_ENGINE_REAR_APPROACH_FULL_CLOSING_SPEED = 2.5f;
 static constexpr float MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT = -0.10f;
+static constexpr int MXT_AUDIO_BUMPER_ID_BASE = 0x40000000;
+
+static bool mxt_audio_is_bumper_id(int audio_source_id)
+{
+	return audio_source_id >= MXT_AUDIO_BUMPER_ID_BASE;
+}
+
+static int mxt_audio_bumper_slot(int audio_source_id)
+{
+	return audio_source_id - MXT_AUDIO_BUMPER_ID_BASE;
+}
+
+static float mxt_audio_bumper_honk_pitch(int car_index, uint32_t collision_tick)
+{
+	uint32_t hash = collision_tick ^ (static_cast<uint32_t>(car_index) * 0x9e3779b9u);
+	hash ^= hash >> 16;
+	hash *= 0x7feb352du;
+	hash ^= hash >> 15;
+	const float unit = static_cast<float>(hash & 0xffffu) * (1.0f / 65535.0f);
+	return 0.9f + unit * 0.2f;
+}
 
 static float mxt_audio_clamp_float(float value, float min_value, float max_value)
 {
@@ -1031,6 +1052,11 @@ void MxtSpatialAudioManager::collect_vehicle_candidates(GameSim* sim)
 	if (!sim || !sim->sim_started || sim->num_cars <= 0 || vehicle_emitters.empty()) {
 		return;
 	}
+	const size_t required_capacity = static_cast<size_t>(sim->num_cars +
+		(sim->bumpers_enabled ? std::max(sim->bumper_count, 0) : 0));
+	if (vehicle_candidates.capacity() < required_capacity) {
+		vehicle_candidates.reserve(required_capacity);
+	}
 
 	Vector3 local_origin;
 	if (local_vehicle_car_index >= 0 && local_vehicle_car_index < sim->num_cars) {
@@ -1039,30 +1065,42 @@ void MxtSpatialAudioManager::collect_vehicle_candidates(GameSim* sim)
 		local_origin = sim->get_car_render_transform(0).origin;
 	}
 	const float max_distance_sq = vehicle_max_distance > 0.0f ? vehicle_max_distance * vehicle_max_distance : 0.0f;
-	for (int car_index = 0; car_index < sim->num_cars; ++car_index) {
-		if (car_index == local_vehicle_car_index) {
-			continue;
-		}
-		const Transform3D transform = sim->get_car_render_transform(car_index);
+	auto insert_candidate = [&](int audio_source_id, const Transform3D& transform) {
 		const float dist_sq = static_cast<float>(local_origin.distance_squared_to(transform.origin));
 		if (max_distance_sq > 0.0f && dist_sq > max_distance_sq) {
-			continue;
+			return;
 		}
 		VehicleCandidate candidate;
-		candidate.car_index = car_index;
+		candidate.car_index = audio_source_id;
 		candidate.distance_sq = dist_sq;
 		candidate.transform = transform;
-
 		size_t insert_at = 0;
 		while (insert_at < vehicle_candidates.size() && vehicle_candidates[insert_at].distance_sq <= dist_sq) {
 			++insert_at;
 		}
 		vehicle_candidates.push_back(candidate);
-		if (insert_at < vehicle_candidates.size()) {
-			for (size_t i = vehicle_candidates.size() - 1; i > insert_at; --i) {
-				vehicle_candidates[i] = vehicle_candidates[i - 1];
+		for (size_t i = vehicle_candidates.size() - 1; i > insert_at; --i) {
+			vehicle_candidates[i] = vehicle_candidates[i - 1];
+		}
+		vehicle_candidates[insert_at] = candidate;
+	};
+	for (int car_index = 0; car_index < sim->num_cars; ++car_index) {
+		if (car_index == local_vehicle_car_index) {
+			continue;
+		}
+		insert_candidate(car_index, sim->get_car_render_transform(car_index));
+	}
+	if (sim->bumpers_enabled && sim->bumper_cars) {
+		for (int bumper_slot = 0; bumper_slot < sim->bumper_count; ++bumper_slot) {
+			const PhysicsCar& bumper = sim->bumper_cars[bumper_slot];
+			const PhysicsCarSoA& soa = *bumper.soa;
+			const int lane = bumper.soa_index;
+			if ((soa.machine_state[lane] & MACHINESTATE::ACTIVE) == 0u ||
+					(soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u) {
+				continue;
 			}
-			vehicle_candidates[insert_at] = candidate;
+			insert_candidate(MXT_AUDIO_BUMPER_ID_BASE + bumper_slot,
+				sim->get_bumper_render_transform(bumper_slot));
 		}
 	}
 }
@@ -1180,6 +1218,9 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName active_start_sfx("active_start");
 	static const StringName thrust_on_sfx("thrust_on");
 	static const StringName zero_hp_sfx("zero_hp");
+	static const StringName bumper_engine_key("bumper_engine");
+	static const StringName bumper_engine_sfx("bumper_engine");
+	static const StringName bumper_honk_sfx("bumper_honk");
 	static const StringName gx_engine_keys[5] = {
 		StringName("gx_engine_0"),
 		StringName("gx_engine_1"),
@@ -1218,7 +1259,29 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	const float vehicle_loop_lerp_weight = std::min(1.0f, delta_f * 12.0f);
 
 	for (Emitter& emitter : vehicle_emitters) {
-		if (emitter.fade_remaining > 0.0f || emitter.car_index < 0 || emitter.car_index >= sim->num_cars) {
+		if (emitter.fade_remaining > 0.0f || emitter.car_index < 0) {
+			continue;
+		}
+		if (mxt_audio_is_bumper_id(emitter.car_index)) {
+			const int bumper_slot = mxt_audio_bumper_slot(emitter.car_index);
+			const bool valid_bumper = sim->bumpers_enabled && sim->bumper_cars &&
+				bumper_slot >= 0 && bumper_slot < sim->bumper_count;
+			bool bumper_audible = false;
+			if (valid_bumper) {
+				const PhysicsCar& bumper = sim->bumper_cars[bumper_slot];
+				const PhysicsCarSoA& soa = *bumper.soa;
+				const int lane = bumper.soa_index;
+				bumper_audible = (soa.machine_state[lane] & MACHINESTATE::ACTIVE) != 0u &&
+					(soa.machine_state[lane] & MACHINESTATE::ZEROHP) == 0u;
+			}
+			if (bumper_audible) {
+				set_loop_on_emitter(emitter, bumper_engine_key, bumper_engine_sfx, 0.0f, 1.0f);
+			} else if (find_loop_stream(emitter, bumper_engine_key) >= 0) {
+				stop_loop_on_emitter(emitter, bumper_engine_key);
+			}
+			continue;
+		}
+		if (emitter.car_index >= sim->num_cars) {
 			continue;
 		}
 
@@ -1248,6 +1311,13 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
 				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
 				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
+				loop_state.previous_last_bumper_hit_tick = soa.last_bumper_hit_tick[lane];
+				loop_state.previous_last_bumper_hit_initialized = soa.has_last_bumper_hit_tick[lane];
+				if (car_audible && soa.has_last_bumper_hit_tick[lane] &&
+						soa.last_bumper_hit_tick[lane] == car_sim_tick) {
+					play_on_emitter(emitter, bumper_honk_sfx, 0.0f,
+						mxt_audio_bumper_honk_pitch(emitter.car_index, soa.last_bumper_hit_tick[lane]));
+				}
 				loop_state.previous_input_accel = soa.input_accel[lane];
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
@@ -1284,6 +1354,12 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						mxt_audio_gx_machine_collision_heavy(soa.last_machine_hit_sfx_strength[lane]) ?
 						machine_collision_heavy_sfx : machine_collision_medium_sfx;
 					play_on_emitter(emitter, selected_machine_hit_sfx, -5.0f, 1.0f);
+				}
+				if (car_audible && soa.has_last_bumper_hit_tick[lane] &&
+					(!loop_state.previous_last_bumper_hit_initialized ||
+						soa.last_bumper_hit_tick[lane] != loop_state.previous_last_bumper_hit_tick)) {
+					play_on_emitter(emitter, bumper_honk_sfx, 0.0f,
+						mxt_audio_bumper_honk_pitch(emitter.car_index, soa.last_bumper_hit_tick[lane]));
 				}
 				if (car_audible && soa.has_last_manual_boost_tick[lane] &&
 					(!loop_state.previous_manual_boost_initialized ||
@@ -1342,6 +1418,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
 				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
 				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
+				loop_state.previous_last_bumper_hit_tick = soa.last_bumper_hit_tick[lane];
+				loop_state.previous_last_bumper_hit_initialized = soa.has_last_bumper_hit_tick[lane];
 				loop_state.previous_input_accel = soa.input_accel[lane];
 			}
 		}
@@ -1871,8 +1949,15 @@ void MxtSpatialAudioManager::update_from_gamesim(GameSim* sim, int local_player_
 
 	for (Emitter& emitter : vehicle_emitters) {
 		prune_stopped_streams(emitter);
-		if (sim && emitter.car_index >= 0 && emitter.car_index < sim->num_cars) {
-			set_emitter_transform(emitter, sim->get_car_render_transform(emitter.car_index));
+		if (sim && emitter.car_index >= 0) {
+			if (mxt_audio_is_bumper_id(emitter.car_index)) {
+				const int bumper_slot = mxt_audio_bumper_slot(emitter.car_index);
+				if (bumper_slot >= 0 && bumper_slot < sim->bumper_count) {
+					set_emitter_transform(emitter, sim->get_bumper_render_transform(bumper_slot));
+				}
+			} else if (emitter.car_index < sim->num_cars) {
+				set_emitter_transform(emitter, sim->get_car_render_transform(emitter.car_index));
+			}
 		}
 		apply_emitter_attenuation(emitter, local_vehicle_car_index >= 0 && emitter.car_index == local_vehicle_car_index);
 		apply_emitter_bus(emitter);

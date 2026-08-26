@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://5b2ruscxfmvo"
+path="res://.godot/imported/pupcar engine.ogg-6b6c22970631ffa877c364975fec8978.oggvorbisstr"
+
+[deps]
+
+source_file="res://sfx/vehicle/bumper/pupcar engine.ogg"
+dest_files=["res://.godot/imported/pupcar engine.ogg-6b6c22970631ffa877c364975fec8978.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

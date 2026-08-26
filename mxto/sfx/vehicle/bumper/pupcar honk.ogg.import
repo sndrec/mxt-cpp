@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cfl551qwu3tuf"
+path="res://.godot/imported/pupcar honk.ogg-82025ffc74add322d4cc4264fe9ad6a2.oggvorbisstr"
+
+[deps]
+
+source_file="res://sfx/vehicle/bumper/pupcar honk.ogg"
+dest_files=["res://.godot/imported/pupcar honk.ogg-82025ffc74add322d4cc4264fe9ad6a2.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

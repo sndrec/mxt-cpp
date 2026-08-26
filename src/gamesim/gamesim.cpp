@@ -1106,7 +1106,18 @@ void GameSim::collide_racers_with_bumpers()
 			if (vehicle_is_restoring(cars[racer_index])) {
 				continue;
 			}
-			cars[racer_index].handle_machine_v_bumper_collision(bumper);
+			if (!cars[racer_index].handle_machine_v_bumper_collision(bumper)) {
+				continue;
+			}
+			PhysicsCarSoA& racer_soa = *cars[racer_index].soa;
+			const int racer_lane = cars[racer_index].soa_index;
+			const uint32_t collision_tick = static_cast<uint32_t>(racer_soa.simulation_tick[racer_lane]);
+			constexpr uint32_t bumper_honk_cooldown_frames = 15;
+			if (!racer_soa.has_last_bumper_hit_tick[racer_lane] ||
+					collision_tick - racer_soa.last_bumper_hit_tick[racer_lane] >= bumper_honk_cooldown_frames) {
+				racer_soa.last_bumper_hit_tick[racer_lane] = collision_tick;
+				racer_soa.has_last_bumper_hit_tick[racer_lane] = true;
+			}
 		}
 	}
 }
