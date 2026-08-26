@@ -6,6 +6,9 @@
 #include <limits>
 
 using namespace godot;
+
+static constexpr float BUMPER_POST_LEADER_DAMAGE_PER_SECOND = 1.0f;
+
 void GameSim::set_bumpers_enabled(bool enabled)
 {
 	bumpers_enabled = enabled;
@@ -283,32 +286,27 @@ void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 		bumper_scheduler_lap = scheduler_lap;
 		bumper_next_sequence = 0;
 	}
-	const int max_active_bumpers = leader_lap == 2 ? 4 : 12;
-	int active_count = 0;
 	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
 		BumperState& state = bumper_states[slot];
-		if (state.spawn_lap != leader_lap) {
-			state.spawn_lap = leader_lap;
-		}
 		PhysicsCarSoA& soa = *bumper_cars[slot].soa;
 		const int lane = bumper_cars[slot].soa_index;
+		if (!state.active) {
+			continue;
+		}
+		if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u) {
+			deactivate_bumper_car(slot);
+			continue;
+		}
 		const float bumper_distance = current_track->compute_lap_distance(
 			soa.current_checkpoint[lane],
 			soa.checkpoint_fraction[lane],
 			soa.lap[lane]);
-		if (state.active) {
-			if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u ||
-					lead_distance - bumper_distance > 180.0f) {
+		if (lead_distance > bumper_distance) {
+			bumper_cars[slot].apply_damage(BUMPER_POST_LEADER_DAMAGE_PER_SECOND * _TICK_DELTA);
+			if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u) {
 				deactivate_bumper_car(slot);
-				continue;
 			}
 		}
-		if (state.active) {
-			active_count += 1;
-		}
-	}
-	if (active_count >= max_active_bumpers) {
-		return;
 	}
 	const uint32_t sequence_seed = bumper_track_seed ? bumper_track_seed : bumper_track_seed_from_track(current_track);
 	const float trigger_distance = bumper_sequence_trigger_distance(
@@ -320,67 +318,84 @@ void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 	if (lap_distance < trigger_distance || trigger_distance >= lap_length - 80.0f) {
 		return;
 	}
+	int spawn_slot = -1;
+	uint32_t oldest_spawn_lap = std::numeric_limits<uint32_t>::max();
+	uint32_t oldest_spawn_sequence = std::numeric_limits<uint32_t>::max();
 	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
-		BumperState& state = bumper_states[slot];
-		if (state.active) {
-			continue;
+		const BumperState& state = bumper_states[slot];
+		if (!state.active) {
+			spawn_slot = slot;
+			break;
 		}
-		PhysicsCarSoA& soa = *bumper_cars[slot].soa;
-		const int lane = bumper_cars[slot].soa_index;
-		const uint32_t spawn_sequence = bumper_next_sequence;
-		const uint32_t lane_hash = bumper_hash_u32(sequence_seed ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
-		state.target_lane = (static_cast<float>(lane_hash & 0xffffu) / 65535.0f) * 1.2f - 0.6f;
-		const float spawn_distance = lead_distance + 1000.0f + static_cast<float>(slot % 3) * 38.0f;
-		SimTransform spawn_transform;
-		uint16_t cp = 0;
-		float cp_fraction = 0.0f;
-		if (!sample_track_transform_at_distance(spawn_distance, state.target_lane, spawn_transform, cp, cp_fraction)) {
-			continue;
+		if (state.spawn_lap < oldest_spawn_lap ||
+				(state.spawn_lap == oldest_spawn_lap && state.next_sequence < oldest_spawn_sequence)) {
+			spawn_slot = slot;
+			oldest_spawn_lap = state.spawn_lap;
+			oldest_spawn_sequence = state.next_sequence;
 		}
-		set_bumper_track_state(slot, spawn_distance, state.target_lane, true);
-		const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
-		const float bumper_weight = std::max(soa.stat_weight[lane], 0.001f);
-		SimTransform forward_sample;
-		uint16_t forward_cp = 0;
-		float forward_fraction = 0.0f;
-		SimVec3 cruise_direction;
-		if (sample_track_transform_at_distance(spawn_distance + 5.0f, state.target_lane, forward_sample, forward_cp, forward_fraction)) {
-			cruise_direction = forward_sample.origin - spawn_transform.origin;
-		}
-		if (cruise_direction.length_squared() <= 0.000001f) {
-			cruise_direction = -bumper_transform.basis.get_column(2);
-		}
-		if (cruise_direction.length_squared() <= 0.000001f) {
-			cruise_direction = SimVec3(0.0f, 0.0f, -1.0f);
-		}
-		cruise_direction.normalize();
-		const SimVec3 cruise_velocity = cruise_direction * (850.0f / 216.0f) * bumper_weight;
-		const SimVec3 cruise_delta = cruise_velocity / bumper_weight;
-		const SimVec3 spawn_position = LOAD_INDEXED_VEC3(soa, position_current, lane);
-		STORE_INDEXED_VEC3(soa, velocity, lane, cruise_velocity);
-		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
-		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
-		STORE_INDEXED_VEC3(soa, position_old, lane, spawn_position - cruise_delta);
-		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, spawn_position - cruise_delta);
-		soa.energy[lane] = soa.calced_max_energy[lane];
-		soa.level_start_time[lane] = static_cast<uint64_t>(tick);
-		soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
-		soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
-		soa.frames_since_start_2[lane] = 91;
-		soa.speed_kmh[lane] = 850.0f;
-		soa.base_speed[lane] = 850.0f / 216.0f;
-		soa.boost_frames_manual[lane] = 0;
-		soa.boost_frames_dash[lane] = 0;
-		soa.boost_duration_manual_frames[lane] = 0;
-		soa.boost_duration_dash_frames[lane] = 0;
-		soa.s_boost_active[lane] = false;
-		soa.height_above_track[lane] = 19.5f;
-		state.active = 1;
-		state.spawn_lap = scheduler_lap;
-		state.next_sequence = spawn_sequence;
-		bumper_next_sequence = spawn_sequence + 1u;
-		break;
 	}
+	if (spawn_slot < 0) {
+		return;
+	}
+	const uint32_t spawn_sequence = bumper_next_sequence;
+	const uint32_t lane_hash = bumper_hash_u32(sequence_seed ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(spawn_slot) * 0x85EBCA6Bu));
+	const float spawn_lane = (static_cast<float>(lane_hash & 0xffffu) / 65535.0f) * 1.2f - 0.6f;
+	const float spawn_distance = lead_distance + 1000.0f + static_cast<float>(spawn_slot % 3) * 38.0f;
+	SimTransform spawn_transform;
+	uint16_t cp = 0;
+	float cp_fraction = 0.0f;
+	if (!sample_track_transform_at_distance(spawn_distance, spawn_lane, spawn_transform, cp, cp_fraction)) {
+		return;
+	}
+	BumperState& state = bumper_states[spawn_slot];
+	if (state.active) {
+		deactivate_bumper_car(spawn_slot);
+	}
+	state.target_lane = spawn_lane;
+	PhysicsCarSoA& soa = *bumper_cars[spawn_slot].soa;
+	const int lane = bumper_cars[spawn_slot].soa_index;
+	set_bumper_track_state(spawn_slot, spawn_distance, spawn_lane, true);
+	const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+	const float bumper_weight = std::max(soa.stat_weight[lane], 0.001f);
+	SimTransform forward_sample;
+	uint16_t forward_cp = 0;
+	float forward_fraction = 0.0f;
+	SimVec3 cruise_direction;
+	if (sample_track_transform_at_distance(spawn_distance + 5.0f, spawn_lane, forward_sample, forward_cp, forward_fraction)) {
+		cruise_direction = forward_sample.origin - spawn_transform.origin;
+	}
+	if (cruise_direction.length_squared() <= 0.000001f) {
+		cruise_direction = -bumper_transform.basis.get_column(2);
+	}
+	if (cruise_direction.length_squared() <= 0.000001f) {
+		cruise_direction = SimVec3(0.0f, 0.0f, -1.0f);
+	}
+	cruise_direction.normalize();
+	const SimVec3 cruise_velocity = cruise_direction * (850.0f / 216.0f) * bumper_weight;
+	const SimVec3 cruise_delta = cruise_velocity / bumper_weight;
+	const SimVec3 spawn_position = LOAD_INDEXED_VEC3(soa, position_current, lane);
+	STORE_INDEXED_VEC3(soa, velocity, lane, cruise_velocity);
+	STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
+	STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
+	STORE_INDEXED_VEC3(soa, position_old, lane, spawn_position - cruise_delta);
+	STORE_INDEXED_VEC3(soa, position_old_dupe, lane, spawn_position - cruise_delta);
+	soa.energy[lane] = soa.calced_max_energy[lane];
+	soa.level_start_time[lane] = static_cast<uint64_t>(tick);
+	soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
+	soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
+	soa.frames_since_start_2[lane] = 91;
+	soa.speed_kmh[lane] = 850.0f;
+	soa.base_speed[lane] = 850.0f / 216.0f;
+	soa.boost_frames_manual[lane] = 0;
+	soa.boost_frames_dash[lane] = 0;
+	soa.boost_duration_manual_frames[lane] = 0;
+	soa.boost_duration_dash_frames[lane] = 0;
+	soa.s_boost_active[lane] = false;
+	soa.height_above_track[lane] = 19.5f;
+	state.active = 1;
+	state.spawn_lap = scheduler_lap;
+	state.next_sequence = spawn_sequence;
+	bumper_next_sequence = spawn_sequence + 1u;
 }
 
 void GameSim::save_bumper_states_to_saved_state(SavedState& state) const
