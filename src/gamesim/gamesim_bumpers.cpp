@@ -301,11 +301,10 @@ void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 			soa.current_checkpoint[lane],
 			soa.checkpoint_fraction[lane],
 			soa.lap[lane]);
-		if (lead_distance > bumper_distance) {
-			bumper_cars[slot].apply_damage(BUMPER_POST_LEADER_DAMAGE_PER_SECOND * _TICK_DELTA);
-			if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u) {
-				deactivate_bumper_car(slot);
-			}
+		if (lead_distance > bumper_distance && soa.energy[lane] > 1.0f) {
+			soa.energy[lane] = std::max(
+				1.0f,
+				soa.energy[lane] - BUMPER_POST_LEADER_DAMAGE_PER_SECOND * _TICK_DELTA);
 		}
 	}
 	const uint32_t sequence_seed = bumper_track_seed ? bumper_track_seed : bumper_track_seed_from_track(current_track);
