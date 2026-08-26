@@ -978,7 +978,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 				shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
 			}
 			write_multimesh_buffer_instance(body_buffers.shadow_write, visible_slot, shadow_transform,
-				godot::Color(0, 0, 0, 0), godot::Color(0, 0, 0, 0));
+				godot::Color(1, 1, 1, 1), godot::Color(0, 0, 0, 0));
 		}
 	}
 	for (int archetype = 0; archetype < static_cast<int>(render_car_multimeshes.size()); ++archetype) {
