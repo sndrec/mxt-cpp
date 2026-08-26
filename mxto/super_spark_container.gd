@@ -7,6 +7,7 @@ const COLLISION_SPARK_COUNT := 512
 const COLLISION_SPARK_NODE_NAME := "CollisionSparkMultiMesh"
 const DRIFT_PLASMA_COUNT := 190
 const DRIFT_PLASMA_NODE_NAME := "DriftPlasmaMultiMesh"
+const BUMPER_EXPLOSION_SCENE := preload("res://asset/effect/bumper_explosion.tscn")
 
 var spark_texture := preload("res://asset/tex/superspark.png")
 var collision_spark_texture := preload("res://asset/tex/collision_spark.png")
@@ -20,6 +21,14 @@ func _ready() -> void:
 	_ensure_super_spark_multimesh()
 	_ensure_collision_spark_multimesh()
 	_ensure_drift_plasma_multimesh()
+
+
+func spawn_bumper_explosion(explosion_transform: Transform3D) -> void:
+	var explosion := BUMPER_EXPLOSION_SCENE.instantiate() as Node3D
+	if explosion == null:
+		return
+	add_child(explosion)
+	explosion.global_transform = explosion_transform.scaled_local(explosion.scale)
 
 
 func _ensure_super_spark_multimesh() -> void:

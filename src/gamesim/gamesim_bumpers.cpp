@@ -172,6 +172,19 @@ void GameSim::deactivate_bumper_car(int bumper_slot)
 	soa.machine_state[lane] &= ~(MACHINESTATE::ACTIVE | MACHINESTATE::STARTINGCOUNTDOWN | MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
+void GameSim::spawn_bumper_explosion(int bumper_slot)
+{
+	if (!render_gamesim_called || !spark_node_container || !bumper_cars ||
+			bumper_slot < 0 || bumper_slot >= bumper_count) {
+		return;
+	}
+	PhysicsCarSoA& soa = *bumper_cars[bumper_slot].soa;
+	const int lane = bumper_cars[bumper_slot].soa_index;
+	SimTransform transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+	transform.origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
+	spark_node_container->call("spawn_bumper_explosion", gd_transform(transform));
+}
+
 void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, float lane_offset, bool reset_history)
 {
 	if (!bumper_cars || !current_track || bumper_slot < 0 || bumper_slot >= bumper_count) {
@@ -294,6 +307,7 @@ void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 			continue;
 		}
 		if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u) {
+			spawn_bumper_explosion(slot);
 			deactivate_bumper_car(slot);
 			continue;
 		}

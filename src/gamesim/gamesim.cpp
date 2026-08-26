@@ -1309,34 +1309,36 @@ void GameSim::process_pending_ko_events()
 		}
 		PhysicsCarSoA& victim_soa = *bumper_cars[slot].soa;
 		const int victim_lane = bumper_cars[slot].soa_index;
-		const int attacker_index = victim_soa.pending_ko_attacker_car_index[victim_lane];
-		if (attacker_index < 0 || attacker_index >= num_cars) {
-			victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+		if ((victim_soa.machine_state[victim_lane] & MACHINESTATE::ZEROHP) == 0u) {
 			continue;
 		}
-		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
-		const int attacker_lane = cars[attacker_index].soa_index;
-		const float boost_cost = std::max(1.0f,
-			10.0f * attacker_soa.stat_manual_boost_duration_seconds[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
-		const float energy_gain = boost_cost * 0.75f;
-		if (car_player_ids[attacker_index] >= 0) {
-			attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
-			if (attacker_soa.car_properties[attacker_lane]) {
-				attacker_soa.calced_max_energy[attacker_lane] =
-					attacker_soa.car_properties[attacker_lane]->base_stats[CAR_STAT_MAX_ENERGY] + attacker_soa.ko_energy_bonus[attacker_lane];
+		const int attacker_index = victim_soa.pending_ko_attacker_car_index[victim_lane];
+		if (attacker_index >= 0 && attacker_index < num_cars) {
+			PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
+			const int attacker_lane = cars[attacker_index].soa_index;
+			const float boost_cost = std::max(1.0f,
+				10.0f * attacker_soa.stat_manual_boost_duration_seconds[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
+			const float energy_gain = boost_cost * 0.75f;
+			if (car_player_ids[attacker_index] >= 0) {
+				attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
+				if (attacker_soa.car_properties[attacker_lane]) {
+					attacker_soa.calced_max_energy[attacker_lane] =
+						attacker_soa.car_properties[attacker_lane]->base_stats[CAR_STAT_MAX_ENERGY] + attacker_soa.ko_energy_bonus[attacker_lane];
+				}
+				attacker_soa.energy[attacker_lane] = std::min(
+					attacker_soa.energy[attacker_lane] + energy_gain,
+					attacker_soa.calced_max_energy[attacker_lane]);
 			}
-			attacker_soa.energy[attacker_lane] = std::min(
-				attacker_soa.energy[attacker_lane] + energy_gain,
-				attacker_soa.calced_max_energy[attacker_lane]);
+			RaceEvent event;
+			event.type = 1;
+			event.actor_id = car_player_ids[attacker_index];
+			event.target_id = -1;
+			event.tick = tick;
+			event.value = static_cast<int32_t>(std::lround(energy_gain));
+			race_events.push_back(event);
 		}
-		RaceEvent event;
-		event.type = 1;
-		event.actor_id = car_player_ids[attacker_index];
-		event.target_id = -1;
-		event.tick = tick;
-		event.value = static_cast<int32_t>(std::lround(energy_gain));
-		race_events.push_back(event);
 		victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+		spawn_bumper_explosion(slot);
 		deactivate_bumper_car(slot);
 	}
 }

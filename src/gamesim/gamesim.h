@@ -209,6 +209,7 @@ namespace godot {
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
 		void configure_bumper_car(int bumper_slot);
+		void spawn_bumper_explosion(int bumper_slot);
 		void deactivate_bumper_car(int bumper_slot);
 		void set_bumper_track_state(int bumper_slot, float absolute_distance, float lane_offset, bool reset_history);
 		void update_bumpers(float lead_distance, uint32_t leader_lap);
@@ -434,6 +435,7 @@ namespace godot {
 			int render_thruster_light_visible_count = 0;
 			bool render_node_effects_enabled = true;
 			bool render_thruster_lights_enabled = true;
+			bool render_gamesim_called = false;
 			void cache_native_visual_effect_nodes();
 			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
 			void step_collision_spark_effects();

@@ -1,0 +1,219 @@
+[gd_scene load_steps=30 format=3]
+
+[ext_resource type="Script" path="res://asset/effect/bumper_explosion.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://asset/tex/bumper_explosion_smoke.png" id="2_smoke"]
+[ext_resource type="Texture2D" path="res://asset/tex/bumper_explosion_spark.png" id="3_spark"]
+
+[sub_resource type="Curve" id="Curve_alpha_smoke"]
+_data = [Vector2(0, 1), 0.0, -2.1897, 0, 0, Vector2(1, 0), -0.12282, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_alpha_smoke"]
+curve = SubResource("Curve_alpha_smoke")
+
+[sub_resource type="Curve" id="Curve_direction_x"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_direction_y"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_direction_z"]
+_data = [Vector2(0.0591716, 0), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_direction"]
+curve_x = SubResource("Curve_direction_x")
+curve_y = SubResource("Curve_direction_y")
+curve_z = SubResource("Curve_direction_z")
+
+[sub_resource type="Curve" id="Curve_scale_smoke"]
+_data = [Vector2(0, 0.00988364), 0.0, 3.88307, 0, 0, Vector2(0.227811, 0.780814), 0.780588, 0.780588, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_scale_smoke"]
+curve = SubResource("Curve_scale_smoke")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_smoke"]
+lifetime_randomness = 0.7
+angle_min = -720.0
+angle_max = 720.0
+direction = Vector3(0, 1, 0)
+spread = 90.0
+initial_velocity_min = 8.0
+initial_velocity_max = 16.0
+angular_velocity_min = -90.0
+angular_velocity_max = 90.0
+directional_velocity_min = 0.05
+directional_velocity_max = 0.15
+directional_velocity_curve = SubResource("CurveXYZTexture_direction")
+radial_velocity_min = 0.1
+radial_velocity_max = 0.2
+gravity = Vector3(0, 0, 0)
+damping_min = 60.0
+damping_max = 70.0
+attractor_interaction_enabled = false
+scale_min = 4.0
+scale_max = 8.0
+scale_curve = SubResource("CurveTexture_scale_smoke")
+alpha_curve = SubResource("CurveTexture_alpha_smoke")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_smoke"]
+transparency = 1
+shading_mode = 0
+specular_mode = 2
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
+albedo_texture = ExtResource("2_smoke")
+disable_receive_shadows = true
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_smoke"]
+material = SubResource("StandardMaterial3D_smoke")
+
+[sub_resource type="Gradient" id="Gradient_fire"]
+colors = PackedColorArray(1, 0.258333, 0.11, 1, 1, 0.696667, 0.09, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture_fire"]
+gradient = SubResource("Gradient_fire")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_fire"]
+lifetime_randomness = 0.6
+particle_flag_damping_as_friction = true
+angle_min = -720.0
+angle_max = 720.0
+direction = Vector3(0, 1, 0)
+spread = 90.0
+initial_velocity_min = 12.0
+initial_velocity_max = 16.0
+angular_velocity_min = -90.0
+angular_velocity_max = 90.0
+directional_velocity_min = 0.05
+directional_velocity_max = 0.15
+directional_velocity_curve = SubResource("CurveXYZTexture_direction")
+radial_velocity_min = 0.1
+radial_velocity_max = 0.2
+gravity = Vector3(0, 0, 0)
+damping_min = 4.0
+damping_max = 32.0
+attractor_interaction_enabled = false
+scale_max = 2.5
+scale_curve = SubResource("CurveTexture_scale_smoke")
+color_initial_ramp = SubResource("GradientTexture_fire")
+alpha_curve = SubResource("CurveTexture_alpha_smoke")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fire"]
+transparency = 1
+shading_mode = 0
+specular_mode = 2
+vertex_color_use_as_albedo = true
+albedo_color = Color(3, 3, 3, 1)
+albedo_texture = ExtResource("2_smoke")
+disable_receive_shadows = true
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_fire"]
+material = SubResource("StandardMaterial3D_fire")
+
+[sub_resource type="GradientTexture1D" id="GradientTexture_sparks"]
+gradient = SubResource("Gradient_fire")
+
+[sub_resource type="Curve" id="Curve_spark_scale"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_spark_scale"]
+curve = SubResource("Curve_spark_scale")
+
+[sub_resource type="Curve" id="Curve_spark_velocity_x"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 0.211046), 0.0, 0.0, 0, 0, Vector2(1, 0.301744), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_spark_velocity_y"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 0.324419), 0.0, 0.0, 0, 0, Vector2(1, 1.52616), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_spark_velocity_z"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_spark_velocity"]
+curve_x = SubResource("Curve_spark_velocity_x")
+curve_y = SubResource("Curve_spark_velocity_y")
+curve_z = SubResource("Curve_spark_velocity_z")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_sparks"]
+particle_flag_align_y = true
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 8.0
+initial_velocity_max = 16.0
+scale_curve = SubResource("CurveTexture_spark_scale")
+scale_over_velocity_min = 1.0
+scale_over_velocity_max = 4.0
+scale_over_velocity_curve = SubResource("CurveXYZTexture_spark_velocity")
+color_initial_ramp = SubResource("GradientTexture_sparks")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sparks"]
+transparency = 1
+cull_mode = 2
+shading_mode = 0
+specular_mode = 2
+vertex_color_use_as_albedo = true
+albedo_color = Color(2, 2, 2, 1)
+albedo_texture = ExtResource("3_spark")
+disable_receive_shadows = true
+billboard_keep_scale = true
+
+[sub_resource type="QuadMesh" id="QuadMesh_sparks"]
+material = SubResource("StandardMaterial3D_sparks")
+
+[node name="BumperExplosion" type="Node3D"]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+script = ExtResource("1_script")
+
+[node name="Smoke" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 48
+lifetime = 5.0
+one_shot = true
+explosiveness = 1.0
+randomness = 1.0
+fixed_fps = 60
+process_material = SubResource("ParticleProcessMaterial_smoke")
+draw_pass_1 = SubResource("QuadMesh_smoke")
+
+[node name="Fire" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 24
+lifetime = 0.5
+one_shot = true
+explosiveness = 1.0
+fixed_fps = 60
+process_material = SubResource("ParticleProcessMaterial_fire")
+draw_pass_1 = SubResource("QuadMesh_fire")
+
+[node name="Sparks" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 32
+lifetime = 0.25
+one_shot = true
+explosiveness = 1.0
+randomness = 1.0
+fixed_fps = 60
+transform_align = 3
+trail_lifetime = 0.1
+process_material = SubResource("ParticleProcessMaterial_sparks")
+draw_pass_1 = SubResource("QuadMesh_sparks")

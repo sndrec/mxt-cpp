@@ -1759,6 +1759,7 @@ void GameSim::update_super_spark_visuals()
 		if (!sim_started || !car_node_container || !cars) {
 			return;
 		}
+		render_gamesim_called = true;
 
 		if (car_node_container == nullptr) {
 			return;
