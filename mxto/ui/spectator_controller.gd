@@ -2,6 +2,8 @@ class_name SpectatorController
 extends Node
 
 signal notification_requested(text: String, duration_msec: int)
+signal race_configured
+signal race_reset
 
 const SPECTATOR_SCENE: PackedScene = preload("res://player/spectator.tscn")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
@@ -35,6 +37,7 @@ func configure_race(in_local_player_id: int, local_player_is_racer: bool) -> voi
 		ensure_free_camera()
 		if car_node_container.local_visual_car != null:
 			live_focus_id = car_node_container.local_visual_car.owning_id
+	race_configured.emit()
 
 func reset() -> void:
 	if spectator != null:
@@ -44,6 +47,7 @@ func reset() -> void:
 	local_elimination_active = false
 	live_focus_id = -1
 	live_strafe_direction = 0
+	race_reset.emit()
 
 func is_local_eliminated() -> bool:
 	return local_player_id >= 0 and !network_manager.is_vehicle_restore_enabled() and network_manager.race_results.player_eliminations.has(local_player_id)
@@ -98,6 +102,15 @@ func change_focus(delta: int) -> void:
 		next_index = targets.size() - 1
 	_apply_live_focus(int(targets[next_index]))
 	notification_requested.emit("Spectating: %s" % _player_display_name(int(targets[next_index])), 1200)
+
+func focus_player(focus_id: int) -> bool:
+	if !can_live_spectate() or !network_manager.get_simulation_roster().has(focus_id):
+		return false
+	if network_manager._disconnected_during_race.has(focus_id):
+		return false
+	_apply_live_focus(focus_id)
+	notification_requested.emit("Spectating: %s" % _player_display_name(focus_id), 1200)
+	return true
 
 func toggle_camera() -> void:
 	if !can_live_spectate() or spectator == null:

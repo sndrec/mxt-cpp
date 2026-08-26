@@ -1,0 +1,76 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/spectator_roster.gd" id="1_roster"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.035, 0.035, 0.035, 0.86)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.45, 0.45, 0.45, 0.8)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[node name="SpectatorRoster" type="CanvasLayer"]
+layer = 50
+script = ExtResource("1_roster")
+
+[node name="Root" type="Control" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -306.0
+offset_top = 152.0
+offset_right = -16.0
+offset_bottom = -104.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Margin" type="MarginContainer" parent="Root/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Box" type="VBoxContainer" parent="Root/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Root/Panel/Margin/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.35, 0.85, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "SPECTATING"
+
+[node name="Hint" type="Label" parent="Root/Panel/Margin/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.65, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "Select a player to follow"
+
+[node name="PlayerScroll" type="ScrollContainer" parent="Root/Panel/Margin/Box"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Rows" type="VBoxContainer" parent="Root/Panel/Margin/Box/PlayerScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 3

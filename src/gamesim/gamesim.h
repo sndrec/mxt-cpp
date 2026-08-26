@@ -630,6 +630,7 @@ namespace godot {
 		int get_player_lap(int player_id) const;
 		int get_player_level_start_time(int player_id) const;
 		double get_player_speed_kmh(int player_id) const;
+		double get_player_energy_fraction(int player_id) const;
 		godot::PackedFloat32Array get_player_telemetry_sample(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;
 		godot::String get_bumper_debug_string() const;

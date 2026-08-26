@@ -3,6 +3,7 @@ class_name GameManager extends Node
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 const LobbyControllerClass = preload("res://ui/lobby_controller.gd")
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
+const SpectatorRosterClass = preload("res://ui/spectator_roster.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
 const RaceSessionControllerClass = preload("res://core/race_session_controller.gd")
@@ -23,6 +24,7 @@ const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
 @onready var lobby_controller: LobbyControllerClass = $LobbyController
 @onready var spectator_controller: SpectatorControllerClass = $SpectatorController
+@onready var spectator_roster: SpectatorRosterClass = $SpectatorRoster
 @onready var race_presentation_controller: RacePresentationControllerClass = $RacePresentationController
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = $DebugRuntimeController
 @onready var race_session_controller: RaceSessionControllerClass = $RaceSessionController
@@ -211,7 +213,9 @@ func _ready() -> void:
 	lobby_controller.start_race_requested.connect(_on_lobby_start_race_requested)
 	lobby_controller.car_settings_requested.connect(_on_car_settings_button_pressed)
 	lobby_controller.controller_settings_requested.connect(_on_controller_settings_button_pressed)
+	lobby_controller.spectator_toggled.connect(_on_lobby_spectator_toggled)
 	spectator_controller.initialize(network_manager, game_sim, car_node_container, vehicle_content_controller)
+	spectator_roster.initialize(network_manager, game_sim, spectator_controller)
 	race_presentation_controller.initialize(
 		network_manager,
 		game_sim,
@@ -495,6 +499,11 @@ func _on_start_button_pressed() -> void:
 	lobby_controller.refresh_controls()
 	$Control.visible = false
 	lobby_control.visible = true
+
+func _on_lobby_spectator_toggled(enabled: bool) -> void:
+	if network_manager.race_active:
+		return
+	car_settings.set_spectator_enabled(enabled)
 
 func _on_singleplayer_button_pressed() -> void:
 	time_attack_setup.open_for_current_selection()

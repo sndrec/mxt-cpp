@@ -756,6 +756,21 @@ double GameSim::get_player_speed_kmh(int player_id) const
 	return 0.0;
 }
 
+double GameSim::get_player_energy_fraction(int player_id) const
+{
+	const int car_index = find_car_index_for_player(player_id);
+	if (!cars || car_index < 0 || car_index >= num_cars) {
+		return 0.0;
+	}
+	const PhysicsCarSoA& car_soa = *cars[car_index].soa;
+	const int lane = cars[car_index].soa_index;
+	const float max_energy = car_soa.calced_max_energy[lane];
+	if (max_energy <= 0.0f) {
+		return 0.0;
+	}
+	return static_cast<double>(std::clamp(car_soa.energy[lane] / max_energy, 0.0f, 1.0f));
+}
+
 godot::PackedFloat32Array GameSim::get_player_telemetry_sample(int player_id) const
 {
 	const int car_index = find_car_index_for_player(player_id);

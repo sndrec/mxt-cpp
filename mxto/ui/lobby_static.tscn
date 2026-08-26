@@ -203,6 +203,10 @@ layout_mode = 2
 button_pressed = true
 text = " Allow Workshop Vehicles"
 
+[node name="SpectatorToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+layout_mode = 2
+text = " Spectate Race"
+
 [node name="CpuControlBox" type="HBoxContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=619192241]
 layout_mode = 2
 size_flags_horizontal = 3

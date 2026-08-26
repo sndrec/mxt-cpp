@@ -4,6 +4,7 @@ extends Node
 signal start_race_requested(options: Dictionary)
 signal car_settings_requested
 signal controller_settings_requested
+signal spectator_toggled(enabled: bool)
 
 const TrackContentControllerClass = preload("res://track/track_content_controller.gd")
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
@@ -20,6 +21,7 @@ const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 @onready var bumpers_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle"
 @onready var s_boost_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/SBoostToggle"
 @onready var workshop_vehicles_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/WorkshopVehiclesToggle"
+@onready var spectator_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/SpectatorToggle"
 @onready var stage_button_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer"
 @onready var stage_preview_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer"
 @onready var player_list_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer"
@@ -45,6 +47,7 @@ func initialize(
 	bumpers_toggle.toggled.connect(refresh_race_options.unbind(1))
 	s_boost_toggle.toggled.connect(refresh_race_options.unbind(1))
 	workshop_vehicles_toggle.toggled.connect(_on_workshop_vehicles_toggled)
+	spectator_toggle.toggled.connect(func(enabled: bool): spectator_toggled.emit(enabled))
 	add_cpu_button.pressed.connect(_on_add_cpu_pressed)
 	remove_cpu_button.pressed.connect(_on_remove_cpu_pressed)
 	start_race_button.pressed.connect(request_start_race)
@@ -109,6 +112,10 @@ func refresh_controls() -> void:
 	bumpers_toggle.disabled = !can_edit
 	s_boost_toggle.disabled = !can_edit
 	workshop_vehicles_toggle.disabled = !can_edit
+	var local_settings = network_manager.lobby_settings.player_settings.get(multiplayer.get_unique_id(), {})
+	var is_spectator := typeof(local_settings) == TYPE_DICTIONARY and bool(local_settings.get("spectator", false))
+	spectator_toggle.set_pressed_no_signal(is_spectator)
+	spectator_toggle.disabled = network_manager.race_active
 	for child in stage_button_container.get_children():
 		var button := child as Button
 		if button != null:
@@ -211,11 +218,17 @@ func request_start_race() -> void:
 		start_race_requested.emit(build_race_options())
 
 func _update_player_list() -> void:
-	var roster := network_manager.get_simulation_roster()
+	var roster := network_manager.player_ids.duplicate(true)
+	for spectator_id in network_manager.spectator_ids:
+		if !roster.has(spectator_id):
+			roster.append(spectator_id)
 	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
+	for cpu_id in cpu_ids:
+		if !roster.has(cpu_id):
+			roster.append(cpu_id)
 	var signature_parts := []
 	for id in roster:
-		signature_parts.append("%d:%s:%s:%s" % [int(id), _player_display_name(int(id)), str(cpu_ids.has(id)), str(network_manager.is_server)])
+		signature_parts.append("%d:%s:%s:%s:%s" % [int(id), _player_display_name(int(id)), str(cpu_ids.has(id)), str(network_manager.spectator_ids.has(id)), str(network_manager.is_server)])
 	var signature := "|".join(signature_parts)
 	if signature == player_list_signature:
 		return
@@ -250,4 +263,6 @@ func _player_display_name(player_id: int) -> String:
 		player_name = str(settings["username"])
 	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
 		player_name = "[CPU] " + player_name
+	elif network_manager.spectator_ids.has(player_id):
+		player_name = "[Spectator] " + player_name
 	return player_name

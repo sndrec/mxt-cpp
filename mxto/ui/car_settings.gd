@@ -473,6 +473,14 @@ func _sync_vehicle_content_evidence() -> void:
 func _on_spectator_toggled(toggled: bool) -> void:
 	player_settings.spectator = toggled
 
+func set_spectator_enabled(enabled: bool) -> void:
+	if player_settings.spectator == enabled:
+		spectator_toggle.set_pressed_no_signal(enabled)
+		return
+	player_settings.spectator = enabled
+	spectator_toggle.set_pressed_no_signal(enabled)
+	_save_settings()
+
 func _sticker_slot_value(slot: int) -> int:
 	match slot:
 		0:

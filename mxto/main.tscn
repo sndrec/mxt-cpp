@@ -22,6 +22,7 @@
 [ext_resource type="Script" uid="uid://bpwto5bx2ouu7" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
 [ext_resource type="Script" uid="uid://b1faew0my54vq" path="res://ui/lobby_controller.gd" id="32_lobby"]
 [ext_resource type="Script" uid="uid://bb56bbim32ckv" path="res://ui/spectator_controller.gd" id="33_spectator"]
+[ext_resource type="PackedScene" path="res://ui/spectator_roster.tscn" id="33_spectator_roster"]
 [ext_resource type="Script" uid="uid://bmv16wlmac8db" path="res://ui/race_presentation_controller.gd" id="34_race_presentation"]
 [ext_resource type="PackedScene" path="res://ui/race_results_overlay.tscn" id="35_race_results"]
 [ext_resource type="Script" uid="uid://b1d0q31f4dlhm" path="res://core/debug_runtime_controller.gd" id="36_debug_runtime"]
@@ -195,6 +196,8 @@ script = ExtResource("32_lobby")
 
 [node name="SpectatorController" type="Node" parent="." unique_id=900485722]
 script = ExtResource("33_spectator")
+
+[node name="SpectatorRoster" parent="." instance=ExtResource("33_spectator_roster")]
 
 [node name="RacePresentationController" type="Node" parent="." unique_id=166495912]
 script = ExtResource("34_race_presentation")

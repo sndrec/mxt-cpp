@@ -77,6 +77,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_player_level_start_time", "player_id"), &GameSim::get_player_level_start_time);
 	ClassDB::bind_method(D_METHOD("get_player_speed_kmh", "player_id"), &GameSim::get_player_speed_kmh);
+	ClassDB::bind_method(D_METHOD("get_player_energy_fraction", "player_id"), &GameSim::get_player_energy_fraction);
 	ClassDB::bind_method(D_METHOD("get_player_telemetry_sample", "player_id"), &GameSim::get_player_telemetry_sample);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
 	ClassDB::bind_method(D_METHOD("get_bumper_debug_string"), &GameSim::get_bumper_debug_string);
