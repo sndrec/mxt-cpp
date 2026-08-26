@@ -7,7 +7,7 @@
 
 using namespace godot;
 
-static constexpr float BUMPER_POST_LEADER_DAMAGE_PER_SECOND = 1.0f;
+static constexpr float BUMPER_POST_LEADER_DAMAGE_PER_SECOND = 1.5f;
 
 void GameSim::set_bumpers_enabled(bool enabled)
 {
@@ -73,7 +73,7 @@ void GameSim::configure_bumper_car(int bumper_slot)
 	props->base_stats[CAR_STAT_CAMERA_REPOSITIONING] = 1.0f;
 	props->base_stats[CAR_STAT_TRACK_COLLISION] = 2.0f;
 	props->base_stats[CAR_STAT_OBSTACLE_COLLISION] = 3.5f;
-	props->base_stats[CAR_STAT_MAX_ENERGY] = 50.0f;
+	props->base_stats[CAR_STAT_MAX_ENERGY] = 80.0f;
 	props->base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE] = 999.0f;
 	props->base_stats[CAR_STAT_ENERGY_RECHARGE_RATE] = 0.0f;
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
