@@ -7,7 +7,6 @@
 [ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="5_o2b3b"]
 [ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="6_4nwwe"]
 [ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="7_7mhr5"]
-[ext_resource type="Texture2D" uid="uid://cafmvnk2if4am" path="res://asset/tex/crosshatch/1.png" id="8_cross"]
 
 [sub_resource type="Gradient" id="Gradient_o2b3b"]
 offsets = PackedFloat32Array(1)
@@ -74,7 +73,6 @@ shader_parameter/in_normal = ExtResource("2_qmnnx")
 shader_parameter/in_albedo = SubResource("GradientTexture1D_7mhr5")
 shader_parameter/in_paint_mask = SubResource("GradientTexture1D_up21o")
 shader_parameter/use_mesh_normals = false
-shader_parameter/cross_hatch = ExtResource("8_cross")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
 shader_parameter/livery_colour_strength = 1.0
 shader_parameter/livery_primary_colour = Color(0.87, 0.66903, 0.20010002, 1)

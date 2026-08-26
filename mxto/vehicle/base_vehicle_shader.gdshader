@@ -12,7 +12,7 @@ uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_paint_mask : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform bool use_mesh_normals = false;
-uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+//uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 in_overlay_colour : source_color;
 uniform float livery_colour_strength = 0.0;
 uniform vec3 livery_primary_colour : source_color = vec3(1.0, 1.0, 1.0);
@@ -39,41 +39,11 @@ float fresnel(float amount, vec3 normal, vec3 view) {
 	return pow((1.0 - clamp(dot(normalize(normal), normalize(view)), 0.0, 1.0 )), amount);
 }
 
-float sample_lit_hatch(vec2 screen_pixel, vec2 anchor_pixel, vec2 gradient_dir, vec2 gradient_tangent, vec2 hatch_texture_size) {
-	vec2 local_pixel = screen_pixel - anchor_pixel;
-	vec2 hatch_pixel = vec2(dot(local_pixel, gradient_dir), dot(local_pixel, gradient_tangent));
-	return texture(cross_hatch, hatch_pixel / hatch_texture_size).r;
-}
-
 vec2 light_gradient_from_normal(vec3 normal, vec3 light_direction) {
 	float normal_z_sign = mix(-1.0, 1.0, step(0.0, normal.z));
 	float normal_z = normal_z_sign * max(abs(normal.z), 0.1);
 	vec2 view_light_gradient = light_direction.xy - normal.xy * (light_direction.z / normal_z);
 	return vec2(-view_light_gradient.x, view_light_gradient.y);
-}
-
-float lighting_aligned_hatch(vec2 screen_pixel, vec3 normal, vec3 light_direction) {
-	vec2 hatch_texture_size = vec2(textureSize(cross_hatch, 0));
-	vec2 gradient = light_gradient_from_normal(normal, light_direction);
-	float gradient_len = length(gradient);
-	vec2 gradient_dir = gradient / max(gradient_len, 0.000001);
-	vec2 gradient_tangent = vec2(-gradient_dir.y, gradient_dir.x);
-	float lattice_size = 96.0;
-	vec2 lattice_pos = screen_pixel / lattice_size;
-	vec2 lattice_cell = floor(lattice_pos);
-	vec2 lattice_blend = smoothstep(vec2(0.0), vec2(1.0), fract(lattice_pos));
-	vec2 anchor_00 = lattice_cell * lattice_size;
-	vec2 anchor_10 = anchor_00 + vec2(lattice_size, 0.0);
-	vec2 anchor_01 = anchor_00 + vec2(0.0, lattice_size);
-	vec2 anchor_11 = anchor_00 + vec2(lattice_size);
-	float hatch_00 = sample_lit_hatch(screen_pixel, anchor_00, gradient_dir, gradient_tangent, hatch_texture_size);
-	float hatch_10 = sample_lit_hatch(screen_pixel, anchor_10, gradient_dir, gradient_tangent, hatch_texture_size);
-	float hatch_01 = sample_lit_hatch(screen_pixel, anchor_01, gradient_dir, gradient_tangent, hatch_texture_size);
-	float hatch_11 = sample_lit_hatch(screen_pixel, anchor_11, gradient_dir, gradient_tangent, hatch_texture_size);
-	float rotated_hatch = mix(mix(hatch_00, hatch_10, lattice_blend.x), mix(hatch_01, hatch_11, lattice_blend.x), lattice_blend.y);
-	float screen_hatch = texture(cross_hatch, screen_pixel / hatch_texture_size).r;
-	float rotate_weight = smoothstep(0.001, 0.01, gradient_len);
-	return mix(screen_hatch, rotated_hatch, rotate_weight);
 }
 
 void fragment() {
@@ -133,7 +103,7 @@ void light() {
 	final_light_val_2 *= texture(in_lightwarp_2_fresnel, vec2(fres_outline, 0.0)).rgb;
 	DIFFUSE_LIGHT += (final_light_val + final_light_val_2) * LIGHT_COLOR * 0.333;// * 0.3;
 	
-	float cross_hatch_float = (lighting_aligned_hatch(use_screen_pixel, normalize(hatch_normal), LIGHT) - 0.5) * 0.05;
+	//float cross_hatch_float = (lighting_aligned_hatch(use_screen_pixel, normalize(hatch_normal), LIGHT) - 0.5) * 0.05;
 	vec3 spec_add = texture(in_specwarp, vec2(clamp(spec, 0.0, 1.0), 0.0f)).rgb * final_light_val * LIGHT_COLOR * 0.333;
 	spec_add *= texture(in_specwarp_fresnel, vec2(fres_outline, 0.0)).rgb;
 	SPECULAR_LIGHT += spec_add;
