@@ -365,6 +365,10 @@ void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 		deactivate_bumper_car(spawn_slot);
 	}
 	state.target_lane = spawn_lane;
+	// A pooled bumper may still carry death, breakdown, collision, and handling
+	// state from its previous life. Reset the machine completely before placing
+	// it at its new spawn point; its bumper properties remain configured.
+	bumper_cars[spawn_slot].initialize_machine();
 	PhysicsCarSoA& soa = *bumper_cars[spawn_slot].soa;
 	const int lane = bumper_cars[spawn_slot].soa_index;
 	set_bumper_track_state(spawn_slot, spawn_distance, spawn_lane, true);
