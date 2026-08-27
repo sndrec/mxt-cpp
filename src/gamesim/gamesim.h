@@ -642,7 +642,6 @@ namespace godot {
 		godot::Transform3D get_player_physical_render_transform(int player_id) const;
 		godot::Vector3 get_player_physical_render_up(int player_id) const;
 		godot::Transform3D get_car_render_transform(int car_index) const;
-		godot::Transform3D get_bumper_render_transform(int bumper_slot) const;
 		godot::Transform3D get_saved_player_voice_transform(int player_id, int target_tick) const;
 		godot::Array get_saved_player_voice_transforms(int target_tick) const;
 		godot::Dictionary select_saved_voice_recipients(int sender_id, int local_id, int target_tick, godot::Array eligible_peer_ids, godot::Array excluded_peer_ids, double voice_range, int max_recipients) const;

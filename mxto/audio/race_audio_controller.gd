@@ -7,8 +7,6 @@ const SPATIAL_AUDIO_SFX := {
 	&"air_0": "res://sfx/vehicle/air_0.wav",
 	&"air_1": "res://sfx/vehicle/air_1.wav",
 	&"brake": "res://sfx/vehicle/brake.wav",
-	&"bumper_engine": "res://sfx/vehicle/bumper/pupcar engine.ogg",
-	&"bumper_honk": "res://sfx/vehicle/bumper/pupcar honk.ogg",
 	&"collision_light": "res://sfx/vehicle/collision_light.wav",
 	&"collision_light_secondary": "res://sfx/vehicle/collision/PACK1-152.wav",
 	&"collision_medium": "res://sfx/vehicle/collision_medium.wav",
