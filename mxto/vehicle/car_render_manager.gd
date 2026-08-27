@@ -12,7 +12,6 @@ const OUTLINE_SHADER: Shader = preload("res://vehicle/vehicle_outline.gdshader")
 const OUTLINE_MAIN_SHADER: Shader = preload("res://vehicle/vehicle_outline_main.gdshader")
 const SHADOW_SHADER: Shader = preload("res://vehicle/vehicle_shadow.gdshader")
 const THRUSTER_SCENE: PackedScene = preload("res://vehicle/particle/thruster.tscn")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const HIDDEN_INSTANCE_TRANSFORM := Transform3D(Basis.IDENTITY, Vector3(0.0, -100000.0, 0.0))
 
 var archetypes: Array = []
@@ -27,12 +26,6 @@ var stamp_catalog: CarStampCatalog = null
 var custom_stamp_atlas_texture: Texture2D = null
 var stamp_mesh_builder: NativeStampMeshBuilder = NativeStampMeshBuilder.new()
 var force_unique_archetypes := false
-var _profile_archetype_builds: Array = []
-var _profile_new_archetype_count := 0
-var _profile_reused_archetype_count := 0
-var _profile_obsolete_archetype_count := 0
-var _profile_resize_usec := 0
-var _active_archetype_profile: Dictionary = {}
 var _cached_input_revisions: Array = []
 var _cached_definition_instances: Array = []
 var _cached_liveries: Array = []
@@ -55,27 +48,17 @@ func clear_renderer() -> void:
 		child.queue_free()
 
 func configure(definitions: Array, player_settings: Array = []) -> void:
-	var load_profile := _begin_configuration_profile("configure", definitions)
 	clear_renderer()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderer")
 	force_unique_archetypes = false
 	_configure_archetypes(definitions, player_settings)
-	_end_configuration_profile(load_profile, definitions)
 
 func configure_manual(definitions: Array, player_settings: Array = [], unique_archetypes := false) -> void:
-	var load_profile := _begin_configuration_profile("configure_manual", definitions, {
-		"unique_archetypes": unique_archetypes,
-	})
 	clear_renderer()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_renderer")
 	force_unique_archetypes = unique_archetypes
 	_configure_archetypes(definitions, player_settings)
-	_end_configuration_profile(load_profile, definitions)
 
 func reconfigure_manual(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> void:
-	var load_profile := _begin_configuration_profile("reconfigure_manual", definitions)
 	_reconfigure_archetypes(definitions, player_settings, input_revisions)
-	_end_configuration_profile(load_profile, definitions)
 
 
 func create_manual_reconfigure_preparation(definitions: Array, player_settings: Array = [], input_revisions: Array = []) -> Dictionary:
@@ -103,13 +86,9 @@ func create_manual_reconfigure_preparation(definitions: Array, player_settings: 
 
 
 func apply_manual_reconfigure_preparation(definitions: Array, player_settings: Array, input_revisions: Array, preparation: Dictionary, prepared_stamp_builds: Dictionary) -> void:
-	var load_profile := _begin_configuration_profile("apply_prepared_reconfigure", definitions, {
-		"prepared_stamp_build_count": prepared_stamp_builds.size(),
-	})
 	_prepared_stamp_builds = prepared_stamp_builds
 	_reconfigure_archetypes(definitions, player_settings, input_revisions, preparation)
 	_prepared_stamp_builds = {}
-	_end_configuration_profile(load_profile, definitions)
 
 
 func _clear_render_input_cache() -> void:
@@ -118,56 +97,6 @@ func _clear_render_input_cache() -> void:
 	_cached_liveries.clear()
 	_cached_archetype_keys.clear()
 
-
-func _begin_configuration_profile(mode: String, definitions: Array, fields: Dictionary = {}) -> int:
-	_profile_archetype_builds.clear()
-	_profile_new_archetype_count = 0
-	_profile_reused_archetype_count = 0
-	_profile_obsolete_archetype_count = 0
-	_profile_resize_usec = 0
-	var profile_fields := fields.duplicate(true)
-	profile_fields["mode"] = mode
-	profile_fields["definition_count"] = definitions.size()
-	profile_fields["existing_archetype_count"] = archetypes.size()
-	profile_fields["node"] = str(get_path()) if is_inside_tree() else name
-	profile_fields["stamp_only_mode"] = stamp_only_mode
-	return LoadTransitionProfilerClass.begin_transition("render", "car_archetype_configuration", profile_fields)
-
-
-func _end_configuration_profile(load_profile: int, definitions: Array) -> void:
-	_profile_archetype_builds.sort_custom(
-		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"definition_count": definitions.size(),
-		"archetype_count": archetypes.size(),
-		"new_archetype_count": _profile_new_archetype_count,
-		"reused_archetype_count": _profile_reused_archetype_count,
-		"obsolete_archetype_count": _profile_obsolete_archetype_count,
-		"resize_usec": _profile_resize_usec,
-		"archetype_builds": _profile_archetype_builds,
-	})
-
-
-func _build_profiled_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
-	var start_usec := Time.get_ticks_usec()
-	_active_archetype_profile = {
-		"content_id": definition.content_id if definition != null else "",
-		"name": definition.name if definition != null else "",
-		"runtime_mesh": definition != null and definition.car_scene == null,
-		"stamp_count": livery.stamps.size() if livery != null else 0,
-		"pass_count": 0,
-		"surface_count": 0,
-		"vertex_count": 0,
-		"index_count": 0,
-	}
-	_active_archetype_key = key
-	var archetype := _build_archetype(definition, livery, key)
-	_active_archetype_profile["duration_usec"] = Time.get_ticks_usec() - start_usec
-	_profile_new_archetype_count += 1
-	_profile_archetype_builds.append(_active_archetype_profile)
-	_active_archetype_profile = {}
-	_active_archetype_key = ""
-	return archetype
 
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
 	custom_stamp_atlas_texture = texture
@@ -214,7 +143,9 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		else:
 			archetype_index = archetypes.size()
 			archetype_map[key] = archetype_index
-			archetypes.append(_build_profiled_archetype(def, livery, key))
+			_active_archetype_key = key
+			archetypes.append(_build_archetype(def, livery, key))
+			_active_archetype_key = ""
 		var archetype: Dictionary = archetypes[archetype_index]
 		var count: int = archetype["count"]
 		car_archetype_indices[i] = archetype_index
@@ -222,10 +153,8 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		archetype["indices"].append(i)
 		archetype["count"] = count + 1
 		archetypes[archetype_index] = archetype
-	var resize_start_usec := Time.get_ticks_usec()
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
-	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
 func _resolve_reconfigure_inputs(definitions: Array, player_settings: Array, input_revisions: Array) -> Dictionary:
 	var next_input_revisions: Array = []
@@ -306,9 +235,10 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], in
 				reusable.erase(key)
 				archetype["indices"] = []
 				archetype["count"] = 0
-				_profile_reused_archetype_count += 1
 			else:
-				archetype = _build_profiled_archetype(definition, livery, key)
+				_active_archetype_key = key
+				archetype = _build_archetype(definition, livery, key)
+				_active_archetype_key = ""
 			next_archetypes.append(archetype)
 		var target: Dictionary = next_archetypes[archetype_index]
 		var count := int(target["count"])
@@ -317,7 +247,6 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], in
 		target["indices"].append(i)
 		target["count"] = count + 1
 		next_archetypes[archetype_index] = target
-	_profile_obsolete_archetype_count = reusable.size()
 	for obsolete in reusable.values():
 		_free_archetype_nodes(obsolete)
 	archetypes = next_archetypes
@@ -325,10 +254,8 @@ func _reconfigure_archetypes(definitions: Array, player_settings: Array = [], in
 	_cached_definition_instances = next_definition_instances
 	_cached_liveries = next_liveries
 	_cached_archetype_keys = next_archetype_keys
-	var resize_start_usec := Time.get_ticks_usec()
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
-	_profile_resize_usec += Time.get_ticks_usec() - resize_start_usec
 
 func _free_archetype_nodes(archetype: Dictionary) -> void:
 	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP, "thruster"]:
@@ -456,20 +383,13 @@ func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> Str
 func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key := "") -> Dictionary:
 	if definition.car_scene == null:
 		return _build_runtime_mesh_archetype(definition, livery, key)
-	var phase_start_usec := Time.get_ticks_usec()
 	var template: Node3D = definition.car_scene.instantiate()
-	_active_archetype_profile["scene_instantiate_usec"] = Time.get_ticks_usec() - phase_start_usec
 	var root_transform := template.transform
-	phase_start_usec = Time.get_ticks_usec()
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
 	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
 	var outline_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE")
 	var outline_main_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE_MAIN")
-	_active_archetype_profile["mesh_lookup_usec"] = Time.get_ticks_usec() - phase_start_usec
-	_profile_mesh(main_mesh.mesh)
-	phase_start_usec = Time.get_ticks_usec()
 	var thruster_data := _collect_thruster_data(template, root_transform)
-	_active_archetype_profile["thruster_collect_usec"] = Time.get_ticks_usec() - phase_start_usec
 	var main_pass := _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh.mesh, null if stamp_only_mode else main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery)
 	var outline_pass := _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_mesh.mesh, null if stamp_only_mode else outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1, livery, true)
 	var outline_main_pass := _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_main_mesh.mesh, null if stamp_only_mode else outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2, livery, false)
@@ -492,9 +412,7 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key :
 
 func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
 	var main_mesh := definition.runtime_mesh
-	_profile_mesh(main_mesh)
 	var local_transform := definition.runtime_transform
-	var phase_start_usec := Time.get_ticks_usec()
 	var outline_material := ShaderMaterial.new()
 	outline_material.shader = OUTLINE_SHADER
 	outline_material.set_shader_parameter("base_outline_width", 1.0)
@@ -505,23 +423,18 @@ func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery,
 	outline_main_material.set_shader_parameter("outline_color", Color(0.25, 0.55, 1.0))
 	var shadow_material := ShaderMaterial.new()
 	shadow_material.shader = SHADOW_SHADER
-	_active_archetype_profile["runtime_material_setup_usec"] = Time.get_ticks_usec() - phase_start_usec
-	phase_start_usec = Time.get_ticks_usec()
 	var template := Node3D.new()
 	var body_mesh := MeshInstance3D.new()
 	body_mesh.mesh = main_mesh
 	body_mesh.material_override = definition.runtime_material
 	body_mesh.transform = local_transform
 	template.add_child(body_mesh)
-	_active_archetype_profile["runtime_template_setup_usec"] = Time.get_ticks_usec() - phase_start_usec
 	var main_pass := _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else definition.runtime_material, local_transform, 1, 0, livery)
 	var outline_pass := _create_outline_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_material, local_transform, 4, -1, livery, true)
 	var outline_main_pass := _create_outline_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_main_material, local_transform, 2, -2, livery, false)
 	var shadow_pass := _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else shadow_material, local_transform, 1, 96)
 	var stamp_pass := _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), body_mesh, template, livery, local_transform, definition.runtime_material)
-	phase_start_usec = Time.get_ticks_usec()
 	var runtime_thruster_material := _runtime_thruster_material()
-	_active_archetype_profile["runtime_thruster_material_usec"] = Time.get_ticks_usec() - phase_start_usec
 	var thruster_pass := _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), runtime_thruster_material, [] if stamp_only_mode else definition.runtime_thruster_transforms)
 	var archetype := {
 		"key": key if key != "" else _definition_key(definition, livery),
@@ -583,36 +496,22 @@ func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: 
 	var material: Material = null
 	var stamp_vertex_ranges := {}
 	if livery != null and !livery.stamps.is_empty():
-		var phase_start_usec := Time.get_ticks_usec()
 		var catalog := _get_stamp_catalog()
-		_profile_add_usec("stamp_catalog_usec", phase_start_usec)
 		if catalog != null:
-			phase_start_usec = Time.get_ticks_usec()
 			if custom_stamp_atlas_texture != null:
 				catalog = catalog.duplicate() as CarStampCatalog
 				catalog.custom_atlas_texture = custom_stamp_atlas_texture
-			_profile_add_usec("stamp_catalog_duplicate_usec", phase_start_usec)
-			phase_start_usec = Time.get_ticks_usec()
 			var stamp_build: Dictionary
 			if _prepared_stamp_builds.has(_active_archetype_key):
 				stamp_build = stamp_mesh_builder.install_prepared(_prepared_stamp_builds[_active_archetype_key])
 			else:
 				stamp_build = stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
-			_profile_add_usec("stamp_projection_upload_usec", phase_start_usec)
-			for field_value in (stamp_build.get("profile", {}) as Dictionary).keys():
-				var field := String(field_value)
-				_active_archetype_profile["stamp_native_%s" % field] = int((stamp_build["profile"] as Dictionary).get(field, 0))
 			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh
-				_profile_mesh(generated_mesh, "stamp_")
-				phase_start_usec = Time.get_ticks_usec()
 				material = catalog.create_stamp_material(base_material, stamp_build["visibility_mask"])
-				_profile_add_usec("stamp_material_usec", phase_start_usec)
 				stamp_vertex_ranges = stamp_build.get("stamp_vertex_ranges", {})
-	var pass_start_usec := Time.get_ticks_usec()
 	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, stamp_render_priority)
-	_profile_add_usec("stamp_pass_resource_usec", pass_start_usec)
 	pass_data["stamp_vertex_ranges"] = stamp_vertex_ranges
 	if mesh == null:
 		var node: MultiMeshInstance3D = pass_data["node"]
@@ -698,7 +597,6 @@ func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Di
 	return {"local_transforms": local_transforms, "material": material}
 
 func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int, livery: CarLivery = null) -> Dictionary:
-	var phase_start_usec := Time.get_ticks_usec()
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = layers
@@ -708,8 +606,6 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	node.visibility_range_end = 0.0
 	node.visibility_range_end_margin = 0.0
 	node.lod_bias = 1000000.0
-	_profile_add_usec("pass_node_setup_usec", phase_start_usec)
-	phase_start_usec = Time.get_ticks_usec()
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -717,18 +613,11 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	multimesh.mesh = mesh
 	multimesh.instance_count = 0
 	node.multimesh = multimesh
-	_profile_add_usec("pass_multimesh_setup_usec", phase_start_usec)
 	if material != null:
-		phase_start_usec = Time.get_ticks_usec()
 		node.material_override = material.duplicate()
 		node.material_override.render_priority = render_priority
 		_apply_livery_to_material(node.material_override, livery)
-		_profile_add_usec("pass_material_duplicate_usec", phase_start_usec)
-	phase_start_usec = Time.get_ticks_usec()
 	add_child(node)
-	_profile_add_usec("pass_node_attach_usec", phase_start_usec)
-	if !_active_archetype_profile.is_empty():
-		_active_archetype_profile["pass_count"] = int(_active_archetype_profile.get("pass_count", 0)) + 1
 	return {
 		"local_transform": local_transform,
 		"node": node,
@@ -743,7 +632,6 @@ func _create_outline_pass(pass_name: String, mesh: Mesh, material: Material, loc
 	return pass_data
 
 func _create_thruster_pass(pass_name: String, material: Material, local_transforms: Array) -> Dictionary:
-	var phase_start_usec := Time.get_ticks_usec()
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = 2
@@ -754,8 +642,6 @@ func _create_thruster_pass(pass_name: String, material: Material, local_transfor
 	quad.size = Vector2(1.0, 1.0)
 	if material != null:
 		quad.material = material.duplicate()
-	_profile_add_usec("thruster_mesh_material_usec", phase_start_usec)
-	phase_start_usec = Time.get_ticks_usec()
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -764,9 +650,6 @@ func _create_thruster_pass(pass_name: String, material: Material, local_transfor
 	multimesh.instance_count = 0
 	node.multimesh = multimesh
 	add_child(node)
-	_profile_add_usec("thruster_multimesh_attach_usec", phase_start_usec)
-	if !_active_archetype_profile.is_empty():
-		_active_archetype_profile["thruster_count"] = local_transforms.size()
 	return {
 		"local_transforms": local_transforms,
 		"node": node,
@@ -895,24 +778,3 @@ func _get_stamp_catalog() -> CarStampCatalog:
 
 func _safe_name(name_in: String) -> String:
 	return name_in.replace(" ", "_").replace("/", "_")
-
-func _profile_add_usec(field: String, start_usec: int) -> void:
-	if _active_archetype_profile.is_empty():
-		return
-	_active_archetype_profile[field] = int(_active_archetype_profile.get(field, 0)) + Time.get_ticks_usec() - start_usec
-
-func _profile_mesh(mesh: Mesh, prefix := "") -> void:
-	if _active_archetype_profile.is_empty() or mesh == null:
-		return
-	var surfaces := mesh.get_surface_count()
-	var vertices := 0
-	var indices := 0
-	for surface in range(surfaces):
-		var arrays := mesh.surface_get_arrays(surface)
-		if arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
-			vertices += arrays[Mesh.ARRAY_VERTEX].size()
-		if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null:
-			indices += arrays[Mesh.ARRAY_INDEX].size()
-	_active_archetype_profile[prefix + "surface_count"] = int(_active_archetype_profile.get(prefix + "surface_count", 0)) + surfaces
-	_active_archetype_profile[prefix + "vertex_count"] = int(_active_archetype_profile.get(prefix + "vertex_count", 0)) + vertices
-	_active_archetype_profile[prefix + "index_count"] = int(_active_archetype_profile.get(prefix + "index_count", 0)) + indices

@@ -4,7 +4,6 @@
 #include <godot_cpp/classes/config_file.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
-#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -113,15 +112,6 @@ static Dictionary workshop_item_dictionary(ISteamUGC *ugc, PublishedFileId_t ite
 		item["status"] = "missing";
 	}
 	return item;
-}
-
-static void workshop_trace(const String &event, const Dictionary &fields)
-{
-	UtilityFunctions::print(
-			"MXT_WORKSHOP_NATIVE ticks_msec=",
-			static_cast<int64_t>(Time::get_singleton()->get_ticks_msec()),
-			" event=", event,
-			" fields=", fields);
 }
 
 #endif
@@ -486,7 +476,6 @@ struct SteamWorkshopState {
 		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
 		result["steam_result"] = static_cast<int64_t>(value->m_eResult);
 		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
-		owner->publish_workshop_diagnostic("download_result", result);
 		owner->complete_workshop_request(0, "download", result);
 		owner->refresh_workshop_items();
 	}
@@ -497,7 +486,6 @@ struct SteamWorkshopState {
 		Dictionary result = request_result(true, "item installed");
 		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
 		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
-		owner->publish_workshop_diagnostic("item_installed", result);
 		owner->complete_workshop_request(0, "item_installed", result);
 		owner->refresh_workshop_items();
 	}
@@ -508,7 +496,6 @@ struct SteamWorkshopState {
 		Dictionary result = request_result(true, "item subscribed");
 		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
 		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
-		owner->publish_workshop_diagnostic("item_subscribed", result);
 		owner->complete_workshop_request(0, "item_subscribed", result);
 		owner->refresh_workshop_items();
 	}
@@ -519,7 +506,6 @@ struct SteamWorkshopState {
 		Dictionary result = request_result(true, "item unsubscribed");
 		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
 		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
-		owner->publish_workshop_diagnostic("item_unsubscribed", result);
 		owner->complete_workshop_request(0, "item_unsubscribed", result);
 		owner->refresh_workshop_items();
 	}
@@ -590,10 +576,6 @@ void MxtSteamService::_bind_methods()
 			PropertyInfo(Variant::STRING, "operation"),
 			PropertyInfo(Variant::DICTIONARY, "result")));
 	ADD_SIGNAL(MethodInfo("workshop_items_changed", PropertyInfo(Variant::ARRAY, "items")));
-	ADD_SIGNAL(MethodInfo(
-			"workshop_diagnostic_event",
-			PropertyInfo(Variant::STRING, "event"),
-			PropertyInfo(Variant::DICTIONARY, "fields")));
 	ADD_SIGNAL(MethodInfo(
 			"leaderboard_request_completed",
 			PropertyInfo(Variant::INT, "request_id"),
@@ -814,10 +796,7 @@ void MxtSteamService::load_tracked_workshop_item_ids()
 	config.instantiate();
 	const Error error = config->load(TRACKED_WORKSHOP_ITEMS_PATH);
 	if (error != OK && error != ERR_FILE_NOT_FOUND) {
-		Dictionary diagnostic;
-		diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
-		diagnostic["error"] = static_cast<int64_t>(error);
-		publish_workshop_diagnostic("tracked_items_load_failed", diagnostic);
+		UtilityFunctions::push_warning("Could not load tracked Workshop item IDs: " + String::num_int64(error));
 		return;
 	}
 	const String section = String("account_") + String::num_uint64(steam_id);
@@ -831,9 +810,6 @@ void MxtSteamService::load_tracked_workshop_item_ids()
 		}
 	}
 	tracked_workshop_item_ids.sort();
-	Dictionary diagnostic;
-	diagnostic["published_file_ids"] = tracked_workshop_item_ids.duplicate();
-	publish_workshop_diagnostic("tracked_items_loaded", diagnostic);
 }
 
 void MxtSteamService::save_tracked_workshop_item_ids()
@@ -843,28 +819,15 @@ void MxtSteamService::save_tracked_workshop_item_ids()
 	config.instantiate();
 	const Error load_error = config->load(TRACKED_WORKSHOP_ITEMS_PATH);
 	if (load_error != OK && load_error != ERR_FILE_NOT_FOUND) {
-		Dictionary diagnostic;
-		diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
-		diagnostic["error"] = static_cast<int64_t>(load_error);
-		publish_workshop_diagnostic("tracked_items_save_failed", diagnostic);
+		UtilityFunctions::push_warning("Could not load tracked Workshop item IDs before saving: " + String::num_int64(load_error));
 		return;
 	}
 	const String section = String("account_") + String::num_uint64(steam_id);
 	config->set_value(section, "published_file_ids", tracked_workshop_item_ids.duplicate());
 	const Error save_error = config->save(TRACKED_WORKSHOP_ITEMS_PATH);
-	Dictionary diagnostic;
-	diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
-	diagnostic["published_file_ids"] = tracked_workshop_item_ids.duplicate();
-	diagnostic["error"] = static_cast<int64_t>(save_error);
-	publish_workshop_diagnostic(save_error == OK ? "tracked_items_saved" : "tracked_items_save_failed", diagnostic);
-}
-
-void MxtSteamService::publish_workshop_diagnostic(const String &event, const Dictionary &fields)
-{
-#if defined(MXT_STEAMWORKS_ENABLED)
-	workshop_trace(event, fields);
-#endif
-	emit_signal("workshop_diagnostic_event", event, fields.duplicate(true));
+	if (save_error != OK) {
+		UtilityFunctions::push_warning("Could not save tracked Workshop item IDs: " + String::num_int64(save_error));
+	}
 }
 
 int64_t MxtSteamService::create_workshop_item()
@@ -999,12 +962,7 @@ int64_t MxtSteamService::submit_workshop_item_update(
 bool MxtSteamService::refresh_workshop_items()
 {
 #if defined(MXT_STEAMWORKS_ENABLED)
-	const uint64_t refresh_start_usec = Time::get_singleton()->get_ticks_usec();
 	if (!initialized || !SteamUGC()) {
-		Dictionary unavailable;
-		unavailable["initialized"] = initialized;
-		unavailable["steam_ugc_available"] = SteamUGC() != nullptr;
-		publish_workshop_diagnostic("refresh_rejected", unavailable);
 		return false;
 	}
 	ISteamUGC *ugc = SteamUGC();
@@ -1024,26 +982,13 @@ bool MxtSteamService::refresh_workshop_items()
 		}
 		if (!already_present) ids.push_back(session_id);
 	}
-	Dictionary refresh_begin;
-	refresh_begin["subscribed_count"] = static_cast<int64_t>(count);
-	refresh_begin["received_count"] = static_cast<int64_t>(received);
-	refresh_begin["tracked_item_ids"] = tracked_workshop_item_ids.duplicate();
-	refresh_begin["merged_count"] = static_cast<int64_t>(ids.size());
-	publish_workshop_diagnostic("refresh_begin", refresh_begin);
 	Array refreshed_items;
 	for (const PublishedFileId_t id : ids) {
 		Dictionary item = workshop_item_dictionary(ugc, id);
 		refreshed_items.push_back(item);
-		publish_workshop_diagnostic("refresh_item", item);
 	}
-	const bool changed = refreshed_items != workshop_items;
 	workshop_items = refreshed_items;
 	publish_workshop_items();
-	Dictionary refresh_end;
-	refresh_end["duration_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - refresh_start_usec);
-	refresh_end["published_item_count"] = workshop_items.size();
-	refresh_end["changed"] = changed;
-	publish_workshop_diagnostic("refresh_end", refresh_end);
 	return true;
 #else
 	return false;
@@ -1093,32 +1038,16 @@ bool MxtSteamService::unsubscribe_workshop_item(int64_t published_file_id)
 bool MxtSteamService::download_workshop_item(int64_t published_file_id, bool high_priority)
 {
 #if defined(MXT_STEAMWORKS_ENABLED)
-	Dictionary request;
-	request["published_file_id"] = published_file_id;
-	request["high_priority"] = high_priority;
-	request["initialized"] = initialized;
-	request["steam_ugc_available"] = SteamUGC() != nullptr;
 	if (!track_workshop_item(published_file_id)) {
-		request["accepted"] = false;
-		request["reason"] = "invalid request or Steam Workshop unavailable";
-		publish_workshop_diagnostic("download_request", request);
 		return false;
 	}
 	ISteamUGC *ugc = SteamUGC();
 	const PublishedFileId_t item_id = static_cast<PublishedFileId_t>(published_file_id);
-	request["item_state_before"] = workshop_item_dictionary(ugc, item_id);
 	const uint32 state = ugc->GetItemState(item_id);
 	if ((state & (k_EItemStateDownloading | k_EItemStateDownloadPending)) != 0) {
-		request["accepted"] = true;
-		request["already_in_progress"] = true;
-		request["item_state_after"] = request["item_state_before"];
-		publish_workshop_diagnostic("download_request", request);
 		return true;
 	}
 	const bool accepted = ugc->DownloadItem(item_id, high_priority);
-	request["accepted"] = accepted;
-	request["item_state_after"] = workshop_item_dictionary(ugc, item_id);
-	publish_workshop_diagnostic("download_request", request);
 	if (!accepted) return false;
 	return true;
 #else

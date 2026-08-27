@@ -44,7 +44,6 @@ private:
 	void complete_leaderboard_replay_upload(int64_t request_id, const Dictionary &result);
 	void complete_leaderboard_replay_download(int64_t request_id, const Dictionary &result);
 	void publish_workshop_items();
-	void publish_workshop_diagnostic(const String &event, const Dictionary &fields);
 
 protected:
 	static void _bind_methods();

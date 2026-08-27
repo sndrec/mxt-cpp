@@ -342,7 +342,6 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	lobby_settings.broadcast_cpu_roster()
-	telemetry.start_logger()
 	return OK
 
 func join(ip: String, port: int = 27016) -> int:
@@ -366,7 +365,6 @@ func join(ip: String, port: int = 27016) -> int:
 	refresh_protocol_contexts()
 	input_transport.reset()
 	get_window().title = "Client " + str(multiplayer.get_unique_id())
-	telemetry.start_logger()
 	return OK
 
 func _on_peer_connected(id: int) -> void:

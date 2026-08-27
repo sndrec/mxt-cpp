@@ -6,7 +6,6 @@ const BUMPER_POOL_SIZE := 60
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const TRIGGER_SCENES = {
 	0: preload("res://asset/obj_dashplate.tscn"),
 	1: preload("res://asset/obj_jumpplate.tscn"),
@@ -90,14 +89,6 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	if track_index < 0 or track_index >= track_content_controller.tracks.size():
 		return false
 	var track_info: Dictionary = track_content_controller.tracks[track_index]
-	var load_profile := LoadTransitionProfilerClass.begin_transition("race_load", "race_session_start", {
-		"track_index": track_index,
-		"track_id": String(track_info.get("content_id", "")),
-		"track_name": String(track_info.get("name", "")),
-		"requested_settings_count": settings.size(),
-		"singleplayer": singleplayer_mode,
-		"headless": headless_mode,
-	})
 	current_singleplayer_mode = singleplayer_mode
 	main_control.visible = false
 	lobby_control.visible = false
@@ -107,13 +98,11 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	race_presentation_controller.reset()
 	spectator_controller.reset()
 	if !track_content_controller.prepare_race(track_index):
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "track_prepare_failed"})
 		return false
 	race_audio_controller.reset_for_race()
 	race_audio_controller.configure_track_music(
 		track_content_controller.current_track_dir,
 		track_content_controller.current_metadata)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "track_and_audio_prepare")
 
 	var chosen_definitions: Array = []
 	var racer_settings: Array = []
@@ -137,7 +126,6 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 			if !keyed_settings.has(player_id):
 				continue
 			if _append_racer(keyed_settings[player_id], player_id, true, cpu_ids.has(player_id), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags) < 0:
-				LoadTransitionProfilerClass.end_transition(load_profile, {"error": "racer_content_mismatch"})
 				return false
 	else:
 		var racer_roster_index := 0
@@ -146,17 +134,12 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 			var player_id := int(roster[racer_roster_index]) if has_roster_id else 0
 			var append_result := _append_racer(settings_dictionary, player_id, has_roster_id, cpu_ids.has(player_id), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags)
 			if append_result < 0:
-				LoadTransitionProfilerClass.end_transition(load_profile, {"error": "racer_content_mismatch"})
 				return false
 			if append_result > 0:
 				racer_roster_index += 1
 	var unique_vehicle_ids := {}
 	for definition: CarDefinition in chosen_definitions:
 		unique_vehicle_ids[definition.content_id] = true
-	LoadTransitionProfilerClass.checkpoint(load_profile, "resolve_racer_roster", {
-		"racer_count": racer_ids.size(),
-		"unique_vehicle_count": unique_vehicle_ids.size(),
-	})
 
 	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
 	var custom_stamp_render := vehicle_content_controller.prepare_custom_stamp_render_payload(racer_ids, racer_settings, "race")
@@ -168,10 +151,6 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 		for _slot in BUMPER_POOL_SIZE:
 			render_definitions.append(bumper_definition)
 			render_settings.append({})
-	LoadTransitionProfilerClass.checkpoint(load_profile, "custom_stamps_and_render_roster", {
-		"render_definition_count": render_definitions.size(),
-		"bumpers_enabled": bumper_definition != null,
-	})
 	var local_player_id := _local_player_id()
 	local_player_index = racer_ids.find(local_player_id)
 	var start_grid_slots: PackedInt32Array
@@ -204,7 +183,6 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	debug_runtime_controller.apply_race_render_options(car_render_manager, car_node_container.local_visual_car)
 	car_render_manager.set_custom_stamp_atlas(custom_stamp_atlas)
 	car_render_manager.configure(render_definitions, render_settings)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "visual_cars_and_render_archetypes")
 	_clear_players()
 	spectator_controller.configure_race(local_player_id, local_player_index != -1)
 	var car_properties: Array = []
@@ -225,31 +203,22 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 		acceleration_settings.append(racer_settings[index].accel_setting if index < racer_settings.size() else 1.0)
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(track_info["mxt"])
-	LoadTransitionProfilerClass.checkpoint(load_profile, "player_controllers_and_gameplay_files", {
-		"level_bytes": level_buffer.data_array.size(),
-	})
 	_configure_game_sim(game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "client_gamesim")
 	race_audio_controller.configure_vehicle_properties(chosen_definitions)
 	network_manager.input_transport.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
 	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	race_presentation_controller.configure_race(local_player_id, local_player_index, singleplayer_mode, nametag_names)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "netcode_replay_audio_and_presentation")
 	if network_manager.is_server:
 		_configure_game_sim(server_game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
 		network_manager.input_transport.server_netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "server_gamesim", {
-		"server": network_manager.is_server,
-	})
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
 	network_manager.refresh_protocol_contexts()
 	if !headless_mode:
 		track_content_controller.load_runtime_visuals()
-		LoadTransitionProfilerClass.checkpoint(load_profile, "track_runtime_visuals")
 		_clear_triggers()
 		var parsed_triggers := _parse_level_triggers(level_buffer.data_array)
 		for trigger in parsed_triggers:
@@ -260,13 +229,6 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 				object_container.add_child(instance)
 				trigger_objects.append(instance)
 		game_sim.set_trigger_visuals(trigger_objects)
-		LoadTransitionProfilerClass.checkpoint(load_profile, "trigger_visuals", {
-			"trigger_count": parsed_triggers.size(),
-		})
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"racer_count": racer_ids.size(),
-		"render_definition_count": render_definitions.size(),
-	})
 	return true
 
 
@@ -310,25 +272,18 @@ func begin_transition(singleplayer_mode: bool, audio_fade_seconds := 0.0) -> voi
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 
 func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("race_load", "race_world_destroy", {
-		"disconnect_network": disconnect_network,
-		"was_server": network_manager.is_server,
-	})
 	race_presentation_controller.reset()
 	var was_server := network_manager.is_server
 	if disconnect_network:
 		network_manager.disconnect_from_server()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "presentation_and_network")
 	game_sim.destroy_gamesim()
 	if was_server:
 		server_game_sim.destroy_gamesim()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "gamesim_destroy")
 	if clear_client_sim_reference:
 		network_manager.game_sim = null
 	network_manager.server_game_sim = null
 	network_manager.refresh_protocol_contexts()
 	track_content_controller.teardown_runtime()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "track_runtime_teardown")
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()
@@ -342,7 +297,6 @@ func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -
 	current_racer_settings.clear()
 	current_definitions.clear()
 	current_start_grid_slots = PackedInt32Array()
-	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func _append_racer(settings_dictionary: Dictionary, player_id: int, has_player_id: bool, is_cpu: bool, chosen_definitions: Array, racer_settings: Array, racer_ids: Array, racer_cpu_flags: Array) -> int:
 	var player_settings := PlayerSettings.new()

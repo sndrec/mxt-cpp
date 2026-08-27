@@ -14,7 +14,6 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
 const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
 const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
 const PREVIEW_TARGET_HEIGHT := 0.5
@@ -382,24 +381,14 @@ func _update_controls(rebuild_preview := true) -> void:
 	_refresh_vehicle_grades()
 
 func refresh_after_game_manager_loaded() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("garage", "refresh_vehicle_catalog")
 	_load_settings()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "load_player_settings")
 	var previous_vehicle_evidence := _selected_vehicle_evidence_signature()
 	_load_car_defs()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "populate_vehicle_selector", {
-		"vehicle_count": car_defs.size(),
-	})
 	_refresh_custom_stamp_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "refresh_custom_stamp_library")
 	_update_controls(false)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "update_controls_and_grades")
 	_sync_livery_to_player_settings()
 	if _selected_vehicle_evidence_signature() != previous_vehicle_evidence:
 		_save_settings()
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"vehicle_count": car_defs.size(),
-	})
 
 func _selected_vehicle_evidence_signature() -> String:
 	return "%s|%s|%s|%s" % [
@@ -412,18 +401,10 @@ func _selected_vehicle_evidence_signature() -> String:
 func _on_vehicle_editor_content_changed() -> void:
 	if game_manager == null:
 		return
-	var load_profile := LoadTransitionProfilerClass.begin_transition("garage", "vehicle_editor_content_changed")
 	performance_analyzer = MxtCarPerformanceAnalyzer.new()
 	vehicle_content_controller.refresh_installed_content()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "refresh_installed_content")
 	_load_car_defs()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "populate_vehicle_selector", {
-		"vehicle_count": car_defs.size(),
-	})
 	_update_controls()
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"vehicle_count": car_defs.size(),
-	})
 
 func _on_vehicle_editor_test_drive_requested(snapshot: Dictionary) -> void:
 	if game_manager != null:
@@ -525,23 +506,13 @@ func _on_close_pressed() -> void:
 	hide()
 
 func open_settings() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("garage", "open")
 	_load_settings()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "load_player_settings")
 	_load_car_defs()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "populate_vehicle_selector", {
-		"vehicle_count": car_defs.size(),
-	})
 	_refresh_custom_stamp_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "refresh_custom_stamp_library")
 	_update_controls()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "controls_grades_and_preview")
 	_update_livery_lock_state()
 	show()
 	_set_garage_preview_active(true)
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"vehicle_count": car_defs.size(),
-	})
 
 
 func _on_settings_tab_changed(tab: int) -> void:
@@ -880,10 +851,6 @@ func _rebuild_preview_vehicle() -> void:
 	if preview_root == null:
 		return
 	var definition := _selected_car_definition()
-	var load_profile := LoadTransitionProfilerClass.begin_transition("garage", "preview_vehicle_rebuild", {
-		"content_id": definition.content_id if definition != null else "",
-		"vehicle_name": definition.name if definition != null else "",
-	})
 	if preview_vehicle != null and is_instance_valid(preview_vehicle):
 		preview_vehicle.queue_free()
 	preview_vehicle = null
@@ -893,9 +860,7 @@ func _rebuild_preview_vehicle() -> void:
 		preview_edit_render_manager.clear_renderer()
 	if preview_above_render_manager != null:
 		preview_above_render_manager.clear_renderer()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "clear_previous_preview")
 	if definition == null or !definition.has_visual():
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "vehicle_visual_unavailable"})
 		return
 	if definition.car_scene != null:
 		preview_vehicle = definition.car_scene.instantiate()
@@ -909,9 +874,7 @@ func _rebuild_preview_vehicle() -> void:
 	preview_vehicle_base_transform = preview_vehicle.transform
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "instantiate_preview_scene")
 	_refresh_preview_custom_stamp_atlas()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "custom_stamp_atlas")
 	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery_below())]
 	preview_render_manager.stamp_visibility_masks_enabled = true
 	preview_render_manager.stamp_visibility_mask_skip_layer = -1
@@ -919,14 +882,10 @@ func _rebuild_preview_vehicle() -> void:
 	preview_render_manager.stamp_render_priority = 2
 	preview_render_manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
 	preview_render_manager.configure_manual([definition], render_settings)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "configure_preview_renderer")
 	if stamp_ui_mode == StampUiMode.EDITING:
 		_rebuild_edit_stamp_preview(false)
 		_rebuild_above_stamp_preview(false)
 	_apply_preview_camera()
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"stamp_count": current_livery.stamps.size() if current_livery != null else 0,
-	})
 
 func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
 	if preview_edit_render_manager == null:

@@ -11,13 +11,11 @@ const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const LOBBY_WORKSHOP_DOWNLOAD_RETRY_BASE_MSEC := 3000
 const LOBBY_WORKSHOP_DOWNLOAD_RETRY_MAX_MSEC := 30000
-const WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY := "user://logs"
 const COMMUNITY_VEHICLE_SHADER: Shader = preload("res://vehicle/base_vehicle_shader.gdshader")
 const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crosshatch/1.png")
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 var content_catalog: MxtContentCatalog = MxtContentCatalog.new()
 var definitions: Array = []
@@ -30,43 +28,18 @@ var lobby_workshop_download_requests := {}
 var lobby_workshop_download_failures := {}
 var lobby_known_workshop_items := {}
 var lobby_ready_workshop_packages := {}
-var lobby_workshop_first_mismatch_msec := {}
-var lobby_workshop_mismatch_signatures := {}
-var workshop_diagnostic_log: FileAccess
-var workshop_diagnostic_path := ""
-var workshop_refresh_sequence := 0
-var workshop_catalog_signature := ""
 
 func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_content_initialize")
 	steam_service = in_steam_service
 	custom_stamp_network = in_custom_stamp_network
-	_open_workshop_diagnostic_log()
 	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
-	steam_service.workshop_request_completed.connect(_on_workshop_request_completed_diagnostic)
-	steam_service.workshop_diagnostic_event.connect(_on_native_workshop_diagnostic)
-	record_workshop_diagnostic_event("session_start", {
-		"steam_initialized": steam_service.is_initialized(),
-		"steam_app_id": steam_service.get_app_id(),
-		"initial_workshop_items": steam_service.get_workshop_items(),
-		"command_line": OS.get_cmdline_args(),
-		"os": OS.get_name(),
-		"os_version": OS.get_version(),
-	})
+	steam_service.workshop_request_completed.connect(_on_workshop_request_completed)
 	_scan_local_content_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
 	var initial_workshop_items := steam_service.get_workshop_items()
 	if !initial_workshop_items.is_empty():
 		_on_workshop_items_changed(initial_workshop_items)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "initial_workshop_catalog", {
-		"workshop_item_count": initial_workshop_items.size(),
-	})
 	reload_definitions()
 	runtime_content_loaded = true
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"definition_count": definitions.size(),
-		"content_record_count": content_catalog.get_records("vehicle").size(),
-	})
 
 func get_vehicle_content_ids() -> Array:
 	var content_ids: Array = []
@@ -333,39 +306,20 @@ func evidence_matches(settings: PlayerSettings) -> bool:
 		and String(record.get("published_file_id", "")) == settings.vehicle_workshop_id)
 
 func reload_definitions() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "vehicle_definition_reload")
 	definitions.clear()
 	definitions_by_content_id.clear()
 	var directory := DirAccess.open("res://vehicle/asset")
 	if directory == null:
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "official_vehicle_directory_unavailable"})
 		return
-	var official_profiles: Array = []
 	directory.list_dir_begin()
 	var folder := directory.get_next()
 	while folder != "":
 		if directory.current_is_dir() and !folder.begins_with(".") and folder != "bumper":
-			var definition_start_usec := Time.get_ticks_usec()
 			_register_official_definition("res://vehicle/asset/%s/definition.tres" % folder)
-			official_profiles.append({
-				"folder": folder,
-				"duration_usec": Time.get_ticks_usec() - definition_start_usec,
-			})
 		folder = directory.get_next()
 	directory.list_dir_end()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "official_definitions", {
-		"count": definitions.size(),
-	})
-	var packaged_profiles := _load_packaged_definitions()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "packaged_definitions", {
-		"count": packaged_profiles.size(),
-	})
+	_load_packaged_definitions()
 	definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"definition_count": definitions.size(),
-		"official_profiles": official_profiles,
-		"packaged_profiles": packaged_profiles,
-	})
 
 func _register_official_definition(definition_path: String) -> void:
 	if !ResourceLoader.exists(definition_path):
@@ -394,36 +348,15 @@ func _register_official_definition(definition_path: String) -> void:
 			definitions_by_content_id[definition.content_id] = definition
 
 func refresh_installed_content() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "installed_vehicle_refresh")
 	_scan_local_content_library()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "local_packages_scanned")
 	reload_definitions()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "definitions_reloaded", {
-		"definition_count": definitions.size(),
-	})
 	catalog_changed.emit()
-	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func refresh_workshop_content() -> bool:
 	return steam_service != null and steam_service.refresh_workshop_items()
 
 func get_workshop_content_items() -> Array:
 	return workshop_content_items.duplicate(true)
-
-func get_workshop_diagnostic_path() -> String:
-	return workshop_diagnostic_path
-
-func record_workshop_diagnostic_event(event: String, fields := {}) -> void:
-	var payload: Dictionary = fields.duplicate(true) if fields is Dictionary else {"value": fields}
-	payload["event"] = event
-	payload["ticks_msec"] = Time.get_ticks_msec()
-	payload["unix_time"] = Time.get_unix_time_from_system()
-	payload["utc"] = Time.get_datetime_string_from_system(true, true)
-	var line := JSON.stringify(payload)
-	print("MXT_WORKSHOP %s" % line)
-	if workshop_diagnostic_log != null:
-		workshop_diagnostic_log.store_line(line)
-		workshop_diagnostic_log.flush()
 
 func request_lobby_vehicle_content(settings: Dictionary) -> bool:
 	var workshop_id_text := String(settings.get("vehicle_workshop_id", ""))
@@ -445,59 +378,17 @@ func request_lobby_vehicle_content(settings: Dictionary) -> bool:
 		local_published_file_id == workshop_id_text
 		and local_gameplay_digest == expected_gameplay_digest
 		and local_package_digest == package_digest):
-		var first_mismatch_msec := int(lobby_workshop_first_mismatch_msec.get(workshop_id, 0))
-		if first_mismatch_msec > 0:
-			record_workshop_diagnostic_event("lobby_content_ready", {
-				"published_file_id": workshop_id,
-				"content_id": content_id,
-				"wait_duration_msec": Time.get_ticks_msec() - first_mismatch_msec,
-				"gameplay_digest": local_gameplay_digest,
-				"package_digest": local_package_digest,
-				"package_path": String(record.get("root_path", "")),
-			})
 		lobby_workshop_download_requests.erase(workshop_id)
 		lobby_workshop_download_failures.erase(workshop_id)
-		lobby_workshop_first_mismatch_msec.erase(workshop_id)
-		lobby_workshop_mismatch_signatures.erase(workshop_id)
 		lobby_ready_workshop_packages[workshop_id] = package_digest
 		return true
 	var now_msec := Time.get_ticks_msec()
-	if !lobby_workshop_first_mismatch_msec.has(workshop_id):
-		lobby_workshop_first_mismatch_msec[workshop_id] = now_msec
-	var mismatch_signature := "%s|%s|%s|%s|%s|%s" % [
-		expected_gameplay_digest,
-		package_digest,
-		local_published_file_id,
-		local_gameplay_digest,
-		local_package_digest,
-		String(record.get("root_path", "")),
-	]
-	if String(lobby_workshop_mismatch_signatures.get(workshop_id, "")) != mismatch_signature:
-		lobby_workshop_mismatch_signatures[workshop_id] = mismatch_signature
-		record_workshop_diagnostic_event("lobby_content_mismatch", {
-			"published_file_id": workshop_id,
-			"content_id": content_id,
-			"expected_gameplay_digest": expected_gameplay_digest,
-			"expected_package_digest": package_digest,
-			"record_present": !record.is_empty(),
-			"local_published_file_id": local_published_file_id,
-			"local_gameplay_digest": local_gameplay_digest,
-			"local_package_digest": local_package_digest,
-			"local_source": String(record.get("source", "")),
-			"local_package_path": String(record.get("root_path", "")),
-			"steam_initialized": steam_service != null and steam_service.is_initialized(),
-		})
 	if steam_service == null or !steam_service.is_initialized():
 		return false
 	if !lobby_known_workshop_items.has(workshop_id):
 		var tracked := steam_service.track_workshop_item(workshop_id)
 		if tracked:
 			steam_service.refresh_workshop_items()
-		record_workshop_diagnostic_event("lobby_workshop_item_tracked", {
-			"published_file_id": workshop_id,
-			"content_id": content_id,
-			"tracked": tracked,
-		})
 		return false
 	var failure_count := int(lobby_workshop_download_failures.get(workshop_id, 0))
 	var retry_delay_msec := mini(
@@ -513,90 +404,36 @@ func request_lobby_vehicle_content(settings: Dictionary) -> bool:
 	var accepted := steam_service.download_workshop_item(workshop_id, true)
 	if !accepted:
 		lobby_workshop_download_failures[workshop_id] = failure_count + 1
-	record_workshop_diagnostic_event("lobby_download_request", {
-		"published_file_id": workshop_id,
-		"content_id": content_id,
-		"accepted": accepted,
-		"previous_failures": failure_count,
-		"retry_delay_msec": retry_delay_msec,
-		"attempt_age_msec": now_msec - int(lobby_workshop_first_mismatch_msec.get(workshop_id, now_msec)),
-		"expected_gameplay_digest": expected_gameplay_digest,
-		"expected_package_digest": package_digest,
-		"local_gameplay_digest": local_gameplay_digest,
-		"local_package_digest": local_package_digest,
-	})
 	return false
 
 func _scan_local_content_library() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "local_package_scan")
 	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
 	var directory_error := DirAccess.make_dir_recursive_absolute(library_path)
 	if directory_error != OK:
 		push_error("Could not create the local content library: %s" % error_string(directory_error))
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": error_string(directory_error)})
 		return
 	var result: Dictionary = content_catalog.scan_local_library(library_path)
 	for diagnostic_value in result.get("diagnostics", []):
 		var diagnostic: Dictionary = diagnostic_value
 		push_warning("Skipped local content package %s: %s" % [String(diagnostic.get("path", "")), str(diagnostic.get("errors", []))])
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"library_path": library_path,
-		"diagnostic_count": (result.get("diagnostics", []) as Array).size(),
-		"vehicle_record_count": content_catalog.get_records("vehicle").size(),
-	})
 func create_test_drive_snapshot(package_root: String) -> Dictionary:
 	return content_catalog.snapshot_draft_package(
 		package_root,
 		ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH))
 
 func _on_workshop_items_changed(items: Array) -> void:
-	workshop_refresh_sequence += 1
-	var sequence := workshop_refresh_sequence
-	var refresh_start_usec := Time.get_ticks_usec()
-	var load_profile := LoadTransitionProfilerClass.begin_transition("content", "workshop_catalog_refresh", {
-		"sequence": sequence,
-		"item_count": items.size(),
-	})
-	record_workshop_diagnostic_event("catalog_refresh_begin", {
-		"sequence": sequence,
-		"item_count": items.size(),
-	})
 	var processed_items := []
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
 		if published_file_id > 0:
 			lobby_known_workshop_items[published_file_id] = true
-		record_workshop_diagnostic_event("catalog_item_state", {
-			"sequence": sequence,
-			"item": item,
-		})
 	var synced: Dictionary = content_catalog.sync_workshop_packages(items)
 	var native_results_by_id := {}
-	var candidate_count := 0
 	for result_value in synced.get("items", []):
 		var result: Dictionary = result_value
 		var published_file_id := int(result.get("published_file_id", 0))
 		native_results_by_id[published_file_id] = result
-		if bool(result.get("valid", false)):
-			candidate_count += 1
-		if bool(result.get("eligible", false)) and !bool(result.get("cache_hit", false)):
-			record_workshop_diagnostic_event("catalog_package_validation", {
-				"published_file_id": published_file_id,
-				"install_path": String(result.get("install_path", "")),
-				"valid": bool(result.get("valid", false)),
-				"package_digest": String(result.get("package_digest", "")),
-				"gameplay_digest": String(result.get("gameplay_digest", "")),
-				"errors": result.get("errors", []),
-				"validation_profile": result.get("validation_profile", {}),
-			})
-			record_workshop_diagnostic_event("catalog_package_registration", {
-				"published_file_id": published_file_id,
-				"duration_usec": int(result.get("registration_usec", 0)),
-				"valid": bool(result.get("valid", false)),
-				"errors": result.get("errors", []),
-				"record": result.get("record", {}),
-			})
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
@@ -613,72 +450,20 @@ func _on_workshop_items_changed(items: Array) -> void:
 				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
 				item["errors"] = errors
 		processed_items.append(item)
-	var validation_cache_hit_count := int(synced.get("validation_cache_hit_count", 0))
-	var validation_cache_miss_count := int(synced.get("validation_cache_miss_count", 0))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "validate_items", {
-		"candidate_count": candidate_count,
-		"validation_cache_hit_count": validation_cache_hit_count,
-		"validation_cache_miss_count": validation_cache_miss_count,
-	})
 	var catalog_materially_changed := bool(synced.get("catalog_changed", false))
 	var delta: Dictionary = synced.get("delta", {})
-	workshop_catalog_signature = String(synced.get("catalog_signature", ""))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "catalog_signature", {
-		"materially_changed": catalog_materially_changed,
-	})
 	for published_file_id in delta.get("changed_item_ids", []):
 		lobby_ready_workshop_packages.erase(int(published_file_id))
 	for published_file_id in delta.get("removed_item_ids", []):
 		lobby_ready_workshop_packages.erase(int(published_file_id))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "register_packages", {
-		"registered_count": validation_cache_miss_count,
-	})
 	workshop_content_items = processed_items
-	LoadTransitionProfilerClass.checkpoint(load_profile, "resolve_catalog_records")
-	var definition_reload_duration_usec := 0
 	if runtime_content_loaded and catalog_materially_changed:
-		var definition_reload_start_usec := Time.get_ticks_usec()
-		var definition_profiles := _apply_workshop_content_delta(delta)
-		definition_reload_duration_usec = Time.get_ticks_usec() - definition_reload_start_usec
-		delta["definition_profiles"] = definition_profiles
+		_apply_workshop_content_delta(delta)
 		catalog_delta.emit(delta)
 	workshop_content_changed.emit(get_workshop_content_items())
-	record_workshop_diagnostic_event("catalog_refresh_end", {
-		"sequence": sequence,
-		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
-		"definition_reload_duration_usec": definition_reload_duration_usec,
-		"definition_count": definitions.size(),
-		"workshop_item_count": workshop_content_items.size(),
-		"catalog_materially_changed": catalog_materially_changed,
-		"catalog_signature": workshop_catalog_signature,
-		"validation_cache_hit_count": validation_cache_hit_count,
-		"validation_cache_miss_count": validation_cache_miss_count,
-		"added_content_ids": delta.get("added_content_ids", []),
-		"changed_content_ids": delta.get("changed_content_ids", []),
-		"removed_content_ids": delta.get("removed_content_ids", []),
-	})
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"catalog_materially_changed": catalog_materially_changed,
-		"definition_reload_duration_usec": definition_reload_duration_usec,
-		"definition_count": definitions.size(),
-	})
 
 
-func _open_workshop_diagnostic_log() -> void:
-	var absolute_directory := ProjectSettings.globalize_path(WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY)
-	var directory_error := DirAccess.make_dir_recursive_absolute(absolute_directory)
-	if directory_error != OK:
-		push_warning("Could not create Workshop diagnostic log directory: %s" % error_string(directory_error))
-		return
-	workshop_diagnostic_path = "%s/workshop-diagnostics-%d.jsonl" % [WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY, int(Time.get_unix_time_from_system())]
-	workshop_diagnostic_log = FileAccess.open(workshop_diagnostic_path, FileAccess.WRITE)
-	if workshop_diagnostic_log == null:
-		push_warning("Could not open Workshop diagnostic log: %s" % FileAccess.get_open_error())
-		workshop_diagnostic_path = ""
-		return
-	print("MXT_WORKSHOP diagnostic log: %s" % ProjectSettings.globalize_path(workshop_diagnostic_path))
-
-func _on_workshop_request_completed_diagnostic(request_id: int, operation: String, result: Dictionary) -> void:
+func _on_workshop_request_completed(_request_id: int, operation: String, result: Dictionary) -> void:
 	var published_file_id := int(result.get("published_file_id", 0))
 	if published_file_id > 0 and operation == "download":
 		if bool(result.get("success", false)):
@@ -687,33 +472,15 @@ func _on_workshop_request_completed_diagnostic(request_id: int, operation: Strin
 			lobby_workshop_download_failures[published_file_id] = int(lobby_workshop_download_failures.get(published_file_id, 0)) + 1
 	elif published_file_id > 0 and operation == "item_installed":
 		lobby_workshop_download_failures.erase(published_file_id)
-	record_workshop_diagnostic_event("steam_callback", {
-		"request_id": request_id,
-		"operation": operation,
-		"result": result,
-	})
-
-func _on_native_workshop_diagnostic(event: String, fields: Dictionary) -> void:
-	record_workshop_diagnostic_event("steam_native_%s" % event, fields)
 
 
-func _load_packaged_definitions() -> Array:
-	var profiles: Array = []
+func _load_packaged_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):
 		var record: Dictionary = record_value
 		var source := String(record.get("source", ""))
 		if source == "official" or source == "local_draft":
 			continue
-		var definition_start_usec := Time.get_ticks_usec()
-		var definition_profile := {
-			"content_id": String(record.get("content_id", "")),
-			"source": source,
-			"visual_path": String(record.get("visual_path", "")),
-		}
-		var definition := _definition_from_package_record(record, definition_profile)
-		definition_profile["duration_usec"] = Time.get_ticks_usec() - definition_start_usec
-		definition_profile["valid"] = definition != null
-		profiles.append(definition_profile)
+		var definition := _definition_from_package_record(record)
 		if definition == null:
 			continue
 		if definitions_by_content_id.has(definition.content_id):
@@ -721,11 +488,7 @@ func _load_packaged_definitions() -> Array:
 			continue
 		definitions.append(definition)
 		definitions_by_content_id[definition.content_id] = definition
-	profiles.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-	return profiles
-
-
-func _apply_workshop_content_delta(delta: Dictionary) -> Array:
+func _apply_workshop_content_delta(delta: Dictionary) -> void:
 	var remove_ids: Array = []
 	remove_ids.append_array(delta.get("removed_content_ids", []))
 	remove_ids.append_array(delta.get("changed_content_ids", []))
@@ -734,7 +497,6 @@ func _apply_workshop_content_delta(delta: Dictionary) -> Array:
 		definitions_by_content_id.erase(content_id)
 	definitions = definitions.filter(
 		func(definition): return definition is CarDefinition and !remove_ids.has(definition.content_id))
-	var profiles: Array = []
 	var load_ids: Array = []
 	load_ids.append_array(delta.get("added_content_ids", []))
 	load_ids.append_array(delta.get("changed_content_ids", []))
@@ -743,53 +505,34 @@ func _apply_workshop_content_delta(delta: Dictionary) -> Array:
 		var record: Dictionary = content_catalog.resolve_content(content_id)
 		if String(record.get("content_type", "")) != "vehicle":
 			continue
-		var profile := {
-			"content_id": content_id,
-			"source": String(record.get("source", "")),
-			"visual_path": String(record.get("visual_path", "")),
-		}
-		var start_usec := Time.get_ticks_usec()
-		var definition := _definition_from_package_record(record, profile)
-		profile["duration_usec"] = Time.get_ticks_usec() - start_usec
-		profile["valid"] = definition != null
-		profiles.append(profile)
+		var definition := _definition_from_package_record(record)
 		if definition != null:
 			definitions.append(definition)
 			definitions_by_content_id[content_id] = definition
 	definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
-	return profiles
 
 
-func _definition_from_package_record(record: Dictionary, profile: Dictionary = {}) -> CarDefinition:
+func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 	var visual_path := String(record.get("visual_path", ""))
-	var phase_start_usec := Time.get_ticks_usec()
 	var gltf_document := GLTFDocument.new()
 	var gltf_state := GLTFState.new()
 	gltf_state.base_path = visual_path.get_base_dir()
 	var error := gltf_document.append_from_file(visual_path, gltf_state)
-	profile["gltf_parse_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if error != OK:
 		push_error("Could not load packaged vehicle visual %s: %s" % [visual_path, error_string(error)])
 		return null
-	phase_start_usec = Time.get_ticks_usec()
 	var instance := gltf_document.generate_scene(gltf_state) as Node3D
-	profile["scene_generation_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if instance == null:
 		push_error("Could not generate packaged vehicle visual: %s" % visual_path)
 		return null
-	phase_start_usec = Time.get_ticks_usec()
 	var mesh_data := _find_mesh(instance, Transform3D.IDENTITY)
-	profile["mesh_traversal_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if mesh_data.is_empty():
 		push_error("Packaged vehicle visual has no runtime mesh: %s" % visual_path)
 		instance.free()
 		return null
 	var mesh_instance: MeshInstance3D = mesh_data["instance"]
-	profile["source_surface_count"] = mesh_instance.mesh.get_surface_count() if mesh_instance.mesh != null else 0
 	var visual_metadata: Dictionary = record.get("visual_metadata", {})
-	phase_start_usec = Time.get_ticks_usec()
 	var runtime_mesh := _build_body_mesh(mesh_instance.mesh, visual_metadata.get("body_surfaces", []))
-	profile["body_mesh_build_usec"] = Time.get_ticks_usec() - phase_start_usec
 	if runtime_mesh == null:
 		push_error("Packaged vehicle has no selected runtime body surfaces: %s" % visual_path)
 		instance.free()
@@ -799,38 +542,15 @@ func _definition_from_package_record(record: Dictionary, profile: Dictionary = {
 	definition.content_id = String(record.get("content_id", ""))
 	definition.properties_path = String(record.get("authoritative_path", ""))
 	definition.runtime_mesh = runtime_mesh
-	phase_start_usec = Time.get_ticks_usec()
 	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), record)
-	profile["material_texture_build_usec"] = Time.get_ticks_usec() - phase_start_usec
 	definition.runtime_transform = _transform_from_metadata(visual_metadata.get("model_transform", {})) * mesh_data["transform"]
-	phase_start_usec = Time.get_ticks_usec()
 	definition.manual_boost_sfx = _load_packaged_boost_sfx(String(record.get("manual_boost_sfx_path", "")))
-	profile["boost_audio_load_usec"] = Time.get_ticks_usec() - phase_start_usec
 	definition.manual_boost_volume_db = clampf(
 		float(visual_metadata.get("manual_boost_volume_db", 0.0)), -20.0, 20.0)
 	for thruster_value in visual_metadata.get("thrusters", []):
 		definition.runtime_thruster_transforms.append(_thruster_transform_from_metadata(thruster_value))
-	profile["runtime_surface_count"] = runtime_mesh.get_surface_count()
-	profile["runtime_vertex_count"] = _mesh_vertex_count(runtime_mesh)
-	profile["runtime_index_count"] = _mesh_index_count(runtime_mesh)
 	instance.free()
 	return definition
-
-func _mesh_vertex_count(mesh: Mesh) -> int:
-	if mesh == null:
-		return 0
-	var total := 0
-	for surface in range(mesh.get_surface_count()):
-		total += mesh.surface_get_array_len(surface)
-	return total
-
-func _mesh_index_count(mesh: Mesh) -> int:
-	if mesh == null:
-		return 0
-	var total := 0
-	for surface in range(mesh.get_surface_count()):
-		total += mesh.surface_get_array_index_len(surface)
-	return total
 
 func _load_packaged_boost_sfx(path: String) -> AudioStream:
 	if path.is_empty() or !FileAccess.file_exists(path):

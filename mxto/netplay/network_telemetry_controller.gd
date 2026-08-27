@@ -1,6 +1,8 @@
 class_name NetworkTelemetryController
 extends Node
 
+const TELEMETRY_HISTORY_CAPACITY := 600
+
 var game_manager: Node
 var custom_stamp_network: Node
 var state_transfer: Node
@@ -39,12 +41,13 @@ var state_sample_limit := 5000
 var state_sample_dir := "user://state_samples"
 var state_sample_index := 0
 
-var log_enabled := true
-var log_file: FileAccess
 var log_bytes_out_total := 0
 var log_bytes_in_total := 0
 var log_bytes_out_interval := 0
 var log_bytes_in_interval := 0
+var telemetry_history: Array[String] = []
+var telemetry_history_start := 0
+var telemetry_history_count := 0
 var _log_timer: Timer
 
 func initialize(in_game_manager: Node, in_custom_stamp_network: Node, in_state_transfer: Node, in_lobby_settings: Node, in_race_admission: Node, in_input_transport: Node) -> void:
@@ -56,10 +59,11 @@ func initialize(in_game_manager: Node, in_custom_stamp_network: Node, in_state_t
 	input_transport = in_input_transport
 	_parse_auth_input_sample_dump_args()
 	_apply_auth_input_sample_dump_settings()
+	telemetry_history.resize(TELEMETRY_HISTORY_CAPACITY)
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
-	_log_timer.timeout.connect(_flush_log)
+	_log_timer.timeout.connect(_capture_telemetry_sample)
 	add_child(_log_timer)
 	_log_timer.start()
 
@@ -76,10 +80,6 @@ func has_network_peer() -> bool:
 	if is_server:
 		return true
 	return multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
-
-func start_logger() -> void:
-	if log_file == null:
-		_init_logger()
 
 func record_peer_connected() -> void:
 	log_lobby_peer_connects += 1
@@ -241,17 +241,45 @@ func _build_server_peer_log_fields() -> Dictionary:
 	out["peer_snapshot"] = snapshot
 	return out
 
-func _init_logger() -> void:
-	if !log_enabled:
-		return
-	var dir := DirAccess.open("user://")
-	if dir and !dir.dir_exists("logs"):
-		dir.make_dir("logs")
+func _telemetry_csv_header() -> String:
+	return "time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot,lobby_frame_samples,lobby_frame_avg_ms,lobby_frame_max_ms,lobby_player_list_avg_ms,lobby_player_list_max_ms,lobby_chibi_avg_ms,lobby_chibi_max_ms,lobby_render_rebuilds,lobby_render_rebuild_avg_ms,lobby_render_rebuild_max_ms,lobby_settings_in,lobby_settings_out,lobby_settings_bytes_in,lobby_settings_bytes_out,lobby_settings_accepted,lobby_settings_deduped,lobby_chibi_in,lobby_chibi_out,lobby_chibi_bytes_in,lobby_chibi_bytes_out,lobby_peer_connects,lobby_peer_disconnects,stamp_manifest_in,stamp_manifest_out,stamp_manifest_bytes_in,stamp_manifest_bytes_out,stamp_manifest_accepted,stamp_manifest_deduped,stamp_blob_in,stamp_blob_out,stamp_blob_bytes_in,stamp_blob_bytes_out,stamp_blob_accepted,stamp_blob_deduped,stamp_blob_queue_messages,stamp_blob_queue_bytes,engine_process_ms,engine_physics_ms,draw_calls"
+
+func _append_telemetry_sample(line: String) -> void:
+	var write_index := (telemetry_history_start + telemetry_history_count) % TELEMETRY_HISTORY_CAPACITY
+	if telemetry_history_count == TELEMETRY_HISTORY_CAPACITY:
+		write_index = telemetry_history_start
+		telemetry_history_start = (telemetry_history_start + 1) % TELEMETRY_HISTORY_CAPACITY
+	else:
+		telemetry_history_count += 1
+	telemetry_history[write_index] = line
+
+func export_telemetry_history() -> Dictionary:
+	if telemetry_history_count == 0:
+		return {"success": false, "error": "No netplay telemetry has been captured yet."}
+	var logs_path := "user://logs"
+	var make_dir_error := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(logs_path))
+	if make_dir_error != OK and make_dir_error != ERR_ALREADY_EXISTS:
+		return {"success": false, "error": "Could not create the telemetry export directory (%d)." % make_dir_error}
 	var role := "server" if is_server and !listen_server else ("listen" if is_server else "client")
-	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
-	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
-	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot,lobby_frame_samples,lobby_frame_avg_ms,lobby_frame_max_ms,lobby_player_list_avg_ms,lobby_player_list_max_ms,lobby_chibi_avg_ms,lobby_chibi_max_ms,lobby_render_rebuilds,lobby_render_rebuild_avg_ms,lobby_render_rebuild_max_ms,lobby_settings_in,lobby_settings_out,lobby_settings_bytes_in,lobby_settings_bytes_out,lobby_settings_accepted,lobby_settings_deduped,lobby_chibi_in,lobby_chibi_out,lobby_chibi_bytes_in,lobby_chibi_bytes_out,lobby_peer_connects,lobby_peer_disconnects,stamp_manifest_in,stamp_manifest_out,stamp_manifest_bytes_in,stamp_manifest_bytes_out,stamp_manifest_accepted,stamp_manifest_deduped,stamp_blob_in,stamp_blob_out,stamp_blob_bytes_in,stamp_blob_bytes_out,stamp_blob_accepted,stamp_blob_deduped,stamp_blob_queue_messages,stamp_blob_queue_bytes,engine_process_ms,engine_physics_ms,draw_calls")
+	var file_path := "%s/netplay-%s-%d-%d.csv" % [
+		logs_path,
+		role,
+		int(Time.get_unix_time_from_system()),
+		multiplayer.get_unique_id(),
+	]
+	var file := FileAccess.open(file_path, FileAccess.WRITE)
+	if file == null:
+		return {"success": false, "error": "Could not create telemetry export (%d)." % FileAccess.get_open_error()}
+	file.store_line(_telemetry_csv_header())
+	for history_offset in range(telemetry_history_count):
+		var history_index := (telemetry_history_start + history_offset) % TELEMETRY_HISTORY_CAPACITY
+		file.store_line(telemetry_history[history_index])
+	file.flush()
+	return {
+		"success": true,
+		"path": ProjectSettings.globalize_path(file_path),
+		"sample_count": telemetry_history_count,
+	}
 
 func record_lobby_frame(frame_us: int, player_list_us: int, chibi_us: int) -> void:
 	log_lobby_frame_samples += 1
@@ -273,9 +301,8 @@ func record_lobby_chibi_network(in_messages: int, in_bytes: int, out_messages: i
 	log_lobby_chibi_out += out_messages
 	log_lobby_chibi_bytes_out += out_bytes
 
-func _flush_log() -> void:
-	game_manager.record_memory_sample("interval")
-	if !log_enabled or log_file == null or !has_network_peer():
+func _capture_telemetry_sample() -> void:
+	if !has_network_peer():
 		return
 	var bytes_out_interval: int = log_bytes_out_interval + input_transport.log_bytes_out_interval
 	var bytes_in_interval: int = log_bytes_in_interval + input_transport.log_bytes_in_interval
@@ -408,8 +435,7 @@ func _flush_log() -> void:
 	]
 	for value in lobby_fields:
 		line += "," + str(value)
-	log_file.store_line(line)
-	log_file.flush()
+	_append_telemetry_sample(line)
 	log_bytes_out_interval = 0
 	log_bytes_in_interval = 0
 	input_transport.log_bytes_out_interval = 0

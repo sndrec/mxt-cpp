@@ -13,7 +13,6 @@ const VOICE_SAMPLE_RATE := 48000
 const VOICE_FRAME_SAMPLES := 480
 const VOICE_SETTINGS_RELOAD_MSEC := 500
 const VOICE_DISTANCE_DELTA_TO_KMH := 216.0
-const VOICE_DEBUG_LOG_INTERVAL_MSEC := 1000
 const VOICE_ALWAYS_ON_THRESHOLD_DEFAULT := 0.08
 const VOICE_LEVEL_SMOOTH_SECONDS := 0.05
 const VOICE_ALWAYS_ON_RELEASE_MSEC := 150
@@ -93,10 +92,6 @@ var debug_voice_last_receive_sender_id := -1
 var debug_voice_last_receive_sequence := -1
 var debug_voice_last_drop_reason := ""
 var debug_voice_transform_sim_kind := ""
-var debug_voice_log_file: FileAccess
-var debug_voice_log_path := ""
-var debug_voice_log_failed := false
-var debug_voice_last_summary_msec := 0
 var applied_playback_buffer_seconds := -1.0
 var applied_voice_bitrate := -1
 var applied_voice_codec_complexity := -1
@@ -142,7 +137,6 @@ func reset() -> void:
 	capture_codec = null
 	_clear_test_monitor()
 	_reset_voice_debug_counters()
-	_close_voice_debug_log()
 
 func _reset_voice_debug_counters() -> void:
 	debug_capture_level = 0.0
@@ -177,126 +171,6 @@ func _reset_voice_debug_counters() -> void:
 	debug_voice_last_receive_sequence = -1
 	debug_voice_last_drop_reason = ""
 	debug_voice_transform_sim_kind = ""
-	debug_voice_last_summary_msec = 0
-
-func _ensure_voice_debug_log() -> void:
-	if debug_voice_log_file != null or debug_voice_log_failed:
-		return
-	var dir := DirAccess.open("user://")
-	if dir == null or dir.make_dir_recursive("logs") != OK:
-		debug_voice_log_failed = true
-		print("MXT_VOICE_LOG failed to create user://logs")
-		return
-	var role := "client"
-	if network_manager != null and network_manager.is_server:
-		role = "listen" if network_manager.listen_server else "server"
-	var uid := _local_peer_id()
-	var file_name := "logs/voice-" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(uid) + ".log"
-	debug_voice_log_path = "user://" + file_name
-	debug_voice_log_file = FileAccess.open(debug_voice_log_path, FileAccess.WRITE)
-	if debug_voice_log_file == null:
-		debug_voice_log_failed = true
-		print("MXT_VOICE_LOG failed to open ", debug_voice_log_path, " err=", FileAccess.get_open_error())
-		return
-	debug_voice_log_file.store_line("# MXT voice debug log")
-	debug_voice_log_file.store_line("# path=" + ProjectSettings.globalize_path(debug_voice_log_path))
-	debug_voice_log_file.store_line("# JSON lines")
-	debug_voice_log_file.flush()
-	print("MXT_VOICE_LOG writing ", ProjectSettings.globalize_path(debug_voice_log_path))
-
-func _close_voice_debug_log() -> void:
-	if debug_voice_log_file != null:
-		debug_voice_log_file.flush()
-	debug_voice_log_file = null
-	debug_voice_log_path = ""
-	debug_voice_log_failed = false
-
-func _write_voice_debug_summary() -> void:
-	var now := Time.get_ticks_msec()
-	if now - debug_voice_last_summary_msec < VOICE_DEBUG_LOG_INTERVAL_MSEC:
-		return
-	debug_voice_last_summary_msec = now
-	_write_voice_debug_line("summary", debug_voice_last_receive_sender_id, debug_voice_last_receive_sequence, true)
-
-func _write_voice_debug_event(event: String, sender_id: int, sequence: int) -> void:
-	if event == "relay" and debug_voice_relay_packets % 30 != 1:
-		return
-	if event == "decode" and debug_voice_decode_pushes % 30 != 1:
-		return
-	_write_voice_debug_line(event, sender_id, sequence, event != "decode")
-
-func _write_voice_debug_line(event: String, sender_id: int, sequence: int, flush_line: bool) -> void:
-	_ensure_voice_debug_log()
-	if debug_voice_log_file == null:
-		return
-	var data := _voice_debug_snapshot(event, sender_id, sequence)
-	debug_voice_log_file.store_line(JSON.stringify(data))
-	if flush_line:
-		debug_voice_log_file.flush()
-
-func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dictionary:
-	var local_id := _local_peer_id()
-	var is_server := false
-	var listen_server := false
-	var race_active := false
-	var server_tick := -1
-	var local_tick := -1
-	var desired_ahead := 0.0
-	var roster_size := 0
-	if network_manager != null:
-		is_server = network_manager.is_server
-		listen_server = network_manager.listen_server
-		race_active = network_manager.race_active
-		server_tick = network_manager.input_transport.server_tick
-		local_tick = network_manager.input_transport.local_tick
-		desired_ahead = network_manager.input_transport.desired_ahead_ticks
-		roster_size = network_manager.get_simulation_roster().size()
-	return {
-		"time_msec": Time.get_ticks_msec(),
-		"event": event,
-		"uid": local_id,
-		"is_server": is_server,
-		"listen_server": listen_server,
-		"race_active": race_active,
-		"server_tick": server_tick,
-		"local_tick": local_tick,
-		"desired_ahead": desired_ahead,
-		"roster_size": roster_size,
-		"sender_id": sender_id,
-		"sequence": sequence,
-		"capture_status": debug_capture_status,
-		"capture_backend": "audio_server_direct",
-		"capture_level": debug_capture_level,
-		"capture_output_level": debug_capture_output_level,
-		"capture_gain_db": debug_capture_gain_db,
-		"capture_frames_available": debug_capture_frames_available,
-		"capture_frames_discarded": debug_capture_frames_discarded,
-		"capture_buffer_frames": debug_capture_buffer_frames,
-		"capture_input_rate": debug_capture_input_rate,
-		"packets_encoded": debug_packets_encoded,
-		"packets_received": debug_packets_received,
-		"receive_attempts": debug_voice_receive_attempts,
-		"decode_pushes": debug_voice_decode_pushes,
-		"relay_packets": debug_voice_relay_packets,
-		"relay_local_deliveries": debug_voice_relay_local_deliveries,
-		"relay_remote_deliveries": debug_voice_relay_remote_deliveries,
-		"last_sender_id": debug_voice_last_sender_id,
-		"last_recipient_count": debug_voice_last_recipient_count,
-		"last_recipients": debug_voice_last_recipients,
-		"recipient_snapshot_count": debug_voice_last_recipient_snapshot_count,
-		"source_found": debug_voice_last_source_found,
-		"local_candidate": debug_voice_last_local_candidate,
-		"local_distance": debug_voice_last_local_distance,
-		"voice_spatial_tick": debug_voice_spatial_tick,
-		"voice_snapshot_count": debug_voice_snapshot_count,
-		"voice_position_matches": debug_voice_position_matches,
-		"voice_listener_matches": debug_voice_listener_matches,
-		"voice_transform_sim": debug_voice_transform_sim_kind,
-		"last_receive_sender_id": debug_voice_last_receive_sender_id,
-		"last_receive_sequence": debug_voice_last_receive_sequence,
-		"drop_reason": debug_voice_last_drop_reason,
-		"remote_peer_count": remote_peers.size(),
-	}
 
 func _clear_remote_peers() -> void:
 	for peer_id in remote_peers.keys():
@@ -312,7 +186,6 @@ func _physics_process(_delta: float) -> void:
 	if network_manager == null or !network_manager.race_active or !network_manager.has_network_peer():
 		if voice_test_monitor_enabled or voice_level_meter_enabled:
 			_update_test_monitor_capture()
-			_write_voice_debug_summary()
 		else:
 			reset()
 			debug_capture_status = "idle"
@@ -325,7 +198,6 @@ func _physics_process(_delta: float) -> void:
 	elif !remote_peers.is_empty():
 		_clear_remote_peers()
 	_capture_and_send()
-	_write_voice_debug_summary()
 
 func _apply_runtime_tuning() -> void:
 	if !is_equal_approx(applied_playback_buffer_seconds, playback_buffer_seconds):
@@ -601,7 +473,6 @@ func _client_voice_packet(sequence: int, source_tick: int, payload: PackedByteAr
 func _relay_voice_from(sender_id: int, sequence: int, source_tick: int, payload: PackedByteArray) -> void:
 	if _voice_packet_is_stale(source_tick):
 		debug_voice_last_drop_reason = "stale relay packet"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	var recipients := _voice_recipients_for(sender_id)
 	var local_id := _local_peer_id()
@@ -609,7 +480,6 @@ func _relay_voice_from(sender_id: int, sequence: int, source_tick: int, payload:
 	debug_voice_last_sender_id = sender_id
 	debug_voice_last_recipient_count = recipients.size()
 	debug_voice_last_recipients = recipients.duplicate()
-	_write_voice_debug_event("relay", sender_id, sequence)
 	for recipient in recipients:
 		if int(recipient) == sender_id:
 			continue
@@ -629,19 +499,15 @@ func _receive_voice_packet(sender_id: int, sequence: int, source_tick: int, payl
 	debug_voice_last_receive_sequence = sequence
 	if network_manager == null or !network_manager.race_active:
 		debug_voice_last_drop_reason = "not racing"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	if !voice_listen_enabled:
 		debug_voice_last_drop_reason = "listen disabled"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	if sender_id == _local_peer_id():
 		debug_voice_last_drop_reason = "self packet"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	if _voice_packet_is_stale(source_tick):
 		debug_voice_last_drop_reason = "stale packet"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	debug_packets_received += 1
 	debug_last_receive_msec = Time.get_ticks_msec()
@@ -652,7 +518,6 @@ func _receive_voice_packet(sender_id: int, sequence: int, source_tick: int, payl
 	var codec := peer.get("codec") as OpusVoiceCodec
 	if playback == null or codec == null:
 		debug_voice_last_drop_reason = "missing playback"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	var pan_gains := Vector2.ONE
 	if _voice_should_play_finished_nonspatial(sender_id):
@@ -665,11 +530,9 @@ func _receive_voice_packet(sender_id: int, sequence: int, source_tick: int, payl
 			_update_remote_source_positions()
 			if !bool(peer.get("has_voice_transform", false)):
 				debug_voice_last_drop_reason = "missing source transform"
-				_write_voice_debug_event("receive_drop", sender_id, sequence)
 				return
 		if !bool(peer.get("has_listener_transform", false)):
 			debug_voice_last_drop_reason = "missing listener transform"
-			_write_voice_debug_event("receive_drop", sender_id, sequence)
 			return
 		pan_gains = _voice_stereo_gains(
 			peer.get("current_origin", Vector3.ZERO),
@@ -679,10 +542,8 @@ func _receive_voice_packet(sender_id: int, sequence: int, source_tick: int, payl
 		debug_voice_decode_pushes += 1
 		peer["level"] = clampf(codec.get_last_decoded_peak() * maxf(absf(pan_gains.x), absf(pan_gains.y)), 0.0, 1.0)
 		debug_voice_last_drop_reason = ""
-		_write_voice_debug_event("decode", sender_id, sequence)
 	else:
 		debug_voice_last_drop_reason = "decode failed"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
 
 func _play_voice_test_payload(payload: PackedByteArray) -> void:
 	_ensure_test_monitor()
@@ -988,6 +849,5 @@ func get_voice_debug_status() -> Dictionary:
 		"voice_last_receive_sender_id": debug_voice_last_receive_sender_id,
 		"voice_last_receive_sequence": debug_voice_last_receive_sequence,
 		"voice_last_drop_reason": debug_voice_last_drop_reason,
-		"voice_debug_log_path": debug_voice_log_path,
 		"remote_voice_peers": remote_voice_peers,
 	}

@@ -70,7 +70,6 @@ func _run() -> void:
 			_fail("%d isolated ghost simulations did not start" % ghost_count)
 			return
 		for tick in range(TICKS_TO_RUN):
-			controller.record_main_tick(1)
 			controller.tick(tick)
 		controller.call("_process", 1.0 / 60.0)
 		var sim_ids: Dictionary = {}

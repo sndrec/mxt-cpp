@@ -2,7 +2,6 @@ class_name TrackContentController extends Node
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 const OFFICIAL_TRACK_MANIFEST_PATH := "res://track/official_tracks.json"
@@ -24,22 +23,15 @@ var current_visual_replaces_debug_environment := false
 var visual_scene_instance: Node
 
 func scan_catalog() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("catalog", "track_catalog_scan")
 	tracks.clear()
 	_scan_official_tracks()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "official_tracks", {"track_count": tracks.size()})
 	_scan_loose_tracks()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "loose_tracks", {"track_count": tracks.size()})
 	_scan_installed_tracks()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "installed_tracks", {"track_count": tracks.size()})
 	track_id_to_index.clear()
 	for i in range(tracks.size()):
 		var track_id := String(tracks[i].get("content_id", ""))
 		if track_id != "" and !track_id_to_index.has(track_id):
 			track_id_to_index[track_id] = i
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"track_count": tracks.size(),
-	})
 
 func command_line_track_index() -> int:
 	var args := OS.get_cmdline_args()
@@ -119,11 +111,6 @@ func prepare_race(track_index: int) -> bool:
 	if track_index < 0 or track_index >= tracks.size():
 		return false
 	var info: Dictionary = tracks[track_index]
-	var load_profile := LoadTransitionProfilerClass.begin_transition("race_load", "track_prepare", {
-		"track_index": track_index,
-		"track_id": String(info.get("content_id", "")),
-		"track_name": String(info.get("name", "")),
-	})
 	current_track_index = track_index
 	current_metadata = {}
 	current_ground_image = null
@@ -137,7 +124,6 @@ func prepare_race(track_index: int) -> bool:
 		var parsed = JSON.parse_string(FileAccess.get_file_as_string(json_path))
 		if typeof(parsed) == TYPE_DICTIONARY:
 			current_metadata = parsed
-	LoadTransitionProfilerClass.checkpoint(load_profile, "metadata")
 
 	current_visual_path = String(info.get("visual", ""))
 	current_visual_replaces_debug_environment = _visual_replaces_debug_environment(current_visual_path)
@@ -147,35 +133,18 @@ func prepare_race(track_index: int) -> bool:
 	game_manager.track_floor.visible = !current_visual_replaces_debug_environment and !debug_runtime_controller.hide_track_visuals
 	game_manager.track_clouds.visible = !current_visual_replaces_debug_environment and !debug_runtime_controller.hide_track_visuals
 	_apply_environment()
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"visual_path": current_visual_path,
-		"visual_replaces_debug_environment": current_visual_replaces_debug_environment,
-		"ground_image_loaded": current_ground_image != null,
-	})
 	return true
 
 func load_runtime_visuals() -> void:
 	if current_track_index < 0 or current_track_index >= tracks.size():
 		return
-	var load_profile := LoadTransitionProfilerClass.begin_transition("race_load", "track_runtime_visuals", {
-		"track_index": current_track_index,
-		"visual_path": current_visual_path,
-	})
 	var loaded_scene := _load_visual_scene(current_visual_path)
-	LoadTransitionProfilerClass.checkpoint(load_profile, "visual_scene", {"loaded": loaded_scene})
 	var imported_mesh_loaded := false
 	if !loaded_scene:
 		var mxt_path := String(tracks[current_track_index]["mxt"])
 		imported_mesh_loaded = _load_imported_mesh(mxt_path.get_basename() + ".obj")
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"loaded_scene": loaded_scene,
-		"loaded_imported_mesh": imported_mesh_loaded,
-	})
 
 func teardown_runtime() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("race_load", "track_runtime_teardown", {
-		"track_index": current_track_index,
-	})
 	_clear_visual_scene()
 	game_manager.debug_track_mesh.mesh = null
 	_set_builtin_visuals_enabled(true)
@@ -185,7 +154,6 @@ func teardown_runtime() -> void:
 	current_track_dir = ""
 	current_visual_path = ""
 	current_visual_replaces_debug_environment = false
-	LoadTransitionProfilerClass.end_transition(load_profile)
 
 func _read_arg_value(args: Array, user_args: Array, flag: String) -> String:
 	var index := args.find(flag)

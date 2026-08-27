@@ -4,7 +4,6 @@ extends Node
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 const LOBBY_CHIBI_CAR_SCRIPT := "res://ui/lobby_chibi_car.gd"
 
 const BROADCAST_INTERVAL_MSEC := 100
@@ -200,13 +199,6 @@ func process_lobby(_delta: float) -> void:
 	var settings_revision := network_manager.lobby_settings.revision
 	var local_control_changed := local_id != applied_local_player_id
 	if roster_changed or settings_revision != applied_settings_revision or local_control_changed:
-		var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "settings_revision_apply", {
-			"roster_count": roster.size(),
-			"roster_changed": roster_changed,
-			"local_control_changed": local_control_changed,
-			"previous_revision": applied_settings_revision,
-			"next_revision": settings_revision,
-		})
 		var player_profiles: Array = []
 		for id in roster:
 			var player_id := int(id)
@@ -230,12 +222,6 @@ func process_lobby(_delta: float) -> void:
 			func(profile: Dictionary): return bool(profile.get("already_current", false))).size()
 		player_profiles.sort_custom(
 			func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-		LoadTransitionProfilerClass.end_transition(load_profile, {
-			"player_profiles": player_profiles,
-			"definition_lookup_count": last_settings_apply_definition_count,
-			"stats_sample_count": last_settings_apply_sample_count,
-			"already_current_count": last_settings_apply_already_current_count,
-		})
 	_submit_render(roster)
 	_update_hover_and_magnifier()
 	if network_manager.is_server:
@@ -293,12 +279,7 @@ func _configure_car(car, player_id: int, settings: Dictionary, local_control: bo
 	}
 
 func refresh_vehicle_content(affected_content_ids: Array = []) -> void:
-	var refresh_start_usec := Time.get_ticks_usec()
 	var targeted_refresh := !affected_content_ids.is_empty()
-	var load_profile := LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_content_refresh", {
-		"car_count": cars.size(),
-		"affected_content_ids": affected_content_ids,
-	})
 	var refreshed_players := []
 	var player_profiles: Array = []
 	var local_id: int = game_manager._local_player_id() if game_manager != null else -1
@@ -325,9 +306,6 @@ func refresh_vehicle_content(affected_content_ids: Array = []) -> void:
 			network_manager.lobby_settings.get_player_settings_revision(player_id),
 			false,
 			true))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "reconfigure_lobby_cars", {
-		"refreshed_player_count": refreshed_players.size(),
-	})
 	applied_settings_revision = network_manager.lobby_settings.revision
 	applied_local_player_id = local_id
 	if !refreshed_players.is_empty():
@@ -335,18 +313,6 @@ func refresh_vehicle_content(affected_content_ids: Array = []) -> void:
 		pending_render_signature = ""
 		render_rebuild_due_msec = 0
 		magnifier_render_signature = ""
-	LoadTransitionProfilerClass.checkpoint(load_profile, "invalidate_affected_renderers", {
-		"renderer_invalidated": !refreshed_players.is_empty(),
-	})
-	vehicle_content_controller.record_workshop_diagnostic_event("lobby_vehicle_content_refresh", {
-		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
-		"players": refreshed_players,
-		"car_count": cars.size(),
-	})
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"refreshed_player_count": refreshed_players.size(),
-		"player_profiles": player_profiles,
-	})
 
 func _sample_stats(settings: Dictionary, definition: CarDefinition) -> Dictionary:
 	if definition == null or definition.properties_path == "" or !FileAccess.file_exists(definition.properties_path):
@@ -445,13 +411,6 @@ func _start_render_build(request: Dictionary) -> void:
 		"stamp_data_ok": bool(request.get("stamp_data_ok", false)),
 	}
 	request["worker_start_usec"] = worker_request["worker_start_usec"]
-	request["load_profile"] = LoadTransitionProfilerClass.begin_transition("lobby", "vehicle_render_rebuild", {
-		"generation": request.get("generation", 0),
-		"renderer_was_empty": request.get("renderer_was_empty", false),
-		"roster_count": (request.get("roster", []) as Array).size(),
-		"collect_usec": request.get("collect_usec", 0),
-		"queue_wait_usec": int(worker_request["worker_start_usec"]) - int(request.get("requested_usec", worker_request["worker_start_usec"])),
-	})
 	render_build_active_request = request
 	render_build_thread = Thread.new()
 	var err := render_build_thread.start(_prepare_render_build_thread.bind(worker_request))
@@ -550,39 +509,6 @@ func _finish_render_build(result: Dictionary, current_signature: String) -> void
 	render_build_peak_temporary_bytes = maxi(render_build_peak_temporary_bytes, int(result.get("temporary_bytes", 0)))
 	var total_usec := Time.get_ticks_usec() - int(request.get("requested_usec", Time.get_ticks_usec()))
 	network_manager.telemetry.record_lobby_render_rebuild(total_usec)
-	game_manager.record_memory_sample("lobby_render_rebuild")
-	var rendered_vehicles := []
-	for entry_settings in request.get("settings", []):
-		rendered_vehicles.append({
-			"vehicle_content_id": String(entry_settings.get("vehicle_content_id", "")),
-			"vehicle_workshop_id": String(entry_settings.get("vehicle_workshop_id", "")),
-			"vehicle_gameplay_digest": String(entry_settings.get("vehicle_gameplay_digest", "")),
-			"vehicle_package_digest": String(entry_settings.get("vehicle_package_digest", "")),
-		})
-	vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_rebuild", {
-		"duration_usec": total_usec,
-		"signature": render_signature,
-		"generation": generation,
-		"renderer_was_empty": request.get("renderer_was_empty", false),
-		"roster": request.get("roster", []),
-		"rendered_vehicles": rendered_vehicles,
-		"queue_wait_usec": render_build_last_queue_wait_usec,
-		"worker_usec": render_build_last_worker_usec,
-		"handoff_usec": render_build_last_handoff_usec,
-		"temporary_bytes": result.get("temporary_bytes", 0),
-		"discarded_build_count": render_build_discard_count,
-	})
-	LoadTransitionProfilerClass.end_transition(int(request.get("load_profile", 0)), {
-		"definition_count": definitions.size(),
-		"duration_usec": total_usec,
-		"signature": render_signature,
-		"generation": generation,
-		"queue_wait_usec": render_build_last_queue_wait_usec,
-		"worker_usec": render_build_last_worker_usec,
-		"handoff_usec": render_build_last_handoff_usec,
-		"temporary_bytes": result.get("temporary_bytes", 0),
-		"discarded": false,
-	})
 	render_build_active_request = {}
 
 
@@ -590,18 +516,6 @@ func _discard_active_render_build(reason: String) -> void:
 	if render_build_active_request.is_empty():
 		return
 	render_build_discard_count += 1
-	LoadTransitionProfilerClass.end_transition(int(render_build_active_request.get("load_profile", 0)), {
-		"generation": render_build_active_request.get("generation", 0),
-		"signature": render_build_active_request.get("signature", ""),
-		"discarded": true,
-		"discard_reason": reason,
-	})
-	vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_build_discarded", {
-		"generation": render_build_active_request.get("generation", 0),
-		"signature": render_build_active_request.get("signature", ""),
-		"reason": reason,
-		"discarded_build_count": render_build_discard_count,
-	})
 	render_build_active_request = {}
 
 

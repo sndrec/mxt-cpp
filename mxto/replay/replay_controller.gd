@@ -5,7 +5,6 @@ const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
 const RaceSessionControllerClass = preload("res://core/race_session_controller.gd")
-const LoadTransitionProfilerClass = preload("res://core/load_transition_profiler.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
@@ -319,7 +318,6 @@ func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	if replay_timeline_root != null:
 		replay_timeline_root.visible = false
 	_apply_replay_playback_clock()
-	game_manager.record_memory_sample("replay_transition_reset")
 
 
 func detach_playback_for_practice() -> bool:
@@ -653,7 +651,6 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 	var safe_track := str(metadata.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
 	var path := _unique_replay_path(replay_dir, safe_track)
 	var temporary_path := path + ".tmp"
-	game_manager.record_memory_sample("replay_save_begin")
 	if !export_stream.write_file(temporary_path, metadata):
 		push_warning("Replay save failed: %s" % export_stream.get_last_error())
 		return ""
@@ -663,7 +660,6 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 		return ""
 	var saved_frame_count := export_stream.frame_count()
 	print("MXT_REPLAY saved ", path, " frames=", saved_frame_count)
-	game_manager.record_memory_sample("replay_save_complete")
 	return path
 
 
@@ -686,7 +682,6 @@ func _load_replay_file(path: String) -> Dictionary:
 	if !FileAccess.file_exists(path):
 		push_warning("Replay load failed: file not found: %s" % path)
 		return {}
-	game_manager.record_memory_sample("replay_load_begin")
 	var stream := MxtReplayStream.new()
 	if !stream.load_file(path):
 		if !replay_leaderboard_verify_requested:
@@ -705,7 +700,6 @@ func _load_replay_file(path: String) -> Dictionary:
 		var legacy_metadata: Dictionary = legacy_metadata_value
 		legacy_metadata["_replay_stream"] = stream
 		replay_playback_source_bytes = legacy_bytes.size()
-		game_manager.record_memory_sample("replay_load_parsed")
 		return legacy_metadata
 	var parsed: Dictionary = stream.get_metadata()
 	replay_playback_source_bytes = int(stream.get_stats().get("source_bytes", 0))
@@ -724,7 +718,6 @@ func _load_replay_file(path: String) -> Dictionary:
 			REPLAY_SCHEMA_VERSION,
 		])
 		return {}
-	game_manager.record_memory_sample("replay_load_parsed")
 	parsed["_replay_stream"] = stream
 	return parsed
 
@@ -1583,19 +1576,6 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		_capture_replay_seek_checkpoint(0)
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
-	LoadTransitionProfilerClass.instant("replay", "playback_load", {
-		"path": path,
-		"duration_usec": Time.get_ticks_usec() - profile_start_us,
-		"file_parse_usec": profile_load_us,
-		"validate_usec": profile_validate_us,
-		"frames_duplicate_usec": profile_frames_duplicate_us,
-		"setup_usec": profile_setup_us,
-		"race_start_usec": profile_race_start_us,
-		"timeline_usec": profile_timeline_us,
-		"seek_checkpoint_bake_usec": profile_bake_us,
-		"frame_count": _playback_frame_count(),
-		"racer_count": replay_playback_racer_ids.size(),
-	})
 	if replay_load_profile_requested:
 		var total_load_us := Time.get_ticks_usec() - profile_start_us
 		print("MXT_REPLAY_LOAD_PROFILE path=", path,
@@ -1611,7 +1591,6 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			" racers=", replay_playback_racer_ids.size(),
 			" skip_bake=", replay_skip_seek_bake_requested)
 	print("MXT_REPLAY playback started ", path, " frames=", _playback_frame_count())
-	game_manager.record_memory_sample("replay_load_complete")
 	if game_manager.headless_mode:
 		var replay_fast_forward_start_us := Time.get_ticks_usec()
 		while replay_playback_active and replay_playback_index < _playback_frame_count():
@@ -2138,22 +2117,14 @@ func _build_replay_catalog() -> void:
 	buttons.add_child(close_button)
 
 func _open_replay_catalog() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("replay", "catalog_open")
 	_build_replay_catalog()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "build_interface")
 	_refresh_replay_catalog()
-	LoadTransitionProfilerClass.checkpoint(load_profile, "refresh_entries", {
-		"entry_count": replay_catalog_entries.size(),
-	})
 	game_manager.get_node("Control").visible = false
 	game_manager.lobby_control.visible = false
 	replay_catalog_root.visible = true
 	if replay_catalog_list.item_count > 0:
 		replay_catalog_list.select(0)
 		_on_replay_catalog_selected(0)
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"entry_count": replay_catalog_entries.size(),
-	})
 
 func _profile_replay_catalog_and_quit() -> void:
 	_build_replay_catalog()
@@ -2189,20 +2160,16 @@ func _close_replay_catalog() -> void:
 		game_manager.get_node("Control").visible = true
 
 func _refresh_replay_catalog() -> void:
-	var load_profile := LoadTransitionProfilerClass.begin_transition("replay", "catalog_refresh")
 	replay_catalog_entries.clear()
 	if replay_catalog_list == null:
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "catalog_list_unavailable"})
 		return
 	replay_catalog_list.clear()
 	var replay_dir := _replay_dir()
 	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
 	if err != OK:
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": error_string(err)})
 		return
 	var dir := DirAccess.open(replay_dir)
 	if dir == null:
-		LoadTransitionProfilerClass.end_transition(load_profile, {"error": "replay_directory_unavailable"})
 		return
 	var replay_profiles: Array = []
 	var invalid_count := 0
@@ -2228,24 +2195,11 @@ func _refresh_replay_catalog() -> void:
 	dir.list_dir_end()
 	replay_profiles.sort_custom(
 		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "enumerate_and_read_metadata", {
-		"file_count": replay_profiles.size(),
-		"valid_count": replay_catalog_entries.size(),
-		"invalid_count": invalid_count,
-		"total_bytes": total_bytes,
-	})
 	replay_catalog_entries.sort_custom(func(a, b): return float(a.get("created_unix", 0.0)) > float(b.get("created_unix", 0.0)))
-	LoadTransitionProfilerClass.checkpoint(load_profile, "sort_entries")
 	for entry in replay_catalog_entries:
 		var title := str(entry.get("name", entry.get("track_name", "Replay")))
 		replay_catalog_list.add_item(title)
 	_update_replay_catalog_buttons()
-	LoadTransitionProfilerClass.end_transition(load_profile, {
-		"entry_count": replay_catalog_entries.size(),
-		"invalid_count": invalid_count,
-		"total_bytes": total_bytes,
-		"replay_profiles": replay_profiles,
-	})
 
 func _selected_replay_catalog_entry() -> Dictionary:
 	if replay_catalog_list == null:
