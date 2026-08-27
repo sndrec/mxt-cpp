@@ -4,6 +4,7 @@ extends Node
 signal workshop_content_changed(items: Array)
 signal catalog_changed
 signal catalog_delta(delta: Dictionary)
+signal garage_catalog_changed
 
 const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
 const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
@@ -21,6 +22,7 @@ var content_catalog: MxtContentCatalog = MxtContentCatalog.new()
 var definitions: Array = []
 var definitions_by_content_id: Dictionary = {}
 var workshop_content_items: Array = []
+var subscribed_workshop_item_ids := {}
 var steam_service: MxtSteamService
 var custom_stamp_network: CustomStampNetworkController
 var runtime_content_loaded := false
@@ -47,6 +49,22 @@ func get_vehicle_content_ids() -> Array:
 		if definition is CarDefinition and definition.content_id != "":
 			content_ids.append(definition.content_id)
 	return content_ids
+
+func get_garage_vehicle_definitions() -> Array:
+	var garage_definitions: Array = []
+	for definition_value in definitions:
+		var definition := definition_value as CarDefinition
+		if definition == null:
+			continue
+		var record: Dictionary = content_catalog.resolve_content(definition.content_id)
+		if String(record.get("source", "")) != "workshop":
+			garage_definitions.append(definition)
+			continue
+		var published_file_id_text := String(record.get("published_file_id", ""))
+		if published_file_id_text.is_valid_int() \
+				and subscribed_workshop_item_ids.has(published_file_id_text.to_int()):
+			garage_definitions.append(definition)
+	return garage_definitions
 
 func get_multiplayer_vehicle_content_ids(allow_workshop: bool) -> Array:
 	var content_ids: Array = []
@@ -422,6 +440,14 @@ func create_test_drive_snapshot(package_root: String) -> Dictionary:
 		ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH))
 
 func _on_workshop_items_changed(items: Array) -> void:
+	var next_subscribed_workshop_item_ids := {}
+	for value in items:
+		var item: Dictionary = value
+		var published_file_id := int(item.get("published_file_id", 0))
+		if published_file_id > 0 and bool(item.get("subscribed", false)):
+			next_subscribed_workshop_item_ids[published_file_id] = true
+	var garage_visibility_changed := next_subscribed_workshop_item_ids != subscribed_workshop_item_ids
+	subscribed_workshop_item_ids = next_subscribed_workshop_item_ids
 	var processed_items := []
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
@@ -461,6 +487,8 @@ func _on_workshop_items_changed(items: Array) -> void:
 		_apply_workshop_content_delta(delta)
 		catalog_delta.emit(delta)
 	workshop_content_changed.emit(get_workshop_content_items())
+	if garage_visibility_changed and !catalog_materially_changed:
+		garage_catalog_changed.emit()
 
 
 func _on_workshop_request_completed(_request_id: int, operation: String, result: Dictionary) -> void:

@@ -162,6 +162,7 @@ var performance_analyzer := MxtCarPerformanceAnalyzer.new()
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
 	vehicle_content_controller = get_node("../VehicleContentController") as VehicleContentControllerClass
+	vehicle_content_controller.garage_catalog_changed.connect(_on_garage_catalog_changed)
 	settings_tab_container.set_tab_hidden(track_package_editor_tab.get_index(), true)
 	_build_stamp_layer_buttons()
 	_load_settings()
@@ -290,7 +291,7 @@ func _input(event: InputEvent) -> void:
 
 func _load_car_defs() -> void:
 	if vehicle_content_controller != null:
-		car_defs = vehicle_content_controller.definitions
+		car_defs = vehicle_content_controller.get_garage_vehicle_definitions()
 	else:
 		car_defs = []
 	vehicle_selector.clear()
@@ -298,6 +299,13 @@ func _load_car_defs() -> void:
 		vehicle_selector.add_item(def.name)
 	_update_vehicle_selector_availability()
 	_migrate_legacy_vehicle_settings()
+
+func _on_garage_catalog_changed() -> void:
+	var previous_vehicle_evidence := _selected_vehicle_evidence_signature()
+	_load_car_defs()
+	_update_controls()
+	if _selected_vehicle_evidence_signature() != previous_vehicle_evidence:
+		_save_settings()
 
 func _load_settings() -> void:
 	legacy_selected_car_definition_path = ""
