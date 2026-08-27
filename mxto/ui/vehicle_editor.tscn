@@ -103,6 +103,7 @@ layout_mode = 2
 text = "Save Now"
 
 [node name="InstallVehicle" type="Button" parent="Toolbar"]
+visible = false
 layout_mode = 2
 text = "Install in Garage"
 

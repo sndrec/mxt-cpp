@@ -48,7 +48,6 @@ const SPATIAL_AUDIO_SFX := {
 	&"announcer_two": "res://sfx/announcer/two.wav",
 }
 const RACE_BOOST_POWER_LAP_INDEX := 2
-const RACE_FINAL_LAP_INDEX := 3
 const RACE_MUSIC_START_LEAD_TICKS := 360
 const RACE_FINISH_MUSIC_FADE_SECONDS := 0.5
 const RACE_RESULTS_MUSIC_DELAY_SECONDS := 2.0
@@ -244,7 +243,8 @@ func reconcile_practice_state_restore(next_tick: int, lap: int, finished: bool) 
 	race_audio_last_tick = next_tick - 1
 	race_audio_last_local_lap = lap
 	race_audio_boost_power_announced = _boost_unlocked_from_start() or lap >= RACE_BOOST_POWER_LAP_INDEX
-	race_audio_final_lap_requested = lap >= RACE_FINAL_LAP_INDEX
+	var final_lap := _configured_final_lap()
+	race_audio_final_lap_requested = final_lap <= 0 or lap >= final_lap
 	if !finished:
 		_cancel_race_finish_audio(true)
 	if spatial_audio != null and spatial_audio.has_method("clear_announcer_queue"):
@@ -256,6 +256,12 @@ func _boost_unlocked_from_start() -> bool:
 		and game_manager.network_manager != null \
 		and String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice" \
 		and bool(game_manager.network_manager.race_options.get("boost_unlocked_from_start", false))
+
+
+func _configured_final_lap() -> int:
+	if game_manager == null or game_manager.network_manager == null:
+		return 3
+	return int(game_manager.network_manager.race_options.get("lap_count", 3))
 
 
 func _resolve_track_audio_path(track_dir: String, path_value) -> String:
@@ -386,15 +392,17 @@ func after_simulation_tick() -> void:
 				spatial_audio.call("queue_announcer", mark[1], 0.0, 1.0)
 	if game_manager.game_sim.has_method("get_player_lap"):
 		var lap := int(game_manager.game_sim.call("get_player_lap", player_id))
+		var final_lap := _configured_final_lap()
 		if race_audio_last_local_lap >= 0:
 			if !race_audio_boost_power_announced and race_audio_last_local_lap < RACE_BOOST_POWER_LAP_INDEX and lap >= RACE_BOOST_POWER_LAP_INDEX:
 				race_audio_boost_power_announced = true
 				if spatial_audio.has_method("queue_announcer"):
 					spatial_audio.call("queue_announcer", &"announcer_boost_power", 0.0, 1.0)
-			if !race_audio_final_lap_requested and race_audio_last_local_lap < RACE_FINAL_LAP_INDEX and lap >= RACE_FINAL_LAP_INDEX:
-				race_audio_final_lap_requested = true
-				if spatial_audio.has_method("queue_announcer"):
-					spatial_audio.call("queue_announcer", &"announcer_final_lap", 0.0, 1.0)
-				if spatial_audio.has_method("request_final_lap_music"):
-					spatial_audio.call("request_final_lap_music")
+		if final_lap > 0 and !race_audio_final_lap_requested \
+				and race_audio_last_local_lap < final_lap and lap >= final_lap:
+			race_audio_final_lap_requested = true
+			if spatial_audio.has_method("queue_announcer"):
+				spatial_audio.call("queue_announcer", &"announcer_final_lap", 0.0, 1.0)
+			if spatial_audio.has_method("request_final_lap_music"):
+				spatial_audio.call("request_final_lap_music")
 		race_audio_last_local_lap = lap

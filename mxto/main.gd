@@ -14,6 +14,7 @@ const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 const PracticeSetupClass = preload("res://practice/practice_setup.gd")
 const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 const PracticeInputEditorClass = preload("res://practice/practice_input_editor.gd")
+const CpuVehiclePoolButtonClass = preload("res://ui/cpu_vehicle_pool_button.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -126,6 +127,7 @@ var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
 var singleplayer_options_s_boost_toggle: CheckBox
+var singleplayer_options_cpu_vehicles: CpuVehiclePoolButton
 var singleplayer_options_as_spectator := false
 var race_dnf_low_speed_ticks := {}
 var start_sync_drop_root: PanelContainer
@@ -419,10 +421,21 @@ func _on_vehicle_content_catalog_delta(delta: Dictionary) -> void:
 	if car_settings != null:
 		car_settings.call("refresh_after_game_manager_loaded")
 
-func build_cpu_player_settings(index: int) -> Dictionary:
+func build_cpu_player_settings(index: int, allowed_content_ids: Array = []) -> Dictionary:
 	var ps := PlayerSettings.new()
 	ps.username = "CPU %03d" % (index + 1)
 	var content_ids := vehicle_content_controller.get_vehicle_content_ids()
+	var configured_ids_value = network_manager.race_options.get("cpu_vehicle_content_ids", []) \
+		if network_manager != null else []
+	var requested_ids: Array = allowed_content_ids
+	if requested_ids.is_empty() and typeof(configured_ids_value) == TYPE_ARRAY:
+		requested_ids = configured_ids_value
+	if !requested_ids.is_empty():
+		content_ids.clear()
+		for content_id_value in requested_ids:
+			var content_id := String(content_id_value)
+			if vehicle_content_controller.get_definition(content_id) != null and !content_ids.has(content_id):
+				content_ids.append(content_id)
 	if network_manager != null and network_manager.has_network_peer():
 		content_ids = vehicle_content_controller.get_multiplayer_vehicle_content_ids(
 			bool(network_manager.race_options.get("allow_workshop_vehicles", true)))
@@ -477,10 +490,16 @@ func _on_practice_setup_requested() -> void:
 
 func _on_practice_setup_back_requested() -> void:
 	practice_setup.hide()
+	if vehicle_test_drive_active:
+		_finish_vehicle_test_drive_return()
+		return
 	time_attack_setup.open_for_current_selection()
 
 
 func _on_practice_start_requested(options: Dictionary, context: Dictionary) -> void:
+	if vehicle_test_drive_active:
+		options["leaderboard_ineligible_reason"] = "draft_vehicle"
+		options["custom_content"] = true
 	time_attack_previous_best_milliseconds = 0
 	var descriptor_value = context.get("ghost_descriptors", [])
 	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
@@ -531,7 +550,7 @@ func _open_vehicle_test_drive_track_picker() -> void:
 	if vehicle_test_drive_picker == null:
 		vehicle_test_drive_picker = ConfirmationDialog.new()
 		vehicle_test_drive_picker.title = "Test Drive Track"
-		vehicle_test_drive_picker.ok_button_text = "Start Test Drive"
+		vehicle_test_drive_picker.ok_button_text = "Configure Practice"
 		vehicle_test_drive_picker.cancel_button_text = "Back to Car Creator"
 		vehicle_test_drive_picker.exclusive = true
 		vehicle_test_drive_track_option = OptionButton.new()
@@ -556,14 +575,7 @@ func _start_vehicle_test_drive() -> void:
 		return
 	vehicle_test_drive_last_track = vehicle_test_drive_track_option.selected
 	track_selector.select(vehicle_test_drive_last_track)
-	singleplayer_cpu_count = 0
-	network_manager.lobby_settings.set_cpu_driver_count(0)
-	var options := _build_default_singleplayer_race_options()
-	options["session_kind"] = "vehicle_test_drive"
-	options["leaderboard_eligible"] = false
-	options["leaderboard_ineligible_reason"] = "draft_vehicle"
-	options["custom_content"] = true
-	_start_singleplayer_race(false, options)
+	practice_setup.open_for_current_selection(0)
 
 func _cancel_vehicle_test_drive() -> void:
 	if !vehicle_test_drive_active:
@@ -624,7 +636,6 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
 	var race_cpu_count := int(options.get("cpu_count", singleplayer_cpu_count))
-	network_manager.lobby_settings.set_cpu_driver_count(race_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.vehicle_content_id == "" and vehicle_content_controller.definitions.size() > 0:
@@ -640,6 +651,8 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		time_attack_eligibility.clear()
 		time_attack_finalized = false
 	network_manager.race_options = options
+	network_manager.lobby_settings.set_cpu_driver_count(race_cpu_count)
+	network_manager.lobby_settings.set_cpu_driver_vehicle_pool(options.get("cpu_vehicle_content_ids", []))
 	ps.spectator = as_spectator
 	network_manager.lobby_settings.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
@@ -931,6 +944,18 @@ func _build_singleplayer_race_options_screen() -> void:
 	singleplayer_options_s_boost_toggle.button_pressed = true
 	box.add_child(singleplayer_options_s_boost_toggle)
 
+	var cpu_vehicle_row := HBoxContainer.new()
+	cpu_vehicle_row.add_theme_constant_override("separation", 8)
+	box.add_child(cpu_vehicle_row)
+	var cpu_vehicle_label := Label.new()
+	cpu_vehicle_label.text = "CPU Vehicles"
+	cpu_vehicle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cpu_vehicle_row.add_child(cpu_vehicle_label)
+	singleplayer_options_cpu_vehicles = CpuVehiclePoolButtonClass.new()
+	singleplayer_options_cpu_vehicles.custom_minimum_size.x = 190.0
+	singleplayer_options_cpu_vehicles.initialize(vehicle_content_controller)
+	cpu_vehicle_row.add_child(singleplayer_options_cpu_vehicles)
+
 	var button_row := HBoxContainer.new()
 	button_row.add_theme_constant_override("separation", 8)
 	box.add_child(button_row)
@@ -1083,6 +1108,8 @@ func _build_singleplayer_race_options_from_controls() -> Dictionary:
 		options["bumpers"] = singleplayer_options_bumpers_toggle.button_pressed or auto_bumpers_mode
 	if singleplayer_options_s_boost_toggle != null:
 		options["s_boost"] = singleplayer_options_s_boost_toggle.button_pressed
+	if singleplayer_options_cpu_vehicles != null:
+		options["cpu_vehicle_content_ids"] = singleplayer_options_cpu_vehicles.selected_content_ids()
 	return options
 
 func _on_singleplayer_options_back_pressed() -> void:

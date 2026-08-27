@@ -151,11 +151,12 @@ func start_race(track_index: int) -> Dictionary:
 		var full_roster := bool(prepared.get("full_roster_replay", false))
 		var grid_slots: PackedInt32Array = prepared.get("start_grid_slots", PackedInt32Array()) if full_roster else PackedInt32Array([int(prepared.get("start_grid_slot", -1))])
 		sim.set_start_grid_slots(grid_slots)
-		var source_options: Dictionary = prepared.get("race_options", {}) if full_roster else {}
+		var source_options: Dictionary = prepared.get("race_options", {})
 		sim.set_target_lap_count(int(source_options.get("lap_count", 3)))
 		sim.set_vehicle_restore_enabled(bool(source_options.get("vehicle_restore", true)))
-		sim.set_bumpers_enabled(bool(source_options.get("bumpers", false)) if full_roster else false)
-		sim.set_s_boost_enabled(bool(source_options.get("s_boost", false)) if full_roster else false)
+		sim.set_bumpers_enabled(bool(source_options.get("bumpers", false)))
+		sim.set_s_boost_enabled(bool(source_options.get("s_boost", false)))
+		sim.set_boost_unlocked_from_start(bool(source_options.get("boost_unlocked_from_start", false)))
 		sim.set_multiplayer_intro_camera_enabled(false)
 		var level_buffer := StreamPeerBuffer.new()
 		level_buffer.data_array = track_bytes
@@ -609,6 +610,7 @@ func _prepare_descriptor(descriptor: Dictionary, track_index: int) -> Dictionary
 			"settings": settings.duplicate(true),
 			"machine_setting": float(settings.get("accel_setting", 0.5)),
 			"spawn_seed": int(replay.get("spawn_seed", 0)),
+			"race_options": (replay.get("race_options", {}) as Dictionary).duplicate(true) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {},
 			"start_grid_slot": start_grid_slot,
 			"input_bytes": encoded.get("input_bytes", PackedByteArray()),
 			"frame_offsets": encoded.get("frame_offsets", PackedInt32Array()),

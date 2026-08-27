@@ -5,17 +5,13 @@ render_mode unshaded, blend_add, depth_draw_never;
 uniform sampler2D landing_tex : source_color;
 global uniform float fog_dist;
 
-#include "res://asset/shader/ordered_dither.gdshaderinc"
+#include "res://asset/shader/distance_fade.gdshaderinc"
 
 void fragment() {
 	vec4 landing = texture(landing_tex, vec2(UV.x, -UV.y));
 	float coverage = landing.a * COLOR.a * track_distance_fade_coverage(VERTEX, fog_dist);
-	float threshold = ordered_dither_threshold(FRAGCOORD, UV);
-	threshold = mix(0.5, threshold, dither_strength);
-	if (coverage < threshold) {
-		discard;
-	}
 	ALBEDO = landing.rgb * 0.35 * COLOR.rgb;
+	ALPHA = coverage;
 }
 
 //void light() {

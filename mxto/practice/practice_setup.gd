@@ -14,6 +14,7 @@ const PRACTICE_SESSION_KIND := "practice"
 @onready var restore_toggle: CheckBox = $Center/Panel/Margin/Content/Options/Restore
 @onready var bumpers_toggle: CheckBox = $Center/Panel/Margin/Content/Options/Bumpers
 @onready var cpu_count: SpinBox = $Center/Panel/Margin/Content/Options/CpuCount
+@onready var cpu_vehicles: CpuVehiclePoolButton = $Center/Panel/Margin/Content/Options/CpuVehicles
 @onready var lap_count: SpinBox = $Center/Panel/Margin/Content/Options/LapCount
 @onready var infinite_laps: CheckBox = $Center/Panel/Margin/Content/Options/InfiniteLaps
 @onready var choose_ghosts_button: Button = $Center/Panel/Margin/Content/Ghosts/ChooseGhosts
@@ -30,6 +31,7 @@ func initialize(in_game_manager: GameManager, shared_ghost_selection: TimeAttack
 	ghost_selection = shared_ghost_selection
 	ghost_selection.changed.connect(_on_ghost_selection_changed)
 	ghost_picker.initialize(game_manager, ghost_selection)
+	cpu_vehicles.initialize(game_manager.vehicle_content_controller)
 	ghost_picker.closed.connect(func(): choose_ghosts_button.grab_focus())
 	infinite_laps.toggled.connect(_on_infinite_laps_toggled)
 	choose_ghosts_button.pressed.connect(
@@ -83,6 +85,7 @@ func _start() -> void:
 		"s_boost": s_boost_toggle.button_pressed,
 		"boost_unlocked_from_start": boost_from_start_toggle.button_pressed,
 		"cpu_count": roundi(cpu_count.value),
+		"cpu_vehicle_content_ids": cpu_vehicles.selected_content_ids(),
 		"lap_count": 0 if infinite else roundi(lap_count.value),
 		"infinite_laps": infinite,
 		"session_kind": PRACTICE_SESSION_KIND,

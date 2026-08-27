@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://practice/practice_setup.gd" id="1_setup"]
 [ext_resource type="PackedScene" path="res://ui/time_attack_ghost_picker.tscn" id="2_picker"]
+[ext_resource type="Script" path="res://ui/cpu_vehicle_pool_button.gd" id="3_cpu_pool"]
 
 [node name="PracticeSetup" type="Control"]
 visible = false
@@ -114,6 +115,15 @@ max_value = 999.0
 step = 1.0
 allow_greater = false
 allow_lesser = false
+
+[node name="CpuVehiclesLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "CPU Vehicles"
+
+[node name="CpuVehicles" type="MenuButton" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "All vehicles"
+script = ExtResource("3_cpu_pool")
 
 [node name="LapCountLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
 layout_mode = 2

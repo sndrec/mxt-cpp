@@ -101,6 +101,15 @@ func set_cpu_driver_count(count: int) -> void:
 		_remove_cpu_driver()
 	broadcast_cpu_roster()
 
+
+func set_cpu_driver_vehicle_pool(content_ids: Array) -> void:
+	for index in range(cpu_player_ids.size()):
+		var player_id := int(cpu_player_ids[index])
+		var settings := game_manager.build_cpu_player_settings(index, content_ids)
+		cpu_player_settings[player_id] = settings
+		player_settings[player_id] = settings
+	broadcast_cpu_roster()
+
 func add_cpu_driver() -> void:
 	set_cpu_driver_count(cpu_player_ids.size() + 1)
 

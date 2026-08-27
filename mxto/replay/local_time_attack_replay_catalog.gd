@@ -22,7 +22,7 @@ func scan(game_manager: GameManager, track_index: int) -> Array:
 			continue
 		var path := absolute_root.path_join(file_name)
 		var metadata := _load_metadata(path)
-		if !_is_local_time_attack(metadata, expected_track_digest):
+		if !_is_compatible_local_ghost(metadata, expected_track_digest):
 			continue
 		var entry := _entry_from_metadata(game_manager, path, metadata)
 		if !entry.is_empty():
@@ -41,8 +41,8 @@ func prepare_entry(game_manager: GameManager, entry: Dictionary, track_index: in
 		return _failure("local_replay_invalid", "That local replay could not be parsed.")
 	var replay: Dictionary = replay_stream.get_metadata()
 	var expected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
-	if !_is_local_time_attack(replay, expected_track_digest):
-		return _failure("local_replay_incompatible", "That replay is not a compatible single-player Time Attack run for this track.")
+	if !_is_compatible_local_ghost(replay, expected_track_digest):
+		return _failure("local_replay_incompatible", "That replay is not a compatible single-racer Time Attack or Practice run for this track.")
 	if replay_stream.frame_count() <= 0:
 		return _failure("local_replay_invalid", "That local replay contains no race input.")
 	var digest := _file_digest(path)
@@ -100,16 +100,19 @@ func _entry_from_metadata(game_manager: GameManager, path: String, metadata: Dic
 		"steam_id": 0,
 		"persona_name": String(player.get("username", settings.get("username", "Local replay"))),
 		"global_rank": 0,
-		"score": roundi(float(finish_tick) * 1000.0 / PHYSICS_TICKS_PER_SECOND),
+		"score_milliseconds": roundi(float(finish_tick) * 1000.0 / PHYSICS_TICKS_PER_SECOND),
 		"ugc_handle": 0,
 		"created_unix": created_unix,
 	}
 
 
-func _is_local_time_attack(metadata: Dictionary, expected_track_digest: String) -> bool:
+func _is_compatible_local_ghost(metadata: Dictionary, expected_track_digest: String) -> bool:
 	if metadata.is_empty() or int(metadata.get("schema_version", -1)) != REPLAY_SCHEMA_VERSION:
 		return false
-	if String(metadata.get("source", "")) != "singleplayer" or String(metadata.get("mode", "")) != "Time Attack":
+	var source := String(metadata.get("source", ""))
+	var mode := String(metadata.get("mode", ""))
+	if !((source == "singleplayer" and mode == "Time Attack") \
+			or (source == "practice" and mode == "Practice")):
 		return false
 	if String(metadata.get("track_gameplay_digest", "")) != expected_track_digest:
 		return false
@@ -120,6 +123,11 @@ func _is_local_time_attack(metadata: Dictionary, expected_track_digest: String) 
 		return false
 	if typeof(cpu_flags_value) != TYPE_ARRAY or (cpu_flags_value as Array).size() != 1 or bool((cpu_flags_value as Array)[0]):
 		return false
+	if source == "practice":
+		var race_options_value = metadata.get("race_options", {})
+		if typeof(race_options_value) != TYPE_DICTIONARY \
+				or int((race_options_value as Dictionary).get("lap_count", 0)) <= 0:
+			return false
 	return typeof(settings_value) == TYPE_ARRAY and (settings_value as Array).size() == 1 \
 		and typeof((settings_value as Array)[0]) == TYPE_DICTIONARY
 

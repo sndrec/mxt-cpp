@@ -57,8 +57,11 @@ func get_garage_vehicle_definitions() -> Array:
 		if definition == null:
 			continue
 		var record: Dictionary = content_catalog.resolve_content(definition.content_id)
-		if String(record.get("source", "")) != "workshop":
+		var source := String(record.get("source", ""))
+		if source == "official":
 			garage_definitions.append(definition)
+			continue
+		if source != "workshop":
 			continue
 		var published_file_id_text := String(record.get("published_file_id", ""))
 		if published_file_id_text.is_valid_int() \
