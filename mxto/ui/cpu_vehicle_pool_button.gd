@@ -14,6 +14,7 @@ var initialized := false
 func initialize(controller: VehicleContentController) -> void:
 	vehicle_content_controller = controller
 	var popup := get_popup()
+	popup.hide_on_checkable_item_selection = false
 	if !popup.id_pressed.is_connected(_on_item_pressed):
 		popup.id_pressed.connect(_on_item_pressed)
 	if vehicle_content_controller != null \
@@ -98,18 +99,19 @@ func _on_item_pressed(item_id: int) -> void:
 				selected_content_ids_by_id.erase(content_id)
 		else:
 			selected_content_ids_by_id[content_id] = true
-	_rebuild_popup(_current_names_by_id())
+	_update_popup_checks()
+	_update_text()
 	selection_changed.emit(selected_content_ids())
 
 
-func _current_names_by_id() -> Dictionary:
-	var names_by_id := {}
-	if vehicle_content_controller != null:
-		for definition_value in vehicle_content_controller.get_garage_vehicle_definitions():
-			var definition := definition_value as CarDefinition
-			if definition != null:
-				names_by_id[definition.content_id] = definition.name
-	return names_by_id
+func _update_popup_checks() -> void:
+	var popup := get_popup()
+	popup.set_item_checked(popup.get_item_index(ALL_VEHICLES_ID), _all_selected())
+	for index in range(available_content_ids.size()):
+		var item_id := VEHICLE_ID_BASE + index
+		popup.set_item_checked(
+			popup.get_item_index(item_id),
+			selected_content_ids_by_id.has(available_content_ids[index]))
 
 
 func _all_selected() -> bool:
