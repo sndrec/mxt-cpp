@@ -288,6 +288,37 @@ custom_minimum_size = Vector2(96, 36)
 layout_mode = 0
 text = "Cancel"
 
+[node name="CameraRealignControls" type="HBoxContainer" parent="Container/SettingsTabs/Garage/CarPreviewSpace"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 232.0
+offset_bottom = 42.0
+theme_override_constants/separation = 4
+
+[node name="Label" type="Label" parent="Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls"]
+layout_mode = 2
+text = "Realign Camera"
+vertical_alignment = 1
+
+[node name="X" type="Button" parent="Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+tooltip_text = "Zero the orbit pivot's world X coordinate."
+text = "X"
+
+[node name="Y" type="Button" parent="Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+tooltip_text = "Zero the orbit pivot's world Y coordinate."
+text = "Y"
+
+[node name="Z" type="Button" parent="Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+tooltip_text = "Zero the orbit pivot's world Z coordinate."
+text = "Z"
+
 [node name="GaragePanel" type="VBoxContainer" parent="Container/SettingsTabs/Garage" unique_id=828395945]
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2

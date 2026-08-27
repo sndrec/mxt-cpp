@@ -5,6 +5,7 @@ const DEFAULT_YAW := deg_to_rad(25.0)
 const DEFAULT_PITCH := deg_to_rad(-9.0)
 const MIN_PITCH := deg_to_rad(-89.0)
 const MAX_PITCH := deg_to_rad(55.0)
+const ROTATION_SNAP_STEP := deg_to_rad(5.0)
 
 var yaw := DEFAULT_YAW
 var pitch := DEFAULT_PITCH
@@ -19,6 +20,8 @@ var drag_button := 0
 var drag_start := Vector2.ZERO
 var drag_last := Vector2.ZERO
 var drag_moved := false
+var drag_orbit_yaw := DEFAULT_YAW
+var drag_orbit_pitch := DEFAULT_PITCH
 
 
 func configure_frame(frame_target: Vector3, frame_distance: float, reset_view := false) -> void:
@@ -39,6 +42,8 @@ func reset() -> void:
 	target = default_target
 	drag_button = 0
 	drag_moved = false
+	drag_orbit_yaw = yaw
+	drag_orbit_pitch = pitch
 
 
 func handle_mouse_button(event: InputEventMouseButton) -> bool:
@@ -60,6 +65,8 @@ func handle_mouse_button(event: InputEventMouseButton) -> bool:
 		drag_start = event.position
 		drag_last = event.position
 		drag_moved = false
+		drag_orbit_yaw = yaw
+		drag_orbit_pitch = pitch
 		return true
 	if drag_button == event.button_index:
 		drag_button = 0
@@ -75,8 +82,11 @@ func handle_mouse_motion(event: InputEventMouseMotion) -> bool:
 	if event.position.distance_to(drag_start) > 4.0:
 		drag_moved = true
 	if drag_button == MOUSE_BUTTON_LEFT and !event.shift_pressed:
-		yaw += delta.x * -0.004
-		pitch = clampf(pitch + delta.y * -0.004, MIN_PITCH, MAX_PITCH)
+		drag_orbit_yaw += delta.x * -0.004
+		drag_orbit_pitch = clampf(drag_orbit_pitch + delta.y * -0.004, MIN_PITCH, MAX_PITCH)
+		yaw = snappedf(drag_orbit_yaw, ROTATION_SNAP_STEP) if event.ctrl_pressed else drag_orbit_yaw
+		pitch = snappedf(drag_orbit_pitch, ROTATION_SNAP_STEP) if event.ctrl_pressed else drag_orbit_pitch
+		pitch = clampf(pitch, MIN_PITCH, MAX_PITCH)
 	else:
 		var pan_scale := distance * 0.0008
 		pan.x -= delta.x * pan_scale
@@ -115,6 +125,15 @@ func camera_basis(offset: Vector3) -> Basis:
 func pan_target(offset: Vector3) -> Vector3:
 	var plane_basis := view_plane_basis(offset)
 	return target + plane_basis.x * pan.x + plane_basis.y * pan.y
+
+
+func realign_pivot_axis(axis: int) -> void:
+	if axis < Vector3.AXIS_X or axis > Vector3.AXIS_Z:
+		return
+	var pivot := pan_target(camera_offset())
+	pivot[axis] = 0.0
+	target = pivot
+	pan = Vector3.ZERO
 
 
 func view_plane_basis(offset: Vector3) -> Basis:

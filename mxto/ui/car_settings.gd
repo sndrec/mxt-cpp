@@ -26,6 +26,9 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var car_preview_space: ColorRect = $Container/SettingsTabs/Garage/CarPreviewSpace
 @onready var custom_stamp_budget_label: Label = $Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampBudget
 @onready var custom_stamp_atlas_preview: TextureRect = $Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampAtlasPreview
+@onready var camera_realign_x: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/X
+@onready var camera_realign_y: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Y
+@onready var camera_realign_z: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Z
 @onready var pilot_name_input: LineEdit = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/PilotNameInput
 @onready var spectator_toggle: CheckBox = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/SpectatorToggle
 @onready var car_name_label: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/CarName
@@ -781,7 +784,7 @@ func _setup_garage_preview() -> void:
 	preview_container.name = "GaragePreviewViewport"
 	preview_container.stretch = true
 	preview_container.mouse_filter = Control.MOUSE_FILTER_STOP
-	preview_container.tooltip_text = "Left drag: orbit. Right, middle, or Shift+left drag: pan. Wheel: zoom. Double-click: reset view."
+	preview_container.tooltip_text = "Left drag: orbit. Hold Ctrl to snap rotation to world 5° increments. Right, middle, or Shift+left drag: pan. Wheel: zoom. Double-click: reset view."
 	preview_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	car_preview_space.add_child(preview_container)
 	car_preview_space.move_child(preview_container, 0)
@@ -821,6 +824,9 @@ func _setup_garage_preview() -> void:
 	preview_viewport.add_child(preview_camera)
 	preview_camera.fov = 38.0
 	preview_camera_controller.configure_frame(Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0), 22.0, true)
+	camera_realign_x.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_X))
+	camera_realign_y.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_Y))
+	camera_realign_z.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_Z))
 	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
 	_set_garage_preview_active(visible)
@@ -2169,6 +2175,14 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camer
 	if preview_camera_controller.handle_mouse_motion(event):
 		_apply_preview_camera()
 		preview_container.accept_event()
+
+
+func _realign_preview_camera(axis: int) -> void:
+	preview_has_camera_override = false
+	preview_camera_controller.realign_pivot_axis(axis)
+	_apply_preview_camera()
+	if stamp_ui_mode == StampUiMode.EDITING:
+		_apply_edit_stamp_from_camera()
 
 func _apply_preview_camera() -> void:
 	if preview_vehicle != null:
