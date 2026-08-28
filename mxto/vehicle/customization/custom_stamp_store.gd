@@ -165,18 +165,10 @@ static func create_preview_image(blob: CustomStampBlob) -> Image:
 		return null
 	var palette := blob.custom_palette if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE else CustomStampPaletteCatalog.get_palette(blob.palette_id)
 	if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:
-		palette = _normalized_custom_palette(palette)
+		palette = CustomStampPaletteCatalog.normalize_custom_palette(palette)
 	var raw := blob.decompress_indices()
-	var image := Image.create(blob.width, blob.height, false, Image.FORMAT_RGBA8)
-	for y in range(blob.height):
-		for x in range(blob.width):
-			var pixel_index := y * blob.width + x
-			var index := _index_at(raw, pixel_index, blob.bits_per_pixel)
-			var colour := Color(1.0, 1.0, 1.0, 0.0)
-			if index > 0 and index < palette.size():
-				colour = palette[index]
-			image.set_pixel(x, y, colour)
-	return image
+	var image_builder := NativeCustomStampImageBuilder.new()
+	return image_builder.build_indexed_image(raw, blob.width, blob.height, blob.bits_per_pixel, palette, false)
 
 static func missing_hashes(manifest: Array) -> PackedStringArray:
 	var missing := PackedStringArray()
@@ -187,24 +179,6 @@ static func missing_hashes(manifest: Array) -> PackedStringArray:
 		if stamp_hash != "" and !has_blob(stamp_hash):
 			missing.append(stamp_hash)
 	return missing
-
-static func _index_at(raw: PackedByteArray, pixel_index: int, bits_per_pixel: int) -> int:
-	if bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:
-		var packed := int(raw[int(pixel_index / 2)])
-		if (pixel_index & 1) == 0:
-			return packed & 0x0f
-		return (packed >> 4) & 0x0f
-	return int(raw[pixel_index])
-
-static func _normalized_custom_palette(source: PackedColorArray) -> PackedColorArray:
-	var out := PackedColorArray()
-	out.append(Color(1.0, 1.0, 1.0, 0.0))
-	var start := 1 if source.size() > 0 and source[0].a <= 0.0 else 0
-	for i in range(start, mini(source.size(), start + 15)):
-		out.append(source[i])
-	while out.size() < 16:
-		out.append(Color.WHITE)
-	return out
 
 static func _cache_path(stamp_hash: String) -> String:
 	return "%s/%s.json" % [CACHE_DIR, _safe_hash(stamp_hash)]

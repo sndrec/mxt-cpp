@@ -138,7 +138,7 @@ static func _blit_blob(atlas: Image, blob: CustomStampBlob, placement: Dictionar
 
 static func _palette_for_blob(blob: CustomStampBlob, authored_palettes: Dictionary) -> PackedColorArray:
 	if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:
-		return _normalized_custom_palette(blob.custom_palette)
+		return CustomStampPaletteCatalog.normalize_custom_palette(blob.custom_palette)
 	if blob.palette_id == CustomStampBlob.PALETTE_RGB332:
 		return CustomStampBlob.rgb332_palette()
 	if blob.palette_id >= CustomStampPaletteCatalog.PALETTE_MIN_ID and blob.palette_id <= CustomStampPaletteCatalog.PALETTE_MAX_ID:
@@ -146,20 +146,6 @@ static func _palette_for_blob(blob: CustomStampBlob, authored_palettes: Dictiona
 	if !authored_palettes.has(blob.palette_id):
 		return PackedColorArray()
 	return _palette_from_variant(authored_palettes[blob.palette_id], 256)
-
-static func _normalized_custom_palette(source: PackedColorArray) -> PackedColorArray:
-	var out := PackedColorArray()
-	out.append(Color(1.0, 1.0, 1.0, 0.0))
-	if source.size() == 16 and source[0].a <= 0.0:
-		out = source
-		out[0] = Color(1.0, 1.0, 1.0, 0.0)
-		return out
-	var start := 1 if source.size() > 0 and source[0].a <= 0.0 else 0
-	for i in range(start, mini(source.size(), start + 15)):
-		out.append(source[i])
-	while out.size() < 16:
-		out.append(Color.WHITE)
-	return out
 
 static func _palette_from_variant(value, max_size: int) -> PackedColorArray:
 	if value is PackedColorArray:
