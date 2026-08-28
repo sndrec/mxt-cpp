@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://c1dht2liveryeditor"]
+[gd_scene format=3 uid="uid://eqk3r3r7t5wn"]
 
 [ext_resource type="Script" path="res://ui/livery_editor.gd" id="1_livery"]
 
