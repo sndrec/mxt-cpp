@@ -91,6 +91,27 @@ func get_definition(vehicle_content_id: String) -> CarDefinition:
 		definitions_by_content_id[vehicle_content_id] = definition
 	return definition
 
+func vehicle_settings_content_available(settings: Array) -> bool:
+	for value in settings:
+		if typeof(value) != TYPE_DICTIONARY:
+			return false
+		var player_settings: Dictionary = value
+		var content_id := String(player_settings.get("vehicle_content_id", ""))
+		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
+		if content_id.is_empty() or gameplay_digest.is_empty():
+			return false
+		var record: MxtContentRecord = content_catalog.resolve_content(content_id)
+		if record == null or record.gameplay_digest != gameplay_digest:
+			return false
+		if !record.package_digest.is_empty() and String(player_settings.get(
+				"vehicle_package_digest", "")) != record.package_digest:
+			return false
+		var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
+		if !workshop_id.is_empty() and String(player_settings.get(
+				"vehicle_workshop_id", "")) != workshop_id:
+			return false
+	return true
+
 func prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Array, warning_context := "race") -> Dictionary:
 	var render_data := prepare_custom_stamp_render_data(racer_ids, racer_settings, warning_context)
 	var render_settings: Array = render_data.get("settings", racer_settings)

@@ -74,6 +74,26 @@ func track_content_evidence_matches(
 		return false
 	return true
 
+func track_index_for_compatible_evidence(
+		content_id: String,
+		gameplay_digest: String,
+		package_digest: String,
+		workshop_id: String) -> int:
+	if content_id.is_empty() or gameplay_digest.is_empty():
+		return -1
+	var track_index := track_index_for_id(content_id)
+	if track_index < 0 or track_gameplay_digest_for_index(track_index) != gameplay_digest:
+		return -1
+	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+	if record == null:
+		return -1
+	if !record.package_digest.is_empty() and package_digest != record.package_digest:
+		return -1
+	var expected_workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
+	if !expected_workshop_id.is_empty() and workshop_id != expected_workshop_id:
+		return -1
+	return track_index
+
 func track_index_for_id(track_id: String) -> int:
 	if track_id_to_index.has(track_id):
 		return int(track_id_to_index[track_id])

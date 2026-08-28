@@ -245,49 +245,6 @@ func _load_replay_metadata_file(path: String, profile: Dictionary = {}) -> Dicti
 	return stream.get_metadata()
 
 
-func _find_replay_track_index(data: Dictionary) -> int:
-	var content_id := String(data.get("track_content_id", ""))
-	var gameplay_digest := String(data.get("track_gameplay_digest", ""))
-	if content_id.is_empty() or gameplay_digest.is_empty():
-		return -1
-	var track_index := game_manager.track_content_controller.track_index_for_id(content_id)
-	if track_index < 0 or game_manager.track_content_controller.track_gameplay_digest_for_index(
-			track_index) != gameplay_digest:
-		return -1
-	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	if record == null:
-		return -1
-	if !record.package_digest.is_empty() and String(data.get(
-			"track_package_digest", "")) != record.package_digest:
-		return -1
-	var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-	if !workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != workshop_id:
-		return -1
-	return track_index
-
-
-func _replay_vehicle_content_available(settings: Array) -> bool:
-	for value in settings:
-		if typeof(value) != TYPE_DICTIONARY:
-			return false
-		var player_settings: Dictionary = value
-		var content_id := String(player_settings.get("vehicle_content_id", ""))
-		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
-		if content_id.is_empty() or gameplay_digest.is_empty():
-			return false
-		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-		if record == null or record.gameplay_digest != gameplay_digest:
-			return false
-		if !record.package_digest.is_empty() and String(player_settings.get(
-				"vehicle_package_digest", "")) != record.package_digest:
-			return false
-		var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-		if !workshop_id.is_empty() and String(player_settings.get(
-				"vehicle_workshop_id", "")) != workshop_id:
-			return false
-	return true
-
-
 func _decoded_replay_frame_at(frame_index: int) -> Dictionary:
 	if replay_playback_stream == null or frame_index < 0 or frame_index >= replay_playback_stream.frame_count():
 		return {}
@@ -483,7 +440,11 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			replay_leaderboard_validation["replay_schema_version"] = int(replay.get("legacy_leaderboard_schema_version", -1))
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
-	var track_index := _find_replay_track_index(replay)
+	var track_index := game_manager.track_content_controller.track_index_for_compatible_evidence(
+		String(replay.get("track_content_id", "")),
+		String(replay.get("track_gameplay_digest", "")),
+		String(replay.get("track_package_digest", "")),
+		String(replay.get("track_workshop_id", "")))
 	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
 		push_warning("Replay load failed: track not found for %s" % str(replay.get("track_name", "")))
 		if game_manager.headless_mode:
@@ -501,7 +462,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		if game_manager.headless_mode:
 			get_tree().quit(1)
 		return
-	if !_replay_vehicle_content_available(settings as Array):
+	if !vehicle_content_controller.vehicle_settings_content_available(settings as Array):
 		push_warning("Replay load failed: exact vehicle gameplay content is unavailable.")
 		if game_manager.headless_mode:
 			get_tree().quit(1)

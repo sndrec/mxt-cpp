@@ -94,7 +94,11 @@ func load_and_start(path: String) -> void:
 		_stop_and_save()
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
-	var track_index := _find_track_index(replay)
+	var track_index := game_manager.track_content_controller.track_index_for_compatible_evidence(
+		String(replay.get("track_content_id", "")),
+		String(replay.get("track_gameplay_digest", "")),
+		String(replay.get("track_package_digest", "")),
+		String(replay.get("track_workshop_id", "")))
 	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
 		_load_failed("MXT_DEBUG_REPLAY load failed: track not found for %s" % replay.get("track_name", ""))
 		return
@@ -102,7 +106,7 @@ func load_and_start(path: String) -> void:
 	if typeof(settings) != TYPE_ARRAY or settings.is_empty():
 		_load_failed("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
 		return
-	if !_vehicle_content_available(settings as Array):
+	if !vehicle_content_controller.vehicle_settings_content_available(settings as Array):
 		_load_failed("MXT_DEBUG_REPLAY load failed: exact vehicle gameplay content is unavailable.")
 		return
 	var state_tick := int(replay.get("snapshot_tick", -1))
@@ -250,49 +254,6 @@ func _load_file(path: String) -> Dictionary:
 		print("MXT_DEBUG_REPLAY load failed: unsupported version ", parsed.get("version", null))
 		return {}
 	return parsed
-
-
-func _find_track_index(data: Dictionary) -> int:
-	var content_id := String(data.get("track_content_id", ""))
-	var gameplay_digest := String(data.get("track_gameplay_digest", ""))
-	if content_id.is_empty() or gameplay_digest.is_empty():
-		return -1
-	var track_index := game_manager.track_content_controller.track_index_for_id(content_id)
-	if track_index < 0 or game_manager.track_content_controller.track_gameplay_digest_for_index(
-			track_index) != gameplay_digest:
-		return -1
-	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	if record == null:
-		return -1
-	if !record.package_digest.is_empty() and String(data.get(
-			"track_package_digest", "")) != record.package_digest:
-		return -1
-	var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-	if !workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != workshop_id:
-		return -1
-	return track_index
-
-
-func _vehicle_content_available(settings: Array) -> bool:
-	for value in settings:
-		if typeof(value) != TYPE_DICTIONARY:
-			return false
-		var player_settings: Dictionary = value
-		var content_id := String(player_settings.get("vehicle_content_id", ""))
-		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
-		if content_id.is_empty() or gameplay_digest.is_empty():
-			return false
-		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-		if record == null or record.gameplay_digest != gameplay_digest:
-			return false
-		if !record.package_digest.is_empty() and String(player_settings.get(
-				"vehicle_package_digest", "")) != record.package_digest:
-			return false
-		var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-		if !workshop_id.is_empty() and String(player_settings.get(
-				"vehicle_workshop_id", "")) != workshop_id:
-			return false
-	return true
 
 
 func _current_track_name() -> String:
