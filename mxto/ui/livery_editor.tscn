@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://ui/livery_editor.gd" id="1_livery"]
 [ext_resource type="Script" path="res://ui/custom_stamp_painter_controller.gd" id="2_painter"]
 [ext_resource type="Script" path="res://ui/custom_stamp_library_controller.gd" id="3_library"]
+[ext_resource type="Script" path="res://ui/livery_atlas_controller.gd" id="4_atlas"]
 
 [node name="LiveryEditor" type="Control"]
 mouse_filter = 2
@@ -13,3 +14,6 @@ script = ExtResource("2_painter")
 
 [node name="CustomStampLibraryController" type="Node" parent="."]
 script = ExtResource("3_library")
+
+[node name="LiveryAtlasController" type="Node" parent="."]
+script = ExtResource("4_atlas")

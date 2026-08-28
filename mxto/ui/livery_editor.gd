@@ -7,10 +7,7 @@ const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd")
 const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
-const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
-const CustomStampPacker = preload("res://vehicle/customization/custom_stamp_packer.gd")
-const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
 const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
 const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
@@ -20,8 +17,6 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 
 @onready var owner_ui: Control = get_parent() as Control
 @onready var car_preview_space: ColorRect = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace")
-@onready var custom_stamp_budget_label: Label = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampBudget")
-@onready var custom_stamp_atlas_preview: TextureRect = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampAtlasPreview")
 @onready var camera_realign_x: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/X")
 @onready var camera_realign_y: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Y")
 @onready var camera_realign_z: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Z")
@@ -51,6 +46,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var stamp_chooser_cancel_button: Button = owner_ui.get_node("StampChooser/StampChooserList/Cancel")
 @onready var stamp_library: CustomStampLibraryController = $CustomStampLibraryController
 @onready var stamp_painter: CustomStampPainterController = $CustomStampPainterController
+@onready var atlas_controller: LiveryAtlasController = $LiveryAtlasController
 @onready var stamp_edit_overlay: Control = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay")
 @onready var stamp_edit_square: Panel = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare")
 @onready var stamp_edit_confirm_button: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm")
@@ -76,13 +72,6 @@ var updating_stamp_properties := false
 var stamp_layer_rows: Array[Control] = []
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
-var preview_custom_stamp_atlas: Texture2D
-var preview_custom_stamp_region_texture: Texture2D
-var preview_custom_stamp_atlas_thread: Thread
-var preview_custom_stamp_atlas_active_revision := 0
-var preview_custom_stamp_atlas_latest_revision := 0
-var preview_custom_stamp_atlas_queued_records: Array = []
-var preview_custom_stamp_atlas_has_queued := false
 var preview_container: SubViewportContainer
 var preview_viewport: SubViewport
 var preview_root: Node3D
@@ -127,6 +116,8 @@ func initialize(in_game_manager: GameManager, in_player_settings: PlayerSettings
 	stamp_library.delete_requested.connect(_delete_custom_stamp_from_catalog)
 	stamp_painter.initialize(owner_ui)
 	stamp_painter.stamp_saved.connect(_on_custom_stamp_painter_saved)
+	atlas_controller.initialize(owner_ui)
+	atlas_controller.atlas_texture_changed.connect(_on_preview_atlas_texture_changed)
 	primary_colour_picker.color_changed.connect(_on_primary_colour_changed)
 	secondary_colour_picker.color_changed.connect(_on_secondary_colour_changed)
 	accent_colour_picker.color_changed.connect(_on_accent_colour_changed)
@@ -287,11 +278,11 @@ func _update_livery_lock_state() -> void:
 
 func _process(_delta: float) -> void:
 	if owner_ui != null and owner_ui.visible:
-		_poll_preview_custom_stamp_atlas_thread()
+		atlas_controller.poll()
 		_update_livery_lock_state()
 
 func _exit_tree() -> void:
-	_finish_preview_custom_stamp_atlas_thread()
+	atlas_controller.finish()
 
 func publish_livery_reference() -> void:
 	if selected_definition == null or !current_livery_enabled:
@@ -480,13 +471,13 @@ func _rebuild_preview_vehicle() -> void:
 	preview_vehicle_base_transform = preview_vehicle.transform
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
-	_refresh_preview_custom_stamp_atlas()
+	atlas_controller.refresh(current_livery)
 	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery_below())]
 	preview_render_manager.stamp_visibility_masks_enabled = true
 	preview_render_manager.stamp_visibility_mask_skip_layer = -1
 	preview_render_manager.stamp_only_mode = false
 	preview_render_manager.stamp_render_priority = 2
-	preview_render_manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
+	preview_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
 	preview_render_manager.configure_manual([definition], render_settings)
 	if stamp_ui_mode == StampUiMode.EDITING:
 		_rebuild_edit_stamp_preview(false)
@@ -506,7 +497,7 @@ func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
 	preview_edit_render_manager.stamp_visibility_mask_skip_layer = -1
 	preview_edit_render_manager.stamp_only_mode = true
 	preview_edit_render_manager.stamp_render_priority = 3
-	preview_edit_render_manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
+	preview_edit_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
 	preview_edit_render_manager.configure_manual([definition], [_preview_render_settings(_preview_edit_livery())])
 	if apply_camera:
 		_apply_preview_camera()
@@ -524,7 +515,7 @@ func _rebuild_above_stamp_preview(apply_camera := true) -> void:
 	preview_above_render_manager.stamp_visibility_mask_skip_layer = -1
 	preview_above_render_manager.stamp_only_mode = true
 	preview_above_render_manager.stamp_render_priority = 4
-	preview_above_render_manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
+	preview_above_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
 	preview_above_render_manager.configure_manual([definition], [_preview_render_settings(_preview_confirmed_livery_above())])
 	if apply_camera:
 		_apply_preview_camera()
@@ -561,164 +552,10 @@ func _preview_render_settings(livery: CarLivery) -> Dictionary:
 		settings["car_livery"] = livery.to_dict()
 	return settings
 
-func _refresh_preview_custom_stamp_atlas() -> bool:
-	preview_custom_stamp_atlas = null
-	preview_custom_stamp_region_texture = null
-	preview_custom_stamp_atlas_latest_revision += 1
-	var atlas_revision := preview_custom_stamp_atlas_latest_revision
-	_apply_preview_custom_stamp_atlas_texture()
-	if current_livery == null:
-		_update_custom_stamp_budget_overlay()
-		return true
-	var payload := CustomStampStore.build_livery_payload(current_livery)
-	if !bool(payload.get("ok", false)):
-		push_warning("Custom stamps do not fit the local vehicle atlas: %s" % str(payload.get("error", "unknown error")))
-		_update_custom_stamp_budget_overlay(payload, false)
-		return false
-	var placements: Dictionary = payload.get("placements", {})
-	_update_custom_stamp_budget_overlay(payload, true)
-	if placements.is_empty():
-		return true
-	CustomStampPacker.apply_placements_to_livery(current_livery, placements, Vector2i.ZERO, CustomStampAtlasBuilder.ATLAS_SIZE)
-	_request_preview_custom_stamp_atlas_build([{
-		"player_id": 0,
-		"region_origin": Vector2i.ZERO,
-		"placements": placements,
-		"blobs": payload.get("blobs", []),
-	}], atlas_revision)
-	return true
-
-func _request_preview_custom_stamp_atlas_build(player_records: Array, revision: int) -> void:
-	if preview_custom_stamp_atlas_thread != null and preview_custom_stamp_atlas_thread.is_alive():
-		preview_custom_stamp_atlas_queued_records = player_records.duplicate(true)
-		preview_custom_stamp_atlas_has_queued = true
-		return
-	_start_preview_custom_stamp_atlas_thread(player_records, revision)
-
-func _start_preview_custom_stamp_atlas_thread(player_records: Array, revision: int) -> void:
-	if preview_custom_stamp_atlas_thread != null:
-		_poll_preview_custom_stamp_atlas_thread(true)
-	preview_custom_stamp_atlas_active_revision = revision
-	preview_custom_stamp_atlas_thread = Thread.new()
-	var err := preview_custom_stamp_atlas_thread.start(_build_preview_custom_stamp_atlas_image_thread.bind(player_records.duplicate(true), revision))
-	if err != OK:
-		preview_custom_stamp_atlas_thread = null
-		push_warning("Failed to start custom stamp atlas thread: %s" % err)
-		var atlas_build := CustomStampAtlasBuilder.build_atlas_image(player_records)
-		_apply_preview_custom_stamp_atlas_build_result(atlas_build, revision)
-
-func _build_preview_custom_stamp_atlas_image_thread(player_records: Array, revision: int) -> Dictionary:
-	var result := CustomStampAtlasBuilder.build_atlas_image(player_records)
-	result["revision"] = revision
-	return result
-
-func _poll_preview_custom_stamp_atlas_thread(force_wait := false) -> void:
-	if preview_custom_stamp_atlas_thread == null:
-		return
-	if !force_wait and preview_custom_stamp_atlas_thread.is_alive():
-		return
-	var result = preview_custom_stamp_atlas_thread.wait_to_finish()
-	preview_custom_stamp_atlas_thread = null
-	if typeof(result) == TYPE_DICTIONARY:
-		_apply_preview_custom_stamp_atlas_build_result(result, int(result.get("revision", preview_custom_stamp_atlas_active_revision)))
-	if preview_custom_stamp_atlas_has_queued:
-		var queued := preview_custom_stamp_atlas_queued_records
-		preview_custom_stamp_atlas_queued_records = []
-		preview_custom_stamp_atlas_has_queued = false
-		_start_preview_custom_stamp_atlas_thread(queued, preview_custom_stamp_atlas_latest_revision)
-
-func _finish_preview_custom_stamp_atlas_thread() -> void:
-	preview_custom_stamp_atlas_has_queued = false
-	preview_custom_stamp_atlas_queued_records = []
-	_poll_preview_custom_stamp_atlas_thread(true)
-
-func _apply_preview_custom_stamp_atlas_build_result(atlas_build: Dictionary, revision: int) -> void:
-	if revision != preview_custom_stamp_atlas_latest_revision:
-		return
-	if !bool(atlas_build.get("ok", false)):
-		push_warning("Failed to build garage custom stamp atlas: %s" % str(atlas_build.get("error", "unknown error")))
-		return
-	var image := atlas_build.get("image", null) as Image
-	preview_custom_stamp_atlas = CustomStampAtlasBuilder.texture_from_image(image)
-	_apply_preview_custom_stamp_atlas_texture()
-
-func _apply_preview_custom_stamp_atlas_texture() -> void:
+func _on_preview_atlas_texture_changed(texture: Texture2D) -> void:
 	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
 		if manager != null:
-			manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
-
-func _update_custom_stamp_budget_overlay(payload: Dictionary = {}, ok := true) -> void:
-	if custom_stamp_budget_label == null or custom_stamp_atlas_preview == null:
-		return
-	var blobs: Array = payload.get("blobs", [])
-	var pixel_count := 0
-	var uncompressed_size := 0
-	var compressed_size := 0
-	for blob in blobs:
-		var stamp_blob := blob as CustomStampBlob
-		if stamp_blob == null:
-			continue
-		pixel_count += stamp_blob.width * stamp_blob.height
-		uncompressed_size += stamp_blob.uncompressed_size
-		compressed_size += stamp_blob.compressed_indices.size()
-	var pixel_kib := float(pixel_count) / 1024.0
-	var raw_kib := float(uncompressed_size) / 1024.0
-	var compressed_kib := float(compressed_size) / 1024.0
-	var text := "Custom stamps"
-	if !ok:
-		text += " OVER BUDGET"
-	text += "\nUncompressed: %.1f / %.1f KiB" % [raw_kib, float(CustomStampBlob.PLAYER_INDEXED_PIXEL_BUDGET) / 1024.0]
-	text += "\nPixels: %.1f / %.1f KiB" % [pixel_kib, float(CustomStampBlob.PLAYER_INDEXED_PIXEL_BUDGET) / 1024.0]
-	text += "\nCompressed: %.1f / %.1f KiB" % [compressed_kib, float(CustomStampBlob.COMPRESSED_BYTE_CAP) / 1024.0]
-	custom_stamp_budget_label.text = text
-	custom_stamp_budget_label.modulate = Color(1.0, 0.35, 0.25, 1.0) if !ok else Color.WHITE
-	preview_custom_stamp_region_texture = _build_custom_stamp_region_preview_texture(payload)
-	custom_stamp_atlas_preview.texture = preview_custom_stamp_region_texture
-	custom_stamp_atlas_preview.visible = preview_custom_stamp_region_texture != null
-	if preview_custom_stamp_region_texture != null:
-		var texture_size := preview_custom_stamp_region_texture.get_size()
-		custom_stamp_atlas_preview.custom_minimum_size = texture_size
-		custom_stamp_atlas_preview.size = texture_size
-		custom_stamp_atlas_preview.offset_left = 10.0
-		custom_stamp_atlas_preview.offset_top = -texture_size.y - 10.0
-		custom_stamp_atlas_preview.offset_right = texture_size.x + 10.0
-		custom_stamp_atlas_preview.offset_bottom = -10.0
-
-func _build_custom_stamp_region_preview_texture(payload: Dictionary) -> Texture2D:
-	var placements: Dictionary = payload.get("placements", {})
-	if placements.is_empty():
-		return null
-	var region_size := Vector2i.ZERO
-	for placement_value in placements.values():
-		if typeof(placement_value) == TYPE_DICTIONARY:
-			var placement: Dictionary = placement_value
-			region_size = placement.get("region_size", Vector2i.ZERO)
-			break
-	if region_size == Vector2i.ZERO:
-		return null
-	var image := Image.create(region_size.x, region_size.y, false, Image.FORMAT_RGBA8)
-	image.fill(Color(0.02, 0.02, 0.025, 0.72))
-	for blob in payload.get("blobs", []):
-		var stamp_blob := blob as CustomStampBlob
-		if stamp_blob == null or !placements.has(stamp_blob.stamp_hash):
-			continue
-		var stamp_image := CustomStampStore.create_preview_image(stamp_blob)
-		if stamp_image == null:
-			continue
-		var placement: Dictionary = placements[stamp_blob.stamp_hash]
-		var rect: Rect2i = placement["rect"]
-		var rotated := bool(placement.get("rotated", false))
-		for y in range(stamp_blob.height):
-			for x in range(stamp_blob.width):
-				var colour := stamp_image.get_pixel(x, y)
-				if colour.a <= 0.0:
-					continue
-				var dest := Vector2i(rect.position.x + x, rect.position.y + y)
-				if rotated:
-					dest = Vector2i(rect.position.x + y, rect.position.y + stamp_blob.width - 1 - x)
-				if dest.x >= 0 and dest.y >= 0 and dest.x < region_size.x and dest.y < region_size.y:
-					image.set_pixel(dest.x, dest.y, colour)
-	return ImageTexture.create_from_image(image)
+			manager.set_custom_stamp_atlas(texture)
 
 func _preview_confirmed_livery_below() -> CarLivery:
 	if !current_livery_enabled:
@@ -943,10 +780,10 @@ func _try_set_stamp_for_layer_with_custom_pack(layer: int, stamp: CarLiveryStamp
 	var old_stamp := _stamp_for_layer(layer)
 	var old_copy: CarLiveryStamp = old_stamp.duplicate_stamp() if old_stamp != null else null
 	_set_stamp_for_layer(layer, stamp)
-	if _refresh_preview_custom_stamp_atlas():
+	if atlas_controller.refresh(current_livery):
 		return true
 	_set_stamp_for_layer(layer, old_copy)
-	_refresh_preview_custom_stamp_atlas()
+	atlas_controller.refresh(current_livery)
 	return false
 
 func _new_stamp(layer: int, stamp_id: String) -> CarLiveryStamp:
@@ -1137,7 +974,7 @@ func _on_stamp_choice_pressed(stamp_id: String) -> void:
 		var existing := _stamp_for_layer(pending_stamp_layer)
 		if existing != null:
 			_set_stamp_asset_to_base(existing, stamp_id)
-			_refresh_preview_custom_stamp_atlas()
+			atlas_controller.refresh(current_livery)
 			_save_livery_for_selected_car()
 			_refresh_stamp_controls()
 		stamp_ui_mode = StampUiMode.IDLE
@@ -1202,7 +1039,7 @@ func _delete_custom_stamp_from_catalog(stamp_hash: String) -> void:
 		return
 	stamp_painter.cancel_if_editing(stamp_hash)
 	if removed_from_current_livery:
-		_refresh_preview_custom_stamp_atlas()
+		atlas_controller.refresh(current_livery)
 		_save_livery_for_selected_car()
 		_refresh_stamp_controls()
 
@@ -1223,7 +1060,7 @@ func _replace_custom_stamp_references(old_hash: String, new_blob: CustomStampBlo
 		changed = true
 	if !changed:
 		return
-	_refresh_preview_custom_stamp_atlas()
+	atlas_controller.refresh(current_livery)
 	_save_livery_for_selected_car()
 	_refresh_stamp_controls()
 
