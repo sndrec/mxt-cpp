@@ -33,7 +33,7 @@ func _run() -> void:
 		return
 	var requested_focus := int(_argument_value("--focus-index")) if !_argument_value("--focus-index").is_empty() else 0
 	replay.replay_playback_focus_index = clampi(requested_focus, 0, replay.replay_playback_racer_ids.size() - 1)
-	replay._apply_replay_focus_to_local_visual()
+	game_manager.replay_camera_controller.apply_focus_to_local_visual()
 	var source_frame_count := replay._playback_frame_count()
 	if _argument_value("--expect-completed-disabled") == "true":
 		if !replay._seek_replay_to_tick(source_frame_count, false):
@@ -64,7 +64,7 @@ func _run() -> void:
 	if !bool(eligibility.get("eligible", false)):
 		_fail("mid-replay cursor was not resumable: %s" % String(eligibility.get("reason", "unknown")))
 		return
-	var focus_id := replay._focused_replay_player_id()
+	var focus_id := game_manager.replay_camera_controller.focused_player_id()
 	var expected_transform: Transform3D = game_manager.game_sim.get_player_physical_render_transform(focus_id)
 	var source_ids: Array = []
 	for id_value in replay.replay_playback_racer_ids:

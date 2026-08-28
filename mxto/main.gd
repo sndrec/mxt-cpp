@@ -40,6 +40,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var replay_catalog_controller: ReplayCatalogController = $ReplayCatalogController
 @onready var replay_recorder: ReplayRecorder = $ReplayRecorder
 @onready var debug_replay_controller: DebugReplayController = $DebugReplayController
+@onready var replay_camera_controller: ReplayCameraController = $ReplayCameraController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -224,6 +225,7 @@ func _ready() -> void:
 	replay_catalog_controller.watch_requested.connect(replay_controller.play_replay_file)
 	replay_recorder.initialize()
 	replay_recorder.staged_replay_saved.connect(replay_controller._refresh_replay_timeline_save_local_button)
+	replay_camera_controller.initialize()
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -780,7 +782,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 			return
 	else:
 		time_attack_ghost_controller.clear()
-	replay_controller._apply_replay_focus_to_local_visual()
+	replay_camera_controller.apply_focus_to_local_visual()
 	if !replay_controller.detach_playback_for_practice():
 		race_presentation_controller.show_notification("Replay resume failed while leaving playback.", 5000)
 		return
@@ -1225,7 +1227,7 @@ func _on_vehicle_view_distance_changed(multiplier: float, render_all: bool) -> v
 
 func _on_controller_settings_visibility_changed() -> void:
 	if options_menu != null and !options_menu.visible:
-		replay_controller.reload_input_calibration()
+		replay_camera_controller.reload_input_calibration()
 		race_pause_controller.on_options_visibility_changed(game_sim.sim_started)
 
 func _close_settings_menus_for_race_start() -> void:
@@ -1568,7 +1570,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				singleplayer_mode, network_manager.is_server and !singleplayer_mode)
 		get_viewport().set_input_as_handled()
 		return
-	if replay_controller.handle_unhandled_input(event):
+	if replay_camera_controller.handle_unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if debug_replay_controller.handle_unhandled_input(event):
@@ -1909,6 +1911,7 @@ func _process(delta: float) -> void:
 		spectator_controller.update_finished_input()
 		var profile_visuals_start := Time.get_ticks_usec() if profile_enabled else 0
 		replay_controller.update(delta)
+		replay_camera_controller.update(delta)
 		_update_native_render_camera()
 		game_sim.render_gamesim_visuals_only(delta)
 		if profile_enabled:

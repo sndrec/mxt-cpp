@@ -52,14 +52,15 @@ func _run() -> void:
 			seek_tick,
 		])
 		return
+	var replay_camera := game_manager.replay_camera_controller as ReplayCameraController
 	for camera_mode in [
-		replay.REPLAY_CAMERA_GAME,
-		replay.REPLAY_CAMERA_AUTO,
-		replay.REPLAY_CAMERA_RELATIVE,
-		replay.REPLAY_CAMERA_SPECTATOR,
+		replay_camera.CAMERA_GAME,
+		replay_camera.CAMERA_AUTO,
+		replay_camera.CAMERA_RELATIVE,
+		replay_camera.CAMERA_SPECTATOR,
 	]:
-		replay.replay_camera_mode = camera_mode
-		replay._apply_replay_camera_mode()
+		replay_camera.mode = camera_mode
+		replay_camera.apply_mode()
 		if game_manager.get_viewport().get_camera_3d() == null:
 			_fail("camera mode %d did not select a camera" % camera_mode)
 			return
