@@ -1,4 +1,12 @@
 .cache/
+__pycache__/
+*.py[cod]
+
+# Local documentation and workspace captures stay on disk, never in Git.
+*.[mM][dD]
+![Rr][Ee][Aa][Dd][Mm][Ee].[mM][dD]
+.tmp*
+
 *.pdb
 .sconsign.dblite
 .tmpfile
@@ -37,7 +45,6 @@ mxt-cpp.7z
 
 # Local research, profiling, extraction, and source-asset workspaces
 /.agents/
-/.tmp_*/
 /asset/
 /music/
 /quickbms/
