@@ -11,6 +11,7 @@ uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_en
 uniform ivec2 albedo_texture_size;
 uniform float point_size : hint_range(0.1, 128.0, 0.1);
 global uniform float fog_dist;
+const float THRUSTER_REFERENCE_PROJECTION_Y = 1.3763819; // cot(72 degrees / 2)
 
 #include \"res://asset/shader/ordered_dither.gdshaderinc\"
 
@@ -37,7 +38,8 @@ void vertex() {
 		MODELVIEW_MATRIX[2] *= h * 2.0;
 	} else {
 		float depth = max(0.001, -MODELVIEW_MATRIX[3].z);
-		float sc = depth * (15.0 / pow(depth, 0.5)) * 0.2;
+		float fov_scale = THRUSTER_REFERENCE_PROJECTION_Y / max(abs(PROJECTION_MATRIX[1][1]), 0.0001);
+		float sc = depth * (15.0 / pow(depth, 0.5)) * 0.2 * fov_scale;
 		MODELVIEW_MATRIX[0] *= sc;
 		MODELVIEW_MATRIX[1] *= sc;
 		MODELVIEW_MATRIX[2] *= sc;
@@ -56,7 +58,6 @@ void fragment() {
 		discard;
 	}
 	ALBEDO = vec3(outline * 0.5 + inline) * vec3(0.3, 0.7, 1.0) * 0.75;
-	DEPTH = FRAGCOORD.z * 1.1;
 }
 "
 
