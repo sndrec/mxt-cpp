@@ -236,8 +236,8 @@ func _complete_downloaded_waiters(digest: String, bytes: PackedByteArray) -> voi
 		has_valid_request = has_valid_request or bool(validation.get("valid", false))
 
 	# An unchecked row may be the final consumer while its native download is in
-	# flight. Validate against the captured request so the completed transfer can
-	# still warm the digest cache without re-selecting or notifying that row.
+	# flight. Validate against the captured request so the completed transfer warms
+	# the digest cache while leaving row selection and notifications unchanged.
 	if waiter_tokens.is_empty() and !active_download_context.is_empty():
 		warm_validation = _validate_replay(bytes, active_download_context)
 		has_valid_request = bool(warm_validation.get("valid", false))

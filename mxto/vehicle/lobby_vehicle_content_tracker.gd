@@ -70,8 +70,8 @@ func request_vehicle_content(settings: Dictionary) -> bool:
 	if now_msec < last_request_msec + retry_delay_msec:
 		return false
 	download_requests[workshop_id] = now_msec
-	# Completion and installation callbacks refresh the shared catalog. Avoid a
-	# synchronous refresh per missing lobby item; that rebuilt every installed car.
+	# Completion and installation callbacks perform one shared catalog refresh,
+	# preventing a synchronous rebuild for every missing lobby item.
 	var accepted := steam_service.download_workshop_item(workshop_id, true)
 	if !accepted:
 		download_failures[workshop_id] = failure_count + 1

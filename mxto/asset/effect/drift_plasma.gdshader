@@ -16,8 +16,8 @@ vec3 srgb_to_linear(vec3 color) {
 }
 
 void vertex() {
-	// The four transform columns carry the final camera-space GX quad vertices
-	// in UV winding order. They are data, not an instance/world transform.
+	// The four transform columns encode the final camera-space GX quad vertices
+	// in UV winding order.
 	vec3 vertex_0 = MODEL_MATRIX[0].xyz;
 	vec3 vertex_1 = MODEL_MATRIX[1].xyz;
 	vec3 vertex_2 = MODEL_MATRIX[2].xyz;
@@ -32,8 +32,8 @@ void fragment() {
 	// ONE/ONE additive blend into an 8-bit EFB. Approximate that code-space
 	// accumulation inside Godot's linear framebuffer. Bright texels use the
 	// four-particle reference that produces the characteristic red mid-band;
-	// faint fringe texels approach a single contribution so sparse tails do not
-	// inherit the brightness compensation intended for dense overlap.
+	// faint fringe texels approach a single contribution, preserving the
+	// brightness of sparse tails.
 	vec3 texture_code = texture(plasma_texture, UV).rgb;
 	vec3 tint_code = floor(COLOR.rgb * 255.0 + 0.5) / 255.0;
 	vec3 tev_code = floor(texture_code * tint_code * 255.0 + 0.5) / 255.0;

@@ -302,8 +302,7 @@ static bool parse_visual_dictionary(const Dictionary &visual, MxtCarAuthoringSes
 		decoded["scale"] = scale;
 		decoded_thrusters.push_back(decoded);
 	}
-	// Drafts created before boost-volume authoring shipped have no member here;
-	// 0 dB preserves their prior playback exactly.
+	// The 0 dB default preserves playback for drafts predating boost-volume authoring.
 	const Variant boost_volume_value = visual.get("manual_boost_volume_db", 0.0);
 	if (boost_volume_value.get_type() != Variant::INT &&
 			boost_volume_value.get_type() != Variant::FLOAT) return false;
@@ -566,8 +565,8 @@ Dictionary MxtCarDraftStore::duplicate_draft(const String &source_draft_id,
 	if (FileAccess::file_exists(source_thumbnail)) {
 		DirAccess::copy_absolute(source_thumbnail, destination_thumbnail);
 	}
-	// Auxiliary authoring files live beside draft.json rather than in the property snapshot.
-	// Copy them explicitly so duplicating a draft never silently drops its textures or sound.
+	// Auxiliary authoring files live beside draft.json. Include them when duplicating a draft
+	// so its textures and sound remain attached.
 	for (const String &name : {
 			String("albedo.png"), String("normal.png"), String("paint_mask.png"),
 			String("manual_boost_sfx.wav"), String("manual_boost_sfx.ogg")}) {

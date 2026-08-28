@@ -84,8 +84,8 @@ func _ensure_collision_spark_multimesh() -> void:
 	multimesh.instance_count = COLLISION_SPARK_COUNT
 	multimesh.visible_instance_count = 0
 	multimesh.mesh = quad_mesh
-	# Particle transforms carry camera-space endpoints instead of ordinary world
-	# transforms, so give the batch an explicit conservative visibility bound.
+	# Particle transforms encode camera-space endpoints, so the batch uses an
+	# explicit conservative visibility bound.
 	multimesh.custom_aabb = AABB(Vector3(-40000.0, -40000.0, -40000.0), Vector3(80000.0, 80000.0, 80000.0))
 
 	spark_multimesh = MultiMeshInstance3D.new()

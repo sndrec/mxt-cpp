@@ -2251,9 +2251,8 @@ struct OldCornerCollisionSurface {
 };
 
 // A corner may remain slightly behind the sampled tangent plane while suspension
-// and orientation settle. Larger pre-existing depth cannot have been created by
-// this tick and must not be treated as a new collision against a newly selected
-// analytic surface.
+// and orientation settle. Depth beyond this tolerance predates the current
+// analytic-surface selection and is excluded from its new-contact response.
 static constexpr float ANALYTIC_DEPENETRATION_OLD_DEPTH_TOLERANCE = 5.0f;
 
 static inline bool analytic_depenetration_t_in_surface_domain(const SimVec2 &road_t)
@@ -2424,7 +2423,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 			godot::String(" height="), soa->height_above_track[soa_index],
 			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16));
 	}
-	// A hit beyond this segment remains invalid here; it only requests a separate test against the segment now under the car.
+	// A hit beyond this segment delegates to a separate test against the segment now under the car.
 	bool old_rail_sweep_exited_longitudinal_domain = false;
 	auto trace_analytic_rail_context = [&](const char *pass_name, int cp_idx, const SimVec2 &sample_t,
 		bool was_inside_check, bool was_above_check, const bool side_possible[2]) {
@@ -3033,9 +3032,8 @@ if (s_boost_rail_contact) {
 	const SimVec3 rail_response_normal = rail_collision_push.normalized();
 	STORE_VEC3(collision_response, rail_collision_push);
 
-	// S-BOOST rail contact is a tangent projection rather than a bounce. The
-	// rail-facing component is removed without restitution, leaving the car to
-	// grind smoothly along the rail.
+	// S-BOOST rail contact projects velocity onto the rail tangent. Removing the
+	// rail-facing component preserves a smooth rail grind.
 	const SimVec3 velocity_before_slide = LOAD_VEC3(velocity);
 	const float velocity_into_rail = velocity_before_slide.dot(rail_response_normal);
 	if (velocity_into_rail < 0.0f) {

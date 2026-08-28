@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE = str(REPO_ROOT / 'mxto' / 'vehicle' / 'asset')
 
-# directories to skip (no car props)
+# Asset-only directories skipped by vehicle reference repair.
 SKIP = {'common_a', 'common_b', 'tex_common'}
 
 def to_display(name):

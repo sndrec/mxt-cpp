@@ -27,8 +27,8 @@ private:
 	bool init_attempted = false;
 	int64_t next_request_id = 1;
 	Array workshop_items;
-	// Direct downloads remain discoverable across game sessions without becoming
-	// persistent Steam Workshop subscriptions.
+	// Direct downloads remain discoverable across game sessions and stay
+	// independent of persistent Steam Workshop subscriptions.
 	Array tracked_workshop_item_ids;
 	SteamWorkshopState *workshop_state = nullptr;
 

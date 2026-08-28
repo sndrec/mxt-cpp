@@ -326,7 +326,7 @@ func _ready() -> void:
 		options_menu.connect("vehicle_view_distance_changed", vehicle_view_distance_callable)
 	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
 		track_editor_button.pressed.connect(_on_track_editor_button_pressed)
-	# Rewire the Singleplayer button to its own handler, not the multiplayer host flow
+	# Route Singleplayer through its dedicated local-race handler.
 	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
 		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
 	singleplayer_button.pressed.connect(_on_singleplayer_button_pressed)
@@ -624,8 +624,7 @@ func _on_track_editor_button_pressed() -> void:
 	get_tree().change_scene_to_file("res://track_editing_scene.tscn")
 
 func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRaceConfiguration = null, requested_race_state: MxtRaceSessionState = null, requested_track_evidence: MxtTrackContentEvidence = null) -> void:
-	# Start a local, singleplayer race that does not touch networking at all.
-	# Prepare a minimal settings array using the current local player settings.
+	# Start a local singleplayer race from the current player settings.
 	var configuration := requested_configuration.copy() if requested_configuration != null else _build_default_singleplayer_race_configuration()
 	var race_state := requested_race_state.copy() if requested_race_state != null else _build_default_singleplayer_race_state()
 	var track_evidence := requested_track_evidence.copy() if requested_track_evidence != null else track_content_controller.build_track_content_evidence([track_selector.selected])

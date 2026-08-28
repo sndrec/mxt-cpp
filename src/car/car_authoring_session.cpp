@@ -575,9 +575,8 @@ bool MxtCarAuthoringSession::read_document(
 		}
 	}
 	if (reader.cursor != reader.size) return false;
-	// Older production Workshop documents do not contain curves for stats appended later.
-	// Materialize those defaults in the authoring session so an old vehicle can be edited and
-	// saved directly in the current format without a separate migration layer.
+	// Production Workshop documents retain their original stat schema. Materialize defaults
+	// for appended stats so the authoring session can edit and save them in the current format.
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
 		for (uint8_t layer = CAR_CURVE_BASE; layer < CAR_CURVE_LAYER_COUNT; ++layer) {
 			if (layer != CAR_CURVE_BASE &&
@@ -1055,8 +1054,8 @@ bool MxtCarAuthoringSession::normalize_authoring_intent(
 			const uint32_t current_bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
 			current_words[current_bit / 64u] |= UINT64_C(1) << (current_bit % 64u);
 		}
-		// Appended stats were not authorable by the source schema. They enter the current
-		// document as automatic defaults and can be made custom normally after import.
+		// Stats appended after the source schema enter the current document as automatic
+		// defaults and remain available for customization after import.
 		for (uint16_t stat = source_stat_count; stat < CAR_STAT_COUNT; ++stat) {
 			if (!car_special_pair_is_supported(
 					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) continue;

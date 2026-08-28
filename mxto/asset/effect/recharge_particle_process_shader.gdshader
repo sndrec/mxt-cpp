@@ -121,8 +121,7 @@ void calculate_initial_physical_params(inout PhysicalParameters params, inout ui
 }
 
 void calculate_initial_dynamics_params(inout DynamicsParameters params,inout uint alt_seed){
-	// -------------------- DO NOT REORDER OPERATIONS, IT BREAKS VISUAL COMPATIBILITY
-	// -------------------- ADD NEW OPERATIONS AT THE BOTTOM
+	// Operation order preserves visual compatibility. Append new operations.
 	params.angle_x = mix(initial_angle_min, initial_angle_max, rand_from_seed(alt_seed));
 	params.angle_y = mix(initial_angle_min, initial_angle_max, rand_from_seed(alt_seed));
 	params.angle_z = mix(initial_angle_min, initial_angle_max, rand_from_seed(alt_seed));
@@ -135,8 +134,7 @@ void calculate_initial_dynamics_params(inout DynamicsParameters params,inout uin
 	params.orbit_velocity = mix(orbit_velocity_min, orbit_velocity_max,rand_from_seed(alt_seed));
 }
 void calculate_initial_display_params(inout DisplayParameters params,inout uint alt_seed){
-	// -------------------- DO NOT REORDER OPERATIONS, IT BREAKS VISUAL COMPATIBILITY
-	// -------------------- ADD NEW OPERATIONS AT THE BOTTOM
+	// Operation order preserves visual compatibility. Append new operations.
 	float pi = 3.14159;
 	float degree_to_rad = pi / 180.0;
    params.scale = vec3(mix(scale_min, scale_max, rand_from_seed(alt_seed)));
@@ -371,4 +369,3 @@ void process() {
 		ACTIVE = false;
 	}
 }
-

@@ -893,8 +893,8 @@ static bool validate_vehicle_visual_metadata(
 		return false;
 	}
 	const Dictionary material_inputs = root["material_inputs"];
-	// use_mesh_normals was added after revision-1 Workshop vehicles shipped. Absence must
-	// retain their original flat/texture-normal shading rather than changing their look.
+	// Revision-1 Workshop vehicles resolve the later use_mesh_normals field to false,
+	// preserving their original flat/texture-normal shading.
 	static const char *MATERIAL_KEYS[] = {
 		"albedo_surface", "normal_surface", "paint_mask_surface", "use_mesh_normals"
 	};

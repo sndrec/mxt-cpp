@@ -16,8 +16,8 @@ static constexpr int DRIFT_PLASMA_CAPACITY = 190;
 static constexpr int DRIFT_PLASMA_BUFFER_STRIDE = 20;
 static constexpr int DRIFT_PLASMA_REMOTE_EMISSION_INTERVAL = 5;
 static constexpr float DRIFT_PLASMA_LATERAL_THRESHOLD = 1.0f;
-// GFZE01 lbl_1_rodata_2D70 + 0xE8. The adjacent +0xEC value is the separate
-// 5.0-unit corner-distance clamp used for emission sampling, not velocity.
+// GFZE01 lbl_1_rodata_2D70 + 0xE8. The adjacent +0xEC value supplies the
+// separate 5.0-unit corner-distance clamp for emission sampling.
 static constexpr float DRIFT_PLASMA_CORNER_MOTION_SCALE = 0.93f;
 static constexpr float DRIFT_PLASMA_CORNER_DISTANCE_MAX = 5.0f;
 static constexpr float DRIFT_PLASMA_RANDOM_MOTION = 0.4f;
@@ -114,7 +114,7 @@ static void drift_plasma_advance_particle(DriftPlasmaParticle& particle)
 static DriftPlasmaParticle* drift_plasma_allocate(DriftPlasmaRuntime& runtime)
 {
 	// GFZE01 fn_1_58F50 scans its 190 records from the beginning and drops an
-	// allocation when all records are active; it never overwrites a live effect.
+	// allocation when the pool is full, preserving every live effect.
 	for (DriftPlasmaParticle& particle : runtime.particles) {
 		if (!particle.active) {
 			return &particle;
@@ -252,9 +252,9 @@ void GameSim::step_drift_plasma_effects()
 				soa.tilt_pos_old_z[point]);
 			const SimVec3 corner_delta = position - previous_position;
 			const float lateral_delta = corner_delta.dot(lateral);
-			// Official and custom property files do not require the left/right
-			// corners to use one fixed array ordering. The lateral vector above is
-			// local -X, so classify the physical side from the authored offset.
+			// Official and custom property files may use either left/right corner
+			// ordering. Classify the physical side from the authored offset; the
+			// lateral vector above is local -X.
 			const bool positive_side_corner = soa.tilt_offset_x[point] < 0.0f;
 			if ((lateral_delta > 0.0f) != positive_side_corner) {
 				continue;
@@ -287,11 +287,8 @@ void GameSim::step_drift_plasma_effects()
 				DRIFT_PLASMA_CORNER_DISTANCE_MAX);
 			const int particle_count = corner_speed <= 2.0f ? 1 : (corner_speed <= 4.0f ? 2 : 3);
 			for (int particle_index = 0; particle_index < particle_count; ++particle_index) {
-				// GFZE01 fn_1_6AF70 calculates an interpolated corner position here,
-				// then deliberately overwrites all three components with the current
-				// corner before applying its random offset. Every particle in a burst
-				// therefore starts at the current corner, rather than being distributed
-				// across the corner's full movement during the simulation tick.
+				// GFZE01 fn_1_6AF70 ultimately starts every burst particle at the
+				// current corner and then applies its random offset.
 				drift_plasma_spawn(
 					runtime,
 					position,
@@ -403,21 +400,17 @@ void GameSim::render_drift_plasma_effects(float alpha)
 	}
 	int visible_count = 0;
 	for (const DriftPlasmaParticle& particle : runtime.particles) {
-		// The emitter commonly reaches a newly allocated record later in GX's
-		// same scheduler pass, but GX cannot render an intermediate state between
-		// that allocation and its first complete 60 Hz update. At HFR, exposing
-		// that newborn interval produces a malformed interpolated streak. Wait
-		// until the record has survived one subsequent simulation update, when
-		// both endpoints represent complete adjacent particle states.
+		// GX exposes a newly allocated record after its first complete 60 Hz
+		// update. HFR follows the same boundary so both interpolated endpoints
+		// represent complete adjacent particle states.
 		if (!particle.active || particle.update_count < 2u) {
 			continue;
 		}
 		const SimVec3 previous_position = particle.older_position.lerp(particle.previous_position, alpha);
 		const SimVec3 current_position = particle.previous_position.lerp(particle.position, alpha);
 		// GX transforms history with the previous camera and the current point
-		// with the current camera. This removes the camera-follow motion shared by
-		// the machine and particle instead of stretching every streak by the
-		// machine's full forward displacement.
+		// with the current camera. This removes camera-follow motion shared by the
+		// machine and particle, preserving particle-relative streak length.
 		const Vector3 previous_view = previous_view_from_world.xform(gd_vec3(previous_position));
 		Vector3 head_view = current_view_from_world.xform(gd_vec3(current_position));
 		Vector3 tail_view = previous_view * 1.5f - head_view * 0.5f;

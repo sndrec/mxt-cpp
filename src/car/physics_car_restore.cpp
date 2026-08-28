@@ -217,8 +217,8 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 				trace_checkpoint_graph("last_ground", soa->last_ground_checkpoint[soa_index]);
 				trace_checkpoint_graph("last_ground_next_linear", soa->last_ground_checkpoint[soa_index] + 1);
 			}
-			// Treat the checkpoint/lap update as a transaction. In particular, a jump across the
-			// final lap line must not become a completed race before the shortcut restore begins.
+			// Treat the checkpoint/lap update as a transaction. A shortcut jump across the
+			// final lap line rolls back before the restore begins.
 			soa->lap[soa_index] = prev_lap;
 			soa->current_checkpoint[soa_index] = static_cast<uint16_t>(old_cp);
 			soa->checkpoint_fraction[soa_index] = old_fraction;

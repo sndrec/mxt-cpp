@@ -2,7 +2,7 @@
 
 bool PhysicsCar::apply_damage(float impactStrength)
 {
-    // Already invulnerable or in breakdown? No damage is processed.
+    // S-BOOST and breakdown states are invulnerable.
 	if (soa->s_boost_active[soa_index])
 		return false;
 
@@ -11,7 +11,7 @@ bool PhysicsCar::apply_damage(float impactStrength)
 
 	float rawDamage = impactStrength * soa->stat_body[soa_index];
 
-    // Never exceed 101 % of maxEnergy
+    // Clamp one impact to 101% of max energy.
 	const float maxAllowedDamage = 1.01f * soa->calced_max_energy[soa_index];
 	rawDamage = std::min(rawDamage, maxAllowedDamage);
 
@@ -146,7 +146,7 @@ float PhysicsCar::scale_collision_impulse_and_damage(bool other_machine_b10_flag
 		{
             scale *= 0.8f;            // Slightly reduced impulse for B10 state
         }
-        return scale;                 // Nothing else affects this path
+		return scale;
     }
 
     /* ---------------------------------------------------------------------
@@ -157,7 +157,7 @@ float PhysicsCar::scale_collision_impulse_and_damage(bool other_machine_b10_flag
     const float spinIntensity =
     0.5f + 0.5f * soa->spinattack_decrement[soa_index];
 
-    if (!isB10)   // Machine is *not* in B10 state while attacking
+    if (!isB10)   // Attacking machine is outside the B10 state
     {
 	if (!otherIsB10)
 	{

@@ -889,7 +889,7 @@ func _check_client_stalls() -> void:
 		return
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:
 		return
-	# don't test while still waiting for the very first full frame
+	# Stall detection begins after the first complete frame is available.
 	if server_tick >= target_tick:
 		return
 	var waiting = pending_inputs.get(server_tick, {})

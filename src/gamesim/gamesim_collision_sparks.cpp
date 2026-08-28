@@ -444,8 +444,8 @@ void GameSim::render_collision_spark_effects(float alpha)
 		for (int component = 0; component < COLLISION_SPARK_BUFFER_STRIDE; ++component) {
 			instance[component] = 0.0f;
 		}
-		// Basis column zero and origin are deliberately data channels consumed by
-		// collision_spark.gdshader; the quad never uses this as a world transform.
+		// Basis column zero and origin encode the camera-space endpoints consumed by
+		// collision_spark.gdshader.
 		instance[0] = tail_view.x;
 		instance[4] = tail_view.y;
 		instance[8] = tail_view.z;

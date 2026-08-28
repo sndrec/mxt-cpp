@@ -11,8 +11,8 @@ namespace {
 
 static constexpr uint8_t CAR_PROPS_MAGIC[8] = {'M', 'X', 'T', 'C', 'P', 'R', 'P', 0};
 static constexpr size_t CAR_PROPS_HEADER_SIZE = 24;
-// Workshop vehicles are production content. New stat IDs are appended, and these retained
-// fingerprints keep older packages loadable with defaults for stats they could not author.
+// Workshop vehicles are production content. New stat IDs are appended; retained schema
+// fingerprints map earlier packages to defaults for the appended stats.
 static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_40_STATS = UINT64_C(0xf201716eab2f6cee);
 static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_42_STATS = UINT64_C(0xe06547cc5eb0ef6a);
 static constexpr uint64_t CAR_PROPS_SCHEMA_FINGERPRINT_46_STATS = UINT64_C(0x5a4c2cce04ea4971);

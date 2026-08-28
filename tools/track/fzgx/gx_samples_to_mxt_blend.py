@@ -413,8 +413,8 @@ def fit_dashplate_yaw_and_scale(
     axis_x = math.cos(angle)
     axis_z = math.sin(angle)
 
-    # The PCA formula above gives an axis, not a direction. Prefer the road-forward
-    # half-space so asymmetric preview meshes do not get flipped by 180 degrees.
+    # The PCA formula above gives an undirected axis. Select the road-forward
+    # half-space to keep asymmetric preview meshes aligned with the road.
     if axis_z < 0.0:
         axis_x = -axis_x
         axis_z = -axis_z
