@@ -4,7 +4,6 @@ signal content_changed
 signal test_drive_requested(snapshot: MxtContentLoadResult)
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
-const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
@@ -12,7 +11,6 @@ const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
 const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 const AUTOSAVE_DEBOUNCE_MSEC := 900
 const AUTOSAVE_RETRY_MSEC := 5000
-const PERFORMANCE_DEBOUNCE_MSEC := 120
 const MATERIAL_TEXTURE_MAX_BYTES := 20 * 1024 * 1024
 const MATERIAL_TEXTURE_MAX_DIMENSION := 2048
 const MATERIAL_TEXTURE_FILES := {
@@ -37,31 +35,7 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var thruster_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Rows
 @onready var boost_volume_slider: HSlider = $Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow/Slider
 @onready var boost_volume_value: Label = $Workspace/VisualColumn/PhysicalTabs/Audio/BoostVolumeRow/Value
-@onready var search_input: LineEdit = $Workspace/StatsColumn/StatFilters/Search
-@onready var category_option: OptionButton = $Workspace/StatsColumn/StatFilters/Category
-@onready var advanced_mode: CheckBox = $Workspace/StatsColumn/StatFilters/AdvancedMode
-@onready var layer_option: OptionButton = $Workspace/StatsColumn/StatFilters/Layer
-@onready var stat_option: OptionButton = $Workspace/StatsColumn/StatFilters/Stat
-@onready var curve_graph: VehicleEditorCurveGraph = $Workspace/StatsColumn/CurveGraph
-@onready var authoring_mode_indicator: Label = $Workspace/StatsColumn/AuthoringMode/Indicator
-@onready var make_custom_button: Button = $Workspace/StatsColumn/AuthoringMode/MakeCustom
-@onready var revert_derived_button: Button = $Workspace/StatsColumn/AuthoringMode/RevertDerived
-@onready var stat_help: RichTextLabel = $Workspace/StatsColumn/StatHelp
-@onready var key_time: SpinBox = $Workspace/StatsColumn/KeyEditor/Time
-@onready var key_value: SpinBox = $Workspace/StatsColumn/KeyEditor/Value
-@onready var key_tangent_in: SpinBox = $Workspace/StatsColumn/KeyEditor/TangentIn
-@onready var key_tangent_out: SpinBox = $Workspace/StatsColumn/KeyEditor/TangentOut
-@onready var machine_setting: HSlider = $Workspace/StatsColumn/SampleControls/MachineSetting
-@onready var machine_value: Label = $Workspace/StatsColumn/SampleControls/MachineValue
-@onready var technique_option: OptionButton = $Workspace/StatsColumn/SampleControls/Technique
-@onready var technique_intensity: HSlider = $Workspace/StatsColumn/SampleControls/TechniqueIntensity
-@onready var boost_option: OptionButton = $Workspace/StatsColumn/SampleControls/BoostState
-@onready var start_speed: SpinBox = $Workspace/StatsColumn/SpeedControls/StartSpeed
-@onready var frame_perfect: CheckBox = $Workspace/StatsColumn/SpeedControls/FramePerfect
-@onready var speed_summary: Label = $Workspace/StatsColumn/SpeedControls/SpeedSummary
-@onready var speed_graph: VehicleEditorSpeedGraph = $Workspace/StatsColumn/SpeedGraph
 @onready var diagnostics: RichTextLabel = $Workspace/StatsColumn/Diagnostics
-@onready var vehicle_grade_panel: VehicleGradePanelClass = $Workspace/VisualColumn/PhysicalTabs/Performance
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
 @onready var import_boost_sound_dialog: FileDialog = $ImportBoostSoundDialog
 @onready var import_material_texture_dialog: FileDialog = $ImportMaterialTextureDialog
@@ -83,6 +57,7 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var publish_review_preview: TextureRect = $PublishReviewDialog/Review/Preview
 @onready var publish_changelog: TextEdit = $PublishReviewDialog/Review/Changelog
 @onready var preview_controller: VehicleEditorPreviewController = $PreviewController
+@onready var curve_controller: VehicleEditorCurveController = $CurveController
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
@@ -96,11 +71,6 @@ var draft_initialized := false
 var autosave_due_msec := 0
 var autosave_error := ""
 var pending_material_texture := ""
-var stat_schema: Array = []
-var schema_by_name: Dictionary = {}
-var current_layer := "base"
-var current_stat := "weight_kg"
-var curve_clipboard: Array = []
 var workshop_request_id := 0
 var workshop_operation := ""
 var workshop_published_file_id := 0
@@ -108,9 +78,6 @@ var workshop_pending_package: Dictionary = {}
 var workshop_progress_update_msec := 0
 var vector_controls: Dictionary = {}
 var updating_controls := false
-var curve_gesture_active := false
-var performance_analyzer := MxtCarPerformanceAnalyzer.new()
-var performance_due_msec := 0
 var workshop_preview_captured := false
 
 
@@ -121,10 +88,9 @@ func _ready() -> void:
 	game_manager = ancestor as GameManager
 	if game_manager != null:
 		vehicle_content_controller = game_manager.get_node("VehicleContentController") as VehicleContentControllerClass
-	stat_schema = session.get_stat_schema()
-	for entry_value in stat_schema:
-		var entry: Dictionary = entry_value
-		schema_by_name[String(entry["name"])] = entry
+	curve_controller.initialize(self, session)
+	curve_controller.diagnostics_requested.connect(_show_diagnostics)
+	curve_controller.history_changed.connect(_refresh_history_buttons)
 	_setup_options()
 	_setup_vector_controls()
 	preview_controller.initialize(self, session)
@@ -144,27 +110,6 @@ func _setup_options() -> void:
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		workshop_visibility.add_item(visibility)
 	workshop_visibility.selected = 1
-	category_option.add_item("All")
-	var categories := {}
-	for entry_value in stat_schema:
-		categories[String(entry_value["category"])] = true
-	for category in categories.keys():
-		category_option.add_item(String(category))
-	for layer in session.get_layer_names():
-		layer_option.add_item(String(layer).replace("_", " ").capitalize())
-		layer_option.set_item_metadata(layer_option.item_count - 1, layer)
-	layer_option.add_item("S-BOOST")
-	layer_option.set_item_metadata(layer_option.item_count - 1, "s_boost")
-	for name in ["None", "MTS", "Quickturn"]:
-		technique_option.add_item(name)
-	for name in ["None", "Manual", "Dashplate", "Stacked", "S-BOOST", "S-BOOST + Dashplate"]:
-		boost_option.add_item(name)
-	boost_option.set_item_metadata(0, "none")
-	boost_option.set_item_metadata(1, "manual")
-	boost_option.set_item_metadata(2, "dashplate")
-	boost_option.set_item_metadata(3, "stacked")
-	boost_option.set_item_metadata(4, "s_boost")
-	boost_option.set_item_metadata(5, "s_boost_dashplate")
 
 
 func _setup_vector_controls() -> void:
@@ -264,30 +209,6 @@ func _connect_controls() -> void:
 	workshop_capture_button.pressed.connect(_capture_workshop_preview)
 	publish_review_dialog.confirmed.connect(_confirm_publish_workshop)
 	diagnostics.meta_clicked.connect(_focus_diagnostic_category)
-	search_input.text_changed.connect(func(_value): _refresh_stat_options())
-	category_option.item_selected.connect(func(_index): _refresh_stat_options())
-	advanced_mode.toggled.connect(_on_advanced_mode_toggled)
-	layer_option.item_selected.connect(_on_layer_selected)
-	stat_option.item_selected.connect(_on_stat_selected)
-	curve_graph.edit_started.connect(_begin_curve_gesture)
-	curve_graph.curve_preview_changed.connect(_preview_curve_gesture)
-	curve_graph.edit_cancelled.connect(_cancel_curve_gesture)
-	curve_graph.curve_committed.connect(_commit_curve)
-	curve_graph.key_selected.connect(_show_selected_key)
-	$Workspace/StatsColumn/CurveActions/Apply.pressed.connect(_apply_selected_key)
-	$Workspace/StatsColumn/CurveActions/Add.pressed.connect(_add_key)
-	$Workspace/StatsColumn/CurveActions/Remove.pressed.connect(_remove_key)
-	$Workspace/StatsColumn/CurveActions/Copy.pressed.connect(func(): curve_clipboard = curve_graph.get_keys())
-	$Workspace/StatsColumn/CurveActions/Paste.pressed.connect(_paste_curve)
-	$Workspace/StatsColumn/CurveActions/Reset.pressed.connect(_reset_curve)
-	make_custom_button.pressed.connect(_make_selected_special_custom)
-	revert_derived_button.pressed.connect(_revert_selected_special_derived)
-	machine_setting.value_changed.connect(func(_value): _refresh_samples())
-	technique_option.item_selected.connect(func(_index): _refresh_samples())
-	technique_intensity.value_changed.connect(func(_value): _refresh_samples())
-	boost_option.item_selected.connect(func(_index): _refresh_samples())
-	start_speed.value_changed.connect(func(_value): _refresh_speed_preview())
-	frame_perfect.toggled.connect(func(_value): _refresh_speed_preview())
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Add.pressed.connect(_add_thruster)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Remove.pressed.connect(_remove_thruster)
 	thruster_selector.item_selected.connect(func(_index): _refresh_thruster_controls())
@@ -655,8 +576,7 @@ func _prompt_delete_current_draft() -> void:
 func _delete_current_draft() -> void:
 	if !draft_initialized or editing_official_definition != null:
 		return
-	if curve_gesture_active:
-		curve_graph.cancel_active_edit()
+	curve_controller.cancel_active_edit()
 	var result: Dictionary = draft_store.delete_draft(draft_id)
 	_show_diagnostics(result)
 	if !bool(result.get("valid", false)):
@@ -1052,7 +972,7 @@ func _authoring_intent_counts() -> Dictionary:
 			layers.append(String(layer))
 	layers.append("s_boost")
 	for layer in layers:
-		for schema_value in stat_schema:
+		for schema_value in curve_controller.stat_schema:
 			var schema: Dictionary = schema_value
 			if !bool(schema.get("supports_live_modifiers", false)):
 				continue
@@ -1115,10 +1035,7 @@ func _open_workshop_page() -> void:
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec()
-	if performance_due_msec != 0 and now >= performance_due_msec:
-		performance_due_msec = 0
-		vehicle_grade_panel.show_analysis(performance_analyzer.analyze_session(session, machine_setting.value))
-	if _has_editable_document() and !curve_gesture_active and (metadata_dirty or session.is_dirty()):
+	if _has_editable_document() and !curve_controller.gesture_active and (metadata_dirty or session.is_dirty()):
 		if autosave_due_msec == 0:
 			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
 			_update_autosave_status("Unsaved changes")
@@ -1301,16 +1218,14 @@ func _save_official_properties() -> bool:
 	metadata_dirty = false
 	autosave_error = ""
 	autosave_due_msec = 0
-	performance_analyzer = MxtCarPerformanceAnalyzer.new()
-	_refresh_samples()
+	curve_controller.reset_performance_analysis()
 	content_changed.emit()
 	_update_autosave_status("Saved official %s" % editing_official_definition.name)
 	return true
 
 
 func _flush_autosave() -> bool:
-	if curve_gesture_active:
-		curve_graph.cancel_active_edit()
+	curve_controller.cancel_active_edit()
 	if !_has_editable_document():
 		return true
 	if metadata_dirty or session.is_dirty() or !autosave_error.is_empty():
@@ -1436,14 +1351,13 @@ func _test_drive() -> void:
 
 
 func _refresh_all() -> void:
-	_refresh_stat_options()
 	_refresh_visual_controls()
 	_refresh_boost_volume_controls()
 	preview_controller.refresh_paint_controls()
 	_refresh_resource_usage()
 	_sync_preview_context()
 	preview_controller.refresh()
-	_refresh_samples()
+	curve_controller.refresh_all()
 	_show_diagnostics(session.validate())
 	_refresh_history_buttons()
 
@@ -1513,278 +1427,6 @@ func _refresh_resource_usage() -> void:
 		int(usage["texture_pixels"]), int(usage["texture_pixel_limit"]),
 		int(usage["images"]), int(usage["image_limit"]),
 	]
-
-
-func _refresh_stat_options() -> void:
-	var previous := current_stat
-	stat_option.clear()
-	var category := category_option.get_item_text(category_option.selected) if category_option.selected >= 0 else "All"
-	var search := search_input.text.to_lower()
-	for entry_value in stat_schema:
-		var entry: Dictionary = entry_value
-		var name := String(entry["name"])
-		var friendly_name := String(entry.get("friendly_name", name.replace("_", " ").capitalize()))
-		if current_layer != "base" and !bool(entry["supports_live_modifiers"]):
-			continue
-		if category != "All" and String(entry["category"]) != category:
-			continue
-		if !search.is_empty() and !name.to_lower().contains(search) \
-				and !friendly_name.to_lower().contains(search) \
-				and !String(entry.get("explanation", "")).to_lower().contains(search):
-			continue
-		stat_option.add_item(friendly_name)
-		stat_option.set_item_metadata(stat_option.item_count - 1, name)
-		if name == previous:
-			stat_option.select(stat_option.item_count - 1)
-	if stat_option.item_count == 0:
-		return
-	if stat_option.selected < 0:
-		stat_option.select(0)
-	current_stat = String(stat_option.get_item_metadata(stat_option.selected))
-	curve_graph.show_curve(session, current_layer, current_stat)
-	_refresh_selected_stat_ui()
-
-
-func _on_advanced_mode_toggled(enabled: bool) -> void:
-	layer_option.visible = enabled
-	if !enabled:
-		current_layer = "base"
-		layer_option.select(0)
-	_refresh_stat_options()
-
-
-func _on_layer_selected(index: int) -> void:
-	current_layer = String(layer_option.get_item_metadata(index))
-	_refresh_stat_options()
-
-
-func _on_stat_selected(index: int) -> void:
-	current_stat = String(stat_option.get_item_metadata(index))
-	curve_graph.show_curve(session, current_layer, current_stat)
-	_refresh_selected_stat_ui()
-	_refresh_samples()
-
-
-func _selected_special_is_derived() -> bool:
-	return current_layer != "base" and session.is_special_derived(current_layer, current_stat)
-
-
-func _refresh_selected_stat_ui() -> void:
-	var schema: Dictionary = schema_by_name.get(current_stat, {})
-	var special := current_layer != "base"
-	var derived := special and _selected_special_is_derived()
-	authoring_mode_indicator.text = "Derived — follows base machine stats" if derived else ("Custom special-state value" if special else "Base machine-setting curve")
-	make_custom_button.visible = derived
-	revert_derived_button.visible = special and !derived
-	curve_graph.set_display_context(derived or current_layer == "s_boost", derived, String(schema.get("unit", "scalar")))
-	var editable := !derived
-	$Workspace/StatsColumn/CurveActions/Apply.disabled = !editable
-	$Workspace/StatsColumn/CurveActions/Add.disabled = !editable or current_layer == "s_boost"
-	$Workspace/StatsColumn/CurveActions/Remove.disabled = !editable or current_layer == "s_boost"
-	$Workspace/StatsColumn/CurveActions/Paste.disabled = !editable or current_layer == "s_boost"
-	$Workspace/StatsColumn/CurveActions/Reset.disabled = !editable
-	key_value.editable = editable
-	key_time.editable = editable and current_layer != "s_boost"
-	key_tangent_in.editable = editable and current_layer != "s_boost"
-	key_tangent_out.editable = editable and current_layer != "s_boost"
-	var unit := String(schema.get("unit", "scalar"))
-	var activity := String(schema.get("activity", "always")).replace("_", " ").capitalize()
-	var reference := float(schema.get("default_value", 0.0))
-	var context := "Base values are sampled from the 0–1 machine-setting curve."
-	if special:
-		context = _special_derivation_help()
-	stat_help.text = "[b]%s[/b]  [color=#91a8c7]%s · %s · reference %s[/color]\n%s\n[color=#b9c9dc]%s[/color]" % [
-		String(schema.get("friendly_name", current_stat)), unit, activity, str(reference),
-		String(schema.get("explanation", "")), context,
-	]
-
-
-func _special_derivation_help() -> String:
-	if current_layer == "s_boost":
-		return "Derived S-BOOST values are absolute snapshots of the base curve at 50% machine setting."
-	if current_layer in ["mts", "quickturn", "no_boost"]:
-		return "The derived value is an identity multiplier (1.0); make it custom only for a deliberate state-specific trait."
-	if current_stat == "drive_target_speed_multiplier":
-		return "Derived from acceleration and manual turbo gain across machine setting using the original boost target-speed formula."
-	if current_stat == "acceleration_response_multiplier":
-		return "Derived from weight: 0.3 at 1000 kg or lighter, otherwise 0.5."
-	if current_stat == "forward_thrust_multiplier":
-		return "Derived from weight: 1.2 at 1000 kg or lighter, otherwise 1.6."
-	if current_stat == "turbo_flat_loss_per_second":
-		return "Derived boosted-state multiplier: 0.5 of the base flat turbo loss."
-	if current_stat == "turbo_percent_loss_per_second":
-		return "Derived boosted-state multiplier: 0.6 of the base percentage turbo loss."
-	return "The derived value is an identity multiplier (1.0)."
-
-
-func _make_selected_special_custom() -> void:
-	var result: Dictionary = session.make_special_custom(current_layer, current_stat)
-	_show_diagnostics(result)
-	curve_graph.show_curve(session, current_layer, current_stat)
-	_refresh_selected_stat_ui()
-	_refresh_history_buttons()
-
-
-func _revert_selected_special_derived() -> void:
-	var result: Dictionary = session.revert_special_derived(current_layer, current_stat)
-	_show_diagnostics(result)
-	curve_graph.show_curve(session, current_layer, current_stat)
-	_refresh_selected_stat_ui()
-	_refresh_history_buttons()
-	_refresh_samples()
-
-
-func _commit_curve(keys: Array) -> void:
-	if current_layer == "s_boost" or _selected_special_is_derived():
-		return
-	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
-	if bool(result.get("valid", false)):
-		session.end_edit_transaction()
-	else:
-		session.cancel_edit_transaction()
-	curve_gesture_active = false
-	_show_diagnostics(result)
-	curve_graph.sync_keys(session.get_curve(current_layer, current_stat))
-	_refresh_selected_stat_ui()
-	_refresh_history_buttons()
-	_refresh_samples()
-
-
-func _begin_curve_gesture() -> void:
-	curve_gesture_active = true
-	session.begin_edit_transaction()
-
-
-func _preview_curve_gesture(keys: Array) -> void:
-	if current_layer == "s_boost" or _selected_special_is_derived():
-		return
-	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
-	if bool(result.get("valid", false)):
-		_refresh_samples()
-
-
-func _cancel_curve_gesture() -> void:
-	session.cancel_edit_transaction()
-	curve_gesture_active = false
-	curve_graph.sync_keys(session.get_curve(current_layer, current_stat))
-	_refresh_selected_stat_ui()
-	_refresh_history_buttons()
-	_refresh_samples()
-
-
-func _show_selected_key(index: int) -> void:
-	var keys := curve_graph.get_keys()
-	if index < 0 or index >= keys.size():
-		return
-	updating_controls = true
-	var key: Dictionary = keys[index]
-	key_time.value = float(key["time"])
-	key_value.value = float(key["value"])
-	key_tangent_in.value = float(key["tangent_in"])
-	key_tangent_out.value = float(key["tangent_out"])
-	key_time.editable = current_layer != "s_boost" and !_selected_special_is_derived()
-	key_tangent_in.editable = current_layer != "s_boost" and !_selected_special_is_derived()
-	key_tangent_out.editable = current_layer != "s_boost" and !_selected_special_is_derived()
-	key_value.editable = !_selected_special_is_derived()
-	updating_controls = false
-
-
-func _apply_selected_key() -> void:
-	if updating_controls:
-		return
-	if _selected_special_is_derived():
-		return
-	if current_layer == "s_boost":
-		session.set_s_boost_value(current_stat, key_value.value)
-		curve_graph.show_curve(session, current_layer, current_stat)
-		_refresh_history_buttons()
-		_refresh_samples()
-		return
-	var keys := curve_graph.get_keys()
-	var index := curve_graph.selected_key
-	if index < 0 or index >= keys.size():
-		return
-	keys[index] = {
-		"time": key_time.value,
-		"value": key_value.value,
-		"tangent_in": key_tangent_in.value,
-		"tangent_out": key_tangent_out.value,
-	}
-	_commit_curve(keys)
-
-
-func _add_key() -> void:
-	if current_layer == "s_boost":
-		return
-	var keys := curve_graph.get_keys()
-	var time := machine_setting.value
-	for key in keys:
-		if absf(float(key["time"]) - time) < 0.001:
-			return
-	keys.append({"time": time, "value": session.sample_curve(current_layer, current_stat, time), "tangent_in": 0.0, "tangent_out": 0.0})
-	keys.sort_custom(func(a, b): return float(a["time"]) < float(b["time"]))
-	_commit_curve(keys)
-
-
-func _remove_key() -> void:
-	if current_layer == "s_boost":
-		return
-	var keys := curve_graph.get_keys()
-	if keys.size() <= 1 or curve_graph.selected_key < 0:
-		return
-	keys.remove_at(curve_graph.selected_key)
-	_commit_curve(keys)
-
-
-func _paste_curve() -> void:
-	if current_layer != "s_boost" and !curve_clipboard.is_empty():
-		_commit_curve(curve_clipboard)
-
-
-func _reset_curve() -> void:
-	var schema: Dictionary = schema_by_name.get(current_stat, {})
-	var value := float(schema.get("default_value", 0.0)) if current_layer == "base" or current_layer == "s_boost" else 1.0
-	if current_layer == "s_boost":
-		session.set_s_boost_value(current_stat, value)
-		curve_graph.show_curve(session, current_layer, current_stat)
-		_refresh_history_buttons()
-	else:
-		_commit_curve([{"time": 0.0, "value": value, "tangent_in": 0.0, "tangent_out": 0.0}])
-
-
-func _refresh_samples() -> void:
-	machine_value.text = "%.3f" % machine_setting.value
-	curve_graph.set_sample_setting(machine_setting.value)
-	performance_due_msec = Time.get_ticks_msec() + PERFORMANCE_DEBOUNCE_MSEC
-	_refresh_speed_preview()
-
-
-func _technique_name() -> String:
-	return ["none", "mts", "quickturn"][technique_option.selected]
-
-
-func _boost_name() -> String:
-	return String(boost_option.get_item_metadata(boost_option.selected))
-
-
-func _refresh_speed_preview() -> void:
-	var result: Dictionary = session.simulate_speed_preview(
-		machine_setting.value,
-		start_speed.value,
-		frame_perfect.button_pressed,
-		_technique_name(),
-		technique_intensity.value,
-		_boost_name())
-	if result.has("error"):
-		speed_summary.text = String(result["error"])
-		speed_graph.show_result({})
-		return
-	speed_summary.text = "Terminal %.2f km/h   Peak %.2f km/h   Settle %.2f s" % [
-		float(result["terminal_speed_kmh"]),
-		float(result["peak_speed_kmh"]),
-		float(result["settle_time_seconds"]),
-	]
-	speed_graph.show_result(result)
 
 
 func _vector_value(key: String) -> Vector3:
@@ -2032,7 +1674,7 @@ func _focus_diagnostic_category(category_value) -> void:
 		"Materials": _select_physical_tab("Materials")
 		"Geometry": _select_physical_tab("Corners")
 		"Publishing": workshop_visibility.grab_focus()
-		_: stat_option.grab_focus()
+		_: curve_controller.focus_stat_selector()
 
 
 func _select_physical_tab(title: String) -> void:
