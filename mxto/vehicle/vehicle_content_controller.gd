@@ -11,6 +11,7 @@ const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
 const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
+const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 
@@ -124,7 +125,7 @@ func prepare_custom_stamp_render_data(racer_ids: Array, racer_settings: Array, w
 		var racer_id := int(racer_ids[i])
 		var manifest := custom_stamp_network.get_custom_stamp_manifest(racer_id)
 		if manifest.is_empty() and _settings_have_custom_stamp(render_settings[i]):
-			var payload := _build_local_custom_stamp_payload(render_settings[i])
+			var payload := build_custom_stamp_payload(render_settings[i])
 			if bool(payload.get("ok", false)):
 				manifest = payload.get("manifest", [])
 				if !manifest.is_empty():
@@ -224,12 +225,18 @@ func player_settings_for_stamp_render(settings) -> PlayerSettings:
 		return copy
 	return null
 
-func _build_local_custom_stamp_payload(settings) -> Dictionary:
+func build_custom_stamp_payload(settings) -> Dictionary:
 	var player_settings := player_settings_for_stamp_render(settings)
-	if player_settings == null or player_settings.car_livery.is_empty():
+	if player_settings == null or player_settings.vehicle_content_id.is_empty():
 		return {"ok": true, "manifest": [], "blobs": []}
-	var livery := CarLivery.new()
-	livery.from_dict(player_settings.car_livery)
+	var livery: CarLivery = null
+	if player_settings.car_livery.is_empty():
+		livery = CarLiveryStore.load_for_car(player_settings.vehicle_content_id)
+	else:
+		livery = CarLivery.new()
+		livery.from_dict(player_settings.car_livery)
+	if livery == null:
+		return {"ok": true, "manifest": [], "blobs": []}
 	livery.vehicle_content_id = player_settings.vehicle_content_id
 	return CustomStampStore.build_livery_payload(livery)
 

@@ -1,7 +1,6 @@
 class_name CustomStampNetworkController extends Node
 
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
-const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 
@@ -99,7 +98,8 @@ func _clear_outgoing_blob_queue() -> void:
 func send_active_custom_stamp_manifest() -> void:
 	if network_manager.race_active or !network_manager.has_network_peer():
 		return
-	var payload := _build_local_custom_stamp_payload()
+	var payload := network_manager.game_manager.vehicle_content_controller.build_custom_stamp_payload(
+		network_manager.lobby_settings.get_local_player_settings_snapshot())
 	if !bool(payload.get("ok", false)):
 		push_warning("Custom stamp manifest not sent: %s" % str(payload.get("error", "unknown error")))
 		return
@@ -117,20 +117,6 @@ func send_active_custom_stamp_manifest() -> void:
 		_submit_custom_stamp_manifest.rpc_id(1, manifest_wire)
 		log_manifest_out += 1
 		log_manifest_bytes_out += manifest_wire.size()
-
-func _build_local_custom_stamp_payload() -> Dictionary:
-	var settings := network_manager.lobby_settings.get_local_player_settings_snapshot()
-	var vehicle_content_id := str(settings.get("vehicle_content_id", ""))
-	if vehicle_content_id == "":
-		return {"ok": true, "manifest": [], "blobs": []}
-	var livery: CarLivery = null
-	if settings.has("car_livery") and typeof(settings["car_livery"]) == TYPE_DICTIONARY and !(settings["car_livery"] as Dictionary).is_empty():
-		livery = CarLivery.new()
-		livery.from_dict(settings["car_livery"])
-	else:
-		livery = CarLiveryStore.load_for_car(vehicle_content_id)
-	livery.vehicle_content_id = vehicle_content_id
-	return CustomStampStore.build_livery_payload(livery)
 
 func _cache_custom_stamp_payload_blobs(payload: Dictionary) -> void:
 	for item in payload.get("blobs", []):
