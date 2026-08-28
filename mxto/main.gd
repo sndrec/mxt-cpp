@@ -623,11 +623,11 @@ func _on_spectator_race_button_pressed() -> void:
 func _on_track_editor_button_pressed() -> void:
 	get_tree().change_scene_to_file("res://track_editing_scene.tscn")
 
-func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRaceConfiguration = null, requested_race_state: Dictionary = {}, requested_track_evidence: MxtTrackContentEvidence = null) -> void:
+func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRaceConfiguration = null, requested_race_state: MxtRaceSessionState = null, requested_track_evidence: MxtTrackContentEvidence = null) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
 	# Prepare a minimal settings array using the current local player settings.
 	var configuration := requested_configuration.copy() if requested_configuration != null else _build_default_singleplayer_race_configuration()
-	var race_state := requested_race_state.duplicate(true) if !requested_race_state.is_empty() else _build_default_singleplayer_race_state()
+	var race_state := requested_race_state.copy() if requested_race_state != null else _build_default_singleplayer_race_state()
 	var track_evidence := requested_track_evidence.copy() if requested_track_evidence != null else track_content_controller.build_track_content_evidence([track_selector.selected])
 	var is_practice := configuration.is_practice()
 	var uses_time_attack_ghosts := configuration.is_time_attack() or is_practice
@@ -754,14 +754,11 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	configuration.cpu_count = cpu_ids.size()
 	configuration.practice_local_player_id = focused_player_id
 	configuration.resumed_from_replay = true
-	var race_state := metadata_options.duplicate(true)
-	for key in network_manager.RACE_CONFIGURATION_METADATA_KEYS:
-		race_state.erase(key)
-	for key in network_manager.TRACK_EVIDENCE_METADATA_KEYS:
-		race_state.erase(key)
-	race_state["race_human_ids"] = [focused_player_id]
-	race_state["race_cpu_ids"] = cpu_ids.duplicate(true)
-	race_state["race_spectator_ids"] = []
+	var race_state := MxtRaceSessionState.new()
+	race_state.load_metadata_dictionary(metadata_options)
+	race_state.human_ids = PackedInt64Array([focused_player_id])
+	race_state.cpu_ids = PackedInt64Array(cpu_ids)
+	race_state.spectator_ids = PackedInt64Array()
 	var exact_grid := PackedInt32Array()
 	var grid_value = metadata.get("start_grid_slots", [])
 	if typeof(grid_value) == TYPE_ARRAY and (grid_value as Array).size() == racer_ids.size():
@@ -1007,13 +1004,8 @@ func _build_default_singleplayer_race_configuration() -> MxtRaceConfiguration:
 	configuration.cpu_count = singleplayer_cpu_count
 	return configuration
 
-func _build_default_singleplayer_race_state() -> Dictionary:
-	return {
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {},
-		"grand_prix_ko_energy_bonuses": {},
-		"grand_prix_eliminated_ids": [],
-	}
+func _build_default_singleplayer_race_state() -> MxtRaceSessionState:
+	return MxtRaceSessionState.new()
 
 func _open_singleplayer_race_options(as_spectator: bool) -> void:
 	_build_singleplayer_race_options_screen()
@@ -1062,7 +1054,7 @@ func _on_pause_retry_pressed() -> void:
 	var configuration := network_manager.race_configuration.copy()
 	if !singleplayer_mode or (!configuration.is_time_attack() and !configuration.is_practice()):
 		return
-	var race_state := network_manager.race_state.duplicate(true)
+	var race_state := network_manager.race_state.copy()
 	var track_evidence := network_manager.race_track_evidence.copy()
 	race_pause_controller.close()
 	_return_to_menu(configuration.is_practice())
@@ -1091,11 +1083,11 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 			settings.merge(vehicle_content_controller.get_evidence(vehicle_content_id), true)
 	return settings.duplicate(true)
 
-func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: Array, spectator_ids: Array = []) -> Dictionary:
-	var out := options.duplicate(true)
-	out["race_human_ids"] = human_ids.duplicate(true)
-	out["race_cpu_ids"] = cpu_ids.duplicate(true)
-	out["race_spectator_ids"] = spectator_ids.duplicate(true)
+func _apply_race_roster_options(state: MxtRaceSessionState, human_ids: Array, cpu_ids: Array, spectator_ids: Array = []) -> MxtRaceSessionState:
+	var out := state.copy()
+	out.human_ids = PackedInt64Array(human_ids)
+	out.cpu_ids = PackedInt64Array(cpu_ids)
+	out.spectator_ids = PackedInt64Array(spectator_ids)
 	return out
 
 func _local_player_id() -> int:
@@ -1263,7 +1255,7 @@ func _generate_random_input() -> PlayerInput:
 @onready var directional_light_3d: DirectionalLight3D = $GameWorld/DirectionalLight3D
 @onready var default_world_environment_resource: Environment = world_environment.environment
 
-func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, requested_options: Dictionary) -> void:
+func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, requested_state: MxtRaceSessionState) -> void:
 	if !network_manager.is_server:
 		return
 	_close_settings_menus_for_race_start()
@@ -1281,7 +1273,7 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_e
 	if race_roster == null:
 		return
 	var race_state := grand_prix_session_controller.initialize_race_state(
-		configuration, requested_options, roster)
+		configuration, requested_state, roster)
 	race_state = _apply_race_roster_options(race_state, human_ids, cpu_ids, network_manager.spectator_ids)
 	if track_evidence.count() == 0:
 		return
@@ -1645,17 +1637,17 @@ func _transition_to_next_grand_prix_race() -> void:
 	var next_roster: MxtRaceRoster = network_manager.pending_next_race_roster.copy() if network_manager.pending_next_race_roster != null else null
 	var next_configuration := network_manager.pending_next_race_configuration.copy() if network_manager.pending_next_race_configuration != null else network_manager.race_configuration.copy()
 	var next_track_evidence := network_manager.pending_next_race_track_evidence.copy() if network_manager.pending_next_race_track_evidence != null else network_manager.race_track_evidence.copy()
-	var next_options := network_manager.pending_next_race_state.duplicate(true)
+	var next_state := network_manager.pending_next_race_state.copy() if network_manager.pending_next_race_state != null else MxtRaceSessionState.new()
 	_teardown_race_world_for_transition()
 	if network_manager.is_server:
 		network_manager.flush_waiting_peers(true)
 	network_manager.reset_race_state(true)
 	network_manager.race_configuration = next_configuration
 	network_manager.race_track_evidence = next_track_evidence
-	network_manager.race_state = next_options
-	grand_prix_session_controller.apply_eliminations(next_options)
+	network_manager.race_state = next_state
+	grand_prix_session_controller.apply_eliminations(next_state)
 	if next_roster != null:
-		network_manager.start_race(next_track_id, next_roster.encode_wire(), next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_options)
+		network_manager.start_race(next_track_id, next_roster.encode_wire(), next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_state.encode_wire())
 
 func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:
@@ -1801,7 +1793,7 @@ func _check_race_finished() -> void:
 
 func _on_time_attack_session_race_again_requested(
 		configuration: MxtRaceConfiguration,
-		race_state: Dictionary,
+		race_state: MxtRaceSessionState,
 		track_evidence: MxtTrackContentEvidence) -> void:
 	_return_to_menu()
 	call_deferred("_start_singleplayer_race", false, configuration, race_state, track_evidence)

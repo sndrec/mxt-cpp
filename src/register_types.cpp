@@ -9,6 +9,7 @@
 #include "core/race_configuration.h"
 #include "core/race_roster.h"
 #include "core/custom_stamp_wire_codec.h"
+#include "core/race_session_state.h"
 #include "core/track_content_evidence.h"
 #include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
@@ -63,6 +64,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtRaceConfiguration);
 	GDREGISTER_CLASS(MxtRaceRoster);
 	GDREGISTER_CLASS(MxtCustomStampWireCodec);
+	GDREGISTER_CLASS(MxtRaceSessionState);
 	GDREGISTER_CLASS(MxtTrackContentEvidence);
 	GDREGISTER_CLASS(MxtTrackPackageBuilder);
 	GDREGISTER_CLASS(MxtCarAuthoringSession);

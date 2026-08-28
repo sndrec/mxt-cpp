@@ -3,7 +3,7 @@ extends Node
 
 signal race_again_requested(
 	configuration: MxtRaceConfiguration,
-	race_state: Dictionary,
+	race_state: MxtRaceSessionState,
 	track_evidence: MxtTrackContentEvidence)
 signal leaderboard_requested(board_name: String)
 signal main_menu_requested
@@ -186,7 +186,7 @@ func _on_race_again_requested() -> void:
 	var configuration := (
 		network_manager.race_configuration.copy()
 		if practice else TimeAttackRules.build_configuration())
-	var race_state := network_manager.race_state.duplicate(true) if practice else {}
+	var race_state := network_manager.race_state.copy() if practice else MxtRaceSessionState.new()
 	var track_evidence := network_manager.race_track_evidence.copy() if practice else null
 	race_again_requested.emit(configuration, race_state, track_evidence)
 

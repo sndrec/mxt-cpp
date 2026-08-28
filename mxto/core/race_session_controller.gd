@@ -342,13 +342,12 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 				next_slot += 1
 			slots[local_index] = racer_ids.size() - 1
 			return slots
-	if !network_manager.is_grand_prix_enabled() or int(network_manager.race_state.get("grand_prix_current_track", 0)) <= 0:
+	if !network_manager.is_grand_prix_enabled() or network_manager.race_state.grand_prix_current_track <= 0:
 		return slots
-	var points: Dictionary = network_manager.race_state.get("grand_prix_points", {})
 	var standings := []
 	for index in racer_ids.size():
 		var player_id := int(racer_ids[index])
-		standings.append([int(_lookup_id_value(points, player_id, 0)), index])
+		standings.append([network_manager.race_state.get_grand_prix_points(player_id), index])
 	standings.sort_custom(func(a, b): return int(a[0]) > int(b[0]) if int(a[0]) != int(b[0]) else int(a[1]) < int(b[1]))
 	for rank in standings.size():
 		slots[int(standings[rank][1])] = racer_ids.size() - 1 - rank
@@ -357,10 +356,9 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 func _apply_grand_prix_ko_energy_bonuses(sim: GameSim, racer_ids: Array) -> void:
 	if sim == null or !network_manager.is_grand_prix_enabled() or !sim.has_method("set_player_ko_energy_bonus"):
 		return
-	var bonuses: Dictionary = network_manager.race_state.get("grand_prix_ko_energy_bonuses", {})
 	for id_value in racer_ids:
 		var player_id := int(id_value)
-		var bonus := float(_lookup_id_value(bonuses, player_id, 0.0))
+		var bonus := network_manager.race_state.get_grand_prix_ko_energy_bonus(player_id)
 		if bonus > 0.0:
 			sim.set_player_ko_energy_bonus(player_id, bonus)
 

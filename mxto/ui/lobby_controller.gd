@@ -1,7 +1,7 @@
 class_name LobbyController
 extends Node
 
-signal start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, race_state: Dictionary)
+signal start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, race_state: MxtRaceSessionState)
 signal car_settings_requested
 signal controller_settings_requested
 signal spectator_toggled(enabled: bool)
@@ -74,13 +74,8 @@ func build_race_configuration() -> MxtRaceConfiguration:
 	configuration.allow_workshop_vehicles = workshop_vehicles_toggle.button_pressed
 	return configuration
 
-func build_race_state() -> Dictionary:
-	return {
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {},
-		"grand_prix_ko_energy_bonuses": {},
-		"grand_prix_eliminated_ids": [],
-	}
+func build_race_state() -> MxtRaceSessionState:
+	return MxtRaceSessionState.new()
 
 func build_track_evidence() -> MxtTrackContentEvidence:
 	return track_content_controller.build_track_content_evidence(grand_prix_track_sequence)
@@ -130,7 +125,7 @@ func refresh_controls() -> void:
 		if button != null:
 			button.disabled = !can_edit
 
-func apply_race_setup(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, _state: Dictionary) -> void:
+func apply_race_setup(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, _state: MxtRaceSessionState) -> void:
 	applying_race_setup = true
 	var mode := configuration.game_mode
 	if mode >= 0 and mode < game_mode_choice.item_count:

@@ -12,17 +12,17 @@ func _init() -> void:
 		quit(1)
 		return
 	main.network_manager.race_configuration.game_mode = 1
-	main.network_manager.race_state = {
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {1: 10, 2: 7, 3: 2},
-	}
+	main.network_manager.race_state = MxtRaceSessionState.new()
+	main.network_manager.race_state.set_grand_prix_points(1, 10)
+	main.network_manager.race_state.set_grand_prix_points(2, 7)
+	main.network_manager.race_state.set_grand_prix_points(3, 2)
 	var first_grid: PackedInt32Array = main.race_session_controller.call(
 		"_build_start_grid_slots", [1, 2, 3], false)
 	if first_grid != PackedInt32Array([-1, -1, -1]):
 		push_error("first Grand Prix race should use randomized grid, got %s" % [first_grid])
 		quit(1)
 		return
-	main.network_manager.race_state["grand_prix_current_track"] = 1
+	main.network_manager.race_state.grand_prix_current_track = 1
 	var standings_grid: PackedInt32Array = main.race_session_controller.call(
 		"_build_start_grid_slots", [1, 2, 3], false)
 	if standings_grid != PackedInt32Array([2, 1, 0]):
@@ -45,14 +45,13 @@ func _init() -> void:
 	main.network_manager.race_results.finish_order = [3, 1, 2]
 	main.network_manager.input_transport.server_tick = 900
 	main.network_manager.race_configuration.game_mode = 1
-	main.network_manager.race_state = {
-		"grand_prix_current_track": 2,
-		"grand_prix_points": {1: 0, 2: 0, 3: 0},
-	}
+	main.network_manager.race_state = MxtRaceSessionState.new()
+	main.network_manager.race_state.grand_prix_current_track = 2
+	for id in [1, 2, 3]:
+		main.network_manager.race_state.set_grand_prix_points(id, 0)
 	main.grand_prix_session_controller.record_race_results(main.game_sim)
-	var points: Dictionary = main.network_manager.race_state.get("grand_prix_points", {})
-	if int(points.get(3, -1)) != 3 or int(points.get(1, -1)) != 2 or int(points.get(2, -1)) != 1:
-		push_error("Grand Prix points should use all racers, got %s" % [points])
+	if main.network_manager.race_state.get_grand_prix_points(3) != 3 or main.network_manager.race_state.get_grand_prix_points(1) != 2 or main.network_manager.race_state.get_grand_prix_points(2) != 1:
+		push_error("Grand Prix points should use all racers")
 		quit(1)
 		return
 	if main.race_presentation_controller.format_race_time(900, 420) != "0:08.000":
@@ -117,7 +116,7 @@ func _init() -> void:
 	reset_roster.append_settings(1, 1, false, false, false, {"username": "One"})
 	nm.start_race(
 		"sha256:test", reset_roster.encode_wire(), nm.race_configuration.encode_wire(),
-		nm.race_track_evidence.encode_wire(), {})
+		nm.race_track_evidence.encode_wire(), MxtRaceSessionState.new().encode_wire())
 	for id in [1, 2, 3]:
 		if nm.race_admission.stage_for(id) != nm.race_admission.START_SENT:
 			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission.admission_states])

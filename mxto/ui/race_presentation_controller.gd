@@ -190,10 +190,9 @@ func format_grand_prix_results_text() -> String:
 	if !network_manager.is_grand_prix_enabled():
 		return ""
 	var lines := ["Grand Prix Standings"]
-	var points: Dictionary = network_manager.race_state.get("grand_prix_points", {})
 	var standings := []
-	for id_value in points.keys():
-		standings.append([int(_lookup_id_value(points, int(id_value), 0)), int(id_value)])
+	for id_value in network_manager.race_state.get_grand_prix_point_player_ids():
+		standings.append([network_manager.race_state.get_grand_prix_points(int(id_value)), int(id_value)])
 	standings.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
 			return int(a[0]) > int(b[0])
@@ -358,7 +357,7 @@ func _format_ordinal(value: int) -> String:
 func _next_grand_prix_track_id() -> String:
 	if !network_manager.is_grand_prix_enabled():
 		return ""
-	var next_index := int(network_manager.race_state.get("grand_prix_current_track", 0)) + 1
+	var next_index: int = network_manager.race_state.grand_prix_current_track + 1
 	return network_manager.race_track_evidence.get_content_id(next_index) \
 		if next_index >= 0 and next_index < network_manager.race_track_evidence.count() else ""
 
