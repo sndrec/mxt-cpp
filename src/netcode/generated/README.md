@@ -1,13 +1,12 @@
 # Generated auth-input dictionaries
 
-These headers contain static zstd dictionaries used by `NetcodeSession` to
-evaluate and encode authoritative input packets. They are data artifacts, not
-hand-authored netcode.
+These three generated headers are the dictionaries reachable from the live
+authoritative-input encoder:
 
-Use `scripts/train_auth_input_dict.py` to train and compare a dictionary from a
-directory of captured `.bin` samples. The script reads
-`auth_input_zstd_dictionary.h` as its default current dictionary and writes a
-replacement only when `--write-header` is provided.
+- `auth_input_zero_bitmap_zstd_dictionary.h` for the general zero-bitmap layout;
+- `auth_input_zero_bitmap_strafe_sparse_zstd_dictionary.h` for two-frame sparse
+  strafe packets;
+- `auth_input_hybrid_smooth_zstd_dictionary.h` for smooth analog deltas.
 
-Keep generated dictionaries in this directory so the netcode implementation
-and its data are easy to distinguish.
+They are data artifacts, not hand-authored netcode. Obsolete experimental
+dictionaries are deliberately not retained.

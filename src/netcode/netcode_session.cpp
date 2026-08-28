@@ -1,30 +1,9 @@
 #include "netcode/netcode_session.h"
 
 #include "gamesim/gamesim.h"
-#include "netcode/generated/auth_input_delta_low_entropy_alt_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_s1_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_s11_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_s12_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_s15_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_alt_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_s11_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_fallback_alt_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_fallback_s1_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_fallback_s3_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_fallback_s6_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_fallback_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_low_entropy_surface_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_pairs_alt_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_pairs_surface_alt_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_pairs_surface_zstd_dictionary.h"
-#include "netcode/generated/auth_input_delta_pairs_zstd_dictionary.h"
-#include "netcode/generated/auth_input_hybrid_zstd_dictionary.h"
 #include "netcode/generated/auth_input_hybrid_smooth_zstd_dictionary.h"
-#include "netcode/generated/auth_input_zstd_dictionary.h"
 #include "netcode/generated/auth_input_zero_bitmap_zstd_dictionary.h"
 #include "netcode/generated/auth_input_zero_bitmap_strafe_sparse_zstd_dictionary.h"
-#include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/core/class_db.hpp"
 #define ZSTD_STATIC_LINKING_ONLY
 #include "zstd.h"
@@ -39,84 +18,32 @@ using namespace godot;
 namespace {
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
 constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
-constexpr int MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER = 5;
-constexpr int MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER = 9;
-constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 1;
-constexpr int MXT_NET_COMPRESSION_ZSTD = FileAccess::COMPRESSION_ZSTD;
-constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD = 0;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD = 0;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD = 1;
-constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD = 2;
-constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD = 3;
-constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT_ZSTD = 4;
-constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD = 5;
-constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD = 6;
-constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD = 7;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD = 2;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD = 3;
 constexpr uint8_t MXT_NET_AUTH_MODE_MASK = 0x07;
 constexpr uint8_t MXT_NET_AUTH_COUNT_SHIFT = 3;
 constexpr uint8_t MXT_NET_AUTH_COUNT_MASK = 0x78;
 constexpr uint8_t MXT_NET_AUTH_COUNT_ESCAPE = 0x0f;
 constexpr uint8_t MXT_NET_AUTH_PHASE_BIT = 0x80;
-constexpr uint8_t MXT_NET_AUTH_DELTA_PAIRS_ALT_COUNT_CODE = 0x0e;
-constexpr uint8_t MXT_NET_AUTH_ZERO_BITMAP_STRAFE_SPARSE_COUNT_CODE = 0x0e;
 constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 3;
-constexpr int MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL = 12;
-constexpr int MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL = 7;
 constexpr int MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL = 7;
 constexpr uint32_t MXT_NET_RACE_PHASE_BIT = 0x80000000u;
 constexpr uint32_t MXT_NET_TICK_MASK = 0x7fffffffu;
 enum AuthInputLayout : uint8_t {
-	AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES = 0,
-	AUTH_INPUT_LAYOUT_PACKED_BUTTONS = 1,
-	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA = 2,
-	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS = 3,
-	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA = 4,
-	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP = 5,
-	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS = 6,
-	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY = 7,
-	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE = 8,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS = 0,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA = 1,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP = 2,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE = 3,
+};
+enum AuthInputDictionary : uint8_t {
+	AUTH_INPUT_DICTIONARY_ZERO_BITMAP = 0,
+	AUTH_INPUT_DICTIONARY_STRAFE_SPARSE = 1,
+	AUTH_INPUT_DICTIONARY_SMOOTH_ANALOG_DELTA = 2,
 };
 ZSTD_CCtx* g_auth_input_zstd_cctx = nullptr;
 ZSTD_DCtx* g_auth_input_zstd_dctx = nullptr;
-ZSTD_CDict* g_auth_input_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_alt_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_alt_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_s1_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_s1_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_s11_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_s11_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_s12_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_s12_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_s15_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_s15_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_alt_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_alt_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_s11_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_s11_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_fallback_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_fallback_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_pairs_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_pairs_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_pairs_alt_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_pairs_alt_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_pairs_surface_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_pairs_surface_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_delta_pairs_surface_alt_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_delta_pairs_surface_alt_zstd_ddict = nullptr;
-ZSTD_CDict* g_auth_input_hybrid_zstd_cdict = nullptr;
-ZSTD_DDict* g_auth_input_hybrid_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_hybrid_smooth_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_hybrid_smooth_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_zero_bitmap_zstd_cdict = nullptr;
@@ -279,65 +206,32 @@ float axis_from_byte(uint8_t v)
 
 int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout)
 {
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS ||
-		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ||
-		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ||
-		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE) {
-		const int input_count = frame_count * racer_count;
-		const int bitpacked_size = (((input_count + 7) >> 3) * 5) + input_count * 4;
-		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE) {
-			const int sparse_prefix_size = (((input_count + 7) >> 3) * 5) + input_count * 2;
-			const int dense_suffix_size = input_count * 2;
-			return ((sparse_prefix_size + 7) >> 3) + sparse_prefix_size + dense_suffix_size;
-		}
-		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
-			return ((bitpacked_size + 7) >> 3) + bitpacked_size;
-		}
-		return bitpacked_size;
+	const int input_count = frame_count * racer_count;
+	const int bitpacked_size = (((input_count + 7) >> 3) * 5) + input_count * 4;
+	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE) {
+		const int sparse_prefix_size = (((input_count + 7) >> 3) * 5) + input_count * 2;
+		return ((sparse_prefix_size + 7) >> 3) + sparse_prefix_size + input_count * 2;
 	}
-	const int bytes_per_racer = layout == AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES ?
-		MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER :
-		MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER;
-	return frame_count * racer_count * bytes_per_racer;
+	return layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ?
+		((bitpacked_size + 7) >> 3) + bitpacked_size :
+		bitpacked_size;
 }
 
 AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 {
 	mode &= MXT_NET_AUTH_MODE_MASK;
-	if (mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD) {
-		return AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
-	}
-	if (mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD) {
-		return AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY;
-	}
 	if (mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD) {
 		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 	}
-	if (mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD) {
-		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
+	if (mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD) {
+		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE;
 	}
-	return AUTH_INPUT_LAYOUT_PACKED_BUTTONS;
-}
-
-bool auth_input_mode_uses_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD;
+	return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
 }
 
 bool auth_input_mode_valid(uint8_t mode)
 {
-	return (mode & MXT_NET_AUTH_MODE_MASK) <= MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD;
+	return (mode & MXT_NET_AUTH_MODE_MASK) <= MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD;
 }
 
 uint8_t pack_auth_mode_count_phase(uint8_t mode, int count, int race_phase)
@@ -352,23 +246,9 @@ uint8_t pack_auth_mode_count_phase(uint8_t mode, int count, int race_phase)
 	);
 }
 
-uint8_t pack_auth_low_entropy_mode_sublayout_phase(uint8_t mode, uint8_t sublayout, int race_phase)
-{
-	return static_cast<uint8_t>(
-		(mode & MXT_NET_AUTH_MODE_MASK) |
-		static_cast<uint8_t>((sublayout & 0x0f) << MXT_NET_AUTH_COUNT_SHIFT) |
-		((race_phase & 1) ? MXT_NET_AUTH_PHASE_BIT : 0)
-	);
-}
-
 bool auth_input_count_needs_escape(int count)
 {
 	return count <= 0 || count >= 15;
-}
-
-int auth_input_packet_header_size(int count)
-{
-	return MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES + (auth_input_count_needs_escape(count) ? 1 : 0);
 }
 
 int32_t pack_tick_phase(int tick, int race_phase)
@@ -422,264 +302,6 @@ ZSTD_CDict* create_auth_input_zstd_cdict(const void* dict, size_t dict_size, int
 	);
 }
 
-ZSTD_CDict* auth_input_zstd_cdict()
-{
-	if (!g_auth_input_zstd_cdict) {
-		g_auth_input_zstd_cdict = ZSTD_createCDict(
-			MXT_AUTH_INPUT_ZSTD_DICT,
-			MXT_AUTH_INPUT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZSTD_LEVEL
-		);
-	}
-	return g_auth_input_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_pairs_zstd_cdict()
-{
-	if (!g_auth_input_delta_pairs_zstd_cdict) {
-		g_auth_input_delta_pairs_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_pairs_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_pairs_alt_zstd_cdict()
-{
-	if (!g_auth_input_delta_pairs_alt_zstd_cdict) {
-		g_auth_input_delta_pairs_alt_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_ALT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_pairs_alt_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_pairs_surface_zstd_cdict()
-{
-	if (!g_auth_input_delta_pairs_surface_zstd_cdict) {
-		g_auth_input_delta_pairs_surface_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_pairs_surface_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_pairs_surface_alt_zstd_cdict()
-{
-	if (!g_auth_input_delta_pairs_surface_alt_zstd_cdict) {
-		g_auth_input_delta_pairs_surface_alt_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ALT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_pairs_surface_alt_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_zstd_cdict) {
-		g_auth_input_delta_low_entropy_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_alt_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_alt_zstd_cdict) {
-		g_auth_input_delta_low_entropy_alt_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ALT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_alt_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_s1_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_s1_zstd_cdict) {
-		g_auth_input_delta_low_entropy_s1_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S1_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S1_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_s1_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_s11_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_s11_zstd_cdict) {
-		g_auth_input_delta_low_entropy_s11_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S11_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S11_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_s11_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_s12_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_s12_zstd_cdict) {
-		g_auth_input_delta_low_entropy_s12_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S12_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S12_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_s12_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_s15_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_s15_zstd_cdict) {
-		g_auth_input_delta_low_entropy_s15_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btopt
-		);
-	}
-	return g_auth_input_delta_low_entropy_s15_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_alt_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_alt_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_alt_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ALT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_alt_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_s11_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_s11_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_s11_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_S11_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_S11_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_s11_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_fallback_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_fallback_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ALT_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S1_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S1_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S3_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S3_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict = create_auth_input_zstd_cdict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S6_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S6_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
-			ZSTD_btlazy2
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict;
-}
-
-ZSTD_CDict* auth_input_hybrid_zstd_cdict()
-{
-	if (!g_auth_input_hybrid_zstd_cdict) {
-		g_auth_input_hybrid_zstd_cdict = ZSTD_createCDict(
-			MXT_AUTH_INPUT_HYBRID_ZSTD_DICT,
-			MXT_AUTH_INPUT_HYBRID_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZSTD_LEVEL
-		);
-	}
-	return g_auth_input_hybrid_zstd_cdict;
-}
-
 ZSTD_CDict* auth_input_hybrid_smooth_zstd_cdict()
 {
 	if (!g_auth_input_hybrid_smooth_zstd_cdict) {
@@ -719,226 +341,6 @@ ZSTD_CDict* auth_input_zero_bitmap_strafe_sparse_zstd_cdict()
 	return g_auth_input_zero_bitmap_strafe_sparse_zstd_cdict;
 }
 
-ZSTD_DDict* auth_input_zstd_ddict()
-{
-	if (!g_auth_input_zstd_ddict) {
-		g_auth_input_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_ZSTD_DICT,
-			MXT_AUTH_INPUT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_pairs_zstd_ddict()
-{
-	if (!g_auth_input_delta_pairs_zstd_ddict) {
-		g_auth_input_delta_pairs_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_pairs_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_pairs_alt_zstd_ddict()
-{
-	if (!g_auth_input_delta_pairs_alt_zstd_ddict) {
-		g_auth_input_delta_pairs_alt_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_ALT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_pairs_alt_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_pairs_surface_zstd_ddict()
-{
-	if (!g_auth_input_delta_pairs_surface_zstd_ddict) {
-		g_auth_input_delta_pairs_surface_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_pairs_surface_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_pairs_surface_alt_zstd_ddict()
-{
-	if (!g_auth_input_delta_pairs_surface_alt_zstd_ddict) {
-		g_auth_input_delta_pairs_surface_alt_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ALT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_pairs_surface_alt_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_zstd_ddict) {
-		g_auth_input_delta_low_entropy_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_alt_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_alt_zstd_ddict) {
-		g_auth_input_delta_low_entropy_alt_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ALT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_alt_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_s1_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_s1_zstd_ddict) {
-		g_auth_input_delta_low_entropy_s1_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S1_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S1_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_s1_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_s11_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_s11_zstd_ddict) {
-		g_auth_input_delta_low_entropy_s11_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S11_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S11_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_s11_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_s12_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_s12_zstd_ddict) {
-		g_auth_input_delta_low_entropy_s12_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S12_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S12_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_s12_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_s15_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_s15_zstd_ddict) {
-		g_auth_input_delta_low_entropy_s15_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_s15_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_alt_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_alt_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_alt_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ALT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_alt_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_s11_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_s11_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_s11_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_S11_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_S11_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_s11_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_fallback_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_fallback_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ALT_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_ALT_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S1_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S1_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S3_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S3_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict()
-{
-	if (!g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict) {
-		g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S6_ZSTD_DICT,
-			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_S6_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict;
-}
-
-ZSTD_DDict* auth_input_hybrid_zstd_ddict()
-{
-	if (!g_auth_input_hybrid_zstd_ddict) {
-		g_auth_input_hybrid_zstd_ddict = ZSTD_createDDict(
-			MXT_AUTH_INPUT_HYBRID_ZSTD_DICT,
-			MXT_AUTH_INPUT_HYBRID_ZSTD_DICT_SIZE
-		);
-	}
-	return g_auth_input_hybrid_zstd_ddict;
-}
-
 ZSTD_DDict* auth_input_hybrid_smooth_zstd_ddict()
 {
 	if (!g_auth_input_hybrid_smooth_zstd_ddict) {
@@ -970,162 +372,6 @@ ZSTD_DDict* auth_input_zero_bitmap_strafe_sparse_zstd_ddict()
 		);
 	}
 	return g_auth_input_zero_bitmap_strafe_sparse_zstd_ddict;
-}
-
-bool auth_input_mode_uses_zero_bitmap_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_zero_bitmap_strafe_sparse_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_hybrid_dict(uint8_t mode)
-{
-	(void)mode;
-	return false;
-}
-
-bool auth_input_mode_uses_hybrid_smooth_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_delta_pairs_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_delta_pairs_surface_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_delta_low_entropy_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_delta_low_entropy_surface_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT_ZSTD;
-}
-
-bool auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(uint8_t mode)
-{
-	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD;
-}
-
-uint8_t auth_input_low_entropy_layout_sublayout(uint8_t sublayout)
-{
-	// Rarely selected codes are aliases that keep the old layout code available and add an alt-dictionary candidate.
-	if (sublayout == 1) {
-		return 13;
-	}
-	if (sublayout == 10) {
-		return 13;
-	}
-	if (sublayout == 11) {
-		return 9;
-	}
-	if (sublayout == 12) {
-		return 3;
-	}
-	if (sublayout == 13) {
-		return 9;
-	}
-	if (sublayout == 15) {
-		return 14;
-	}
-	return sublayout;
-}
-
-bool auth_input_low_entropy_alt_alias_sublayout(uint8_t sublayout)
-{
-	return sublayout == 1 ||
-		sublayout == 11 ||
-		sublayout == 12 ||
-		sublayout == 15;
-}
-
-bool auth_input_low_entropy_fallback_alt_sublayout(uint8_t sublayout)
-{
-	// Deterministic zero-bit dictionary switch; selected from 100-racer fallback corpus by sublayout.
-	if (auth_input_low_entropy_alt_alias_sublayout(sublayout)) {
-		return true;
-	}
-	return sublayout == 3 ||
-		sublayout == 5 ||
-		sublayout == 6 ||
-		sublayout == 8 ||
-		sublayout == 9 ||
-		sublayout == 11 ||
-		sublayout == 12 ||
-		sublayout == 13 ||
-		sublayout == 14;
-}
-
-bool auth_input_low_entropy_fallback_s1_sublayout(uint8_t sublayout)
-{
-	return sublayout == 1;
-}
-
-bool auth_input_low_entropy_fallback_s3_sublayout(uint8_t sublayout)
-{
-	return sublayout == 3;
-}
-
-bool auth_input_low_entropy_fallback_s6_sublayout(uint8_t sublayout)
-{
-	return sublayout == 6;
-}
-
-bool auth_input_low_entropy_default_alt_sublayout(uint8_t sublayout)
-{
-	return sublayout == 1 ||
-		sublayout == 11 ||
-		sublayout == 12 ||
-		sublayout == 15;
-}
-
-bool auth_input_low_entropy_default_s1_sublayout(uint8_t sublayout)
-{
-	return sublayout == 10;
-}
-
-bool auth_input_low_entropy_default_s11_sublayout(uint8_t sublayout)
-{
-	return sublayout == 13;
-}
-
-bool auth_input_low_entropy_default_s12_sublayout(uint8_t sublayout)
-{
-	return sublayout == 12;
-}
-
-bool auth_input_low_entropy_default_s15_sublayout(uint8_t sublayout)
-{
-	return sublayout == 15;
-}
-
-bool auth_input_low_entropy_surface_alt_sublayout(uint8_t sublayout)
-{
-	return auth_input_low_entropy_alt_alias_sublayout(sublayout);
-}
-
-bool auth_input_low_entropy_surface_s11_sublayout(uint8_t sublayout)
-{
-	return sublayout == 11;
 }
 
 int auth_input_bitpacked_raw_size(int frame_count, int racer_count)
@@ -1266,796 +512,32 @@ bool decode_zero_bitmap_strafe_sparse_raw(const PackedByteArray& encoded, Packed
 	return true;
 }
 
-int auth_input_delta_low_entropy_raw_size_bound(int frame_count, int p_racer_count, bool has_sublayout_byte)
+ZSTD_CDict* auth_input_cdict(AuthInputDictionary dictionary)
 {
-	if (frame_count != 2 || p_racer_count <= 0) {
-		return 0;
-	}
-	const int sublayout_bytes = has_sublayout_byte ? 1 : 0;
-	const int field_bytes = frame_count * p_racer_count;
-	const int current_bound = sublayout_bytes + (3 * field_bytes) +
-		((p_racer_count + 3) >> 2) + (p_racer_count * 2) +
-		((p_racer_count + 1) >> 1) + (p_racer_count * 2);
-	const int table_bound = sublayout_bytes + (3 * (((p_racer_count + 1) >> 1) + (p_racer_count * 2))) +
-		((p_racer_count + 3) >> 2) + (p_racer_count * 2) +
-		((p_racer_count + 1) >> 1) + (p_racer_count * 2);
-	return std::max(current_bound, table_bound);
-}
-
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT = 0;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS = 1;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS = 2;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS = 3;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL = 4;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL = 5;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL = 6;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 = 7;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 = 8;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2 = 9;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1_S1_DICT = 10;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 = 11;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3 = 12;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 = 13;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 = 14;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1 = 15;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[10][2] = {
-	{1, 0}, {127, 127}, {0, 0}, {1, 32}, {17, 31},
-	{17, 0}, {0, 32}, {1, 17}, {0, 31}, {32, 31},
-};
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[7] = {0, 3, 4, 5, 6, 7, 8};
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[3][15][2] = {
-	{
-		{1, 0}, {0, 0}, {254, 0}, {1, 1}, {2, 0},
-		{3, 0}, {0, 2}, {4, 0}, {5, 0}, {6, 0},
-		{7, 0}, {8, 0}, {9, 0}, {1, 2}, {10, 0},
-	},
-	{
-		{0, 0}, {254, 0}, {1, 0}, {2, 0}, {3, 0},
-		{0, 2}, {1, 1}, {4, 0}, {5, 0}, {6, 0},
-		{7, 0}, {8, 0}, {9, 0}, {2, 1}, {1, 2},
-	},
-	{
-		{0, 0}, {127, 0}, {254, 0}, {135, 0}, {128, 0},
-		{126, 0}, {161, 0}, {129, 0}, {93, 0}, {136, 0},
-		{137, 0}, {134, 0}, {119, 0}, {162, 0}, {161, 2},
-	},
-};
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIR_FIELDS[3][15][2] = {
-	{
-		{0, 0}, {254, 0}, {1, 1}, {0, 2}, {1, 0},
-		{6, 0}, {1, 2}, {2, 0}, {2, 3}, {3, 0},
-		{4, 0}, {5, 0}, {0, 4}, {8, 0}, {2, 1},
-	},
-	{
-		{0, 0}, {254, 0}, {1, 1}, {3, 0}, {2, 0},
-		{1, 0}, {0, 2}, {4, 0}, {6, 0}, {2, 1},
-		{7, 0}, {5, 0}, {2, 3}, {4, 1}, {8, 0},
-	},
-	{
-		{135, 0}, {161, 0}, {127, 0}, {93, 0}, {254, 0},
-		{0, 0}, {162, 0}, {161, 2}, {162, 1}, {160, 2},
-		{119, 0}, {161, 1}, {152, 0}, {93, 1}, {92, 2},
-	},
-};
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIR_FIELDS[3][15][2] = {
-	{
-		{0, 0}, {254, 0}, {1, 1}, {1, 0}, {2, 0},
-		{3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0},
-		{8, 0}, {0, 2}, {9, 0}, {10, 0}, {11, 0},
-	},
-	{
-		{0, 0}, {254, 0}, {1, 0}, {2, 0}, {3, 0},
-		{4, 0}, {5, 0}, {6, 0}, {0, 2}, {7, 0},
-		{9, 0}, {8, 0}, {1, 1}, {11, 0}, {1, 2},
-	},
-	{
-		{127, 0}, {0, 0}, {128, 0}, {126, 0}, {129, 0},
-		{254, 0}, {136, 0}, {135, 0}, {137, 0}, {134, 0},
-		{125, 0}, {123, 0}, {133, 0}, {131, 0}, {138, 0},
-	},
-};
-
-const uint8_t (*auth_input_low_entropy_table_for_sublayout(uint8_t sublayout))[15][2]
-{
-	sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1) {
-		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
-	}
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
-		return MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS;
-	}
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS) {
-		return MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIR_FIELDS;
-	}
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS) {
-		return MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIR_FIELDS;
-	}
-	return nullptr;
-}
-
-bool auth_input_low_entropy_sublayout_escape_tail(uint8_t sublayout)
-{
-	sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
-}
-
-bool auth_input_low_entropy_sublayout_mask2(uint8_t sublayout)
-{
-	sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2;
-}
-
-bool auth_input_low_entropy_sublayout_mask3(uint8_t sublayout)
-{
-	sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3;
-}
-
-bool auth_input_low_entropy_sublayout_mask1(uint8_t sublayout)
-{
-	sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
-}
-
-int auth_input_low_entropy_mask3_code(uint8_t table_code)
-{
-	for (int i = 0; i < 7; ++i) {
-		if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[i] == table_code) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-void auth_input_write_packed3(uint8_t* dst, int index, uint8_t value)
-{
-	const int bit = index * 3;
-	const int byte = bit >> 3;
-	const int shift = bit & 7;
-	dst[byte] |= static_cast<uint8_t>((value & 0x07) << shift);
-	if (shift > 5) {
-		dst[byte + 1] |= static_cast<uint8_t>((value & 0x07) >> (8 - shift));
+	switch (dictionary) {
+		case AUTH_INPUT_DICTIONARY_ZERO_BITMAP: return auth_input_zero_bitmap_zstd_cdict();
+		case AUTH_INPUT_DICTIONARY_STRAFE_SPARSE: return auth_input_zero_bitmap_strafe_sparse_zstd_cdict();
+		case AUTH_INPUT_DICTIONARY_SMOOTH_ANALOG_DELTA: return auth_input_hybrid_smooth_zstd_cdict();
+		default: return nullptr;
 	}
 }
 
-uint8_t auth_input_read_packed3(const uint8_t* src, int index)
+ZSTD_DDict* auth_input_ddict(AuthInputDictionary dictionary)
 {
-	const int bit = index * 3;
-	const int byte = bit >> 3;
-	const int shift = bit & 7;
-	uint16_t bits = src[byte];
-	if (shift > 5) {
-		bits |= static_cast<uint16_t>(src[byte + 1]) << 8;
+	switch (dictionary) {
+		case AUTH_INPUT_DICTIONARY_ZERO_BITMAP: return auth_input_zero_bitmap_zstd_ddict();
+		case AUTH_INPUT_DICTIONARY_STRAFE_SPARSE: return auth_input_zero_bitmap_strafe_sparse_zstd_ddict();
+		case AUTH_INPUT_DICTIONARY_SMOOTH_ANALOG_DELTA: return auth_input_hybrid_smooth_zstd_ddict();
+		default: return nullptr;
 	}
-	return static_cast<uint8_t>((bits >> shift) & 0x07);
 }
 
-PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_raw, int frame_count, int p_racer_count, uint8_t sublayout, bool write_sublayout)
-{
-	if (frame_count != 2 || p_racer_count <= 0 || delta_pairs_raw.size() != frame_count * p_racer_count * 5) {
-		return PackedByteArray();
-	}
-	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
-	const uint8_t layout_sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	const bool implicit_tail = false;
-	const bool implicit_mask =
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 ||
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
-	const bool implicit_sv = implicit_tail || pair_table != nullptr;
-	if (layout_sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT &&
-		layout_sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1 &&
-		!pair_table) {
-		return PackedByteArray();
-	}
-	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
-	const bool mask1 = auth_input_low_entropy_sublayout_mask1(sublayout);
-	const bool mask2 = auth_input_low_entropy_sublayout_mask2(sublayout);
-	const bool mask3 = auth_input_low_entropy_sublayout_mask3(sublayout);
-	const int field_bytes = frame_count * p_racer_count;
-	const int sv_class_bytes = (p_racer_count + 3) >> 2;
-	const int mask_code_bytes = (p_racer_count + 1) >> 1;
-	const int mask1_bytes = (p_racer_count + 7) >> 3;
-	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
-	const int sv_out_bytes = implicit_sv ? 0 : sv_class_bytes;
-	const int mask_class_bytes = implicit_mask ? 0 : (mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes)));
-	const uint8_t* src = delta_pairs_raw.ptr();
-	int escape_count = 0;
-	if (pair_table) {
-		for (int field = 0; field < 3; ++field) {
-			const int base = field * field_bytes;
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t a = src[base + (i * 2)];
-				const uint8_t b = src[base + (i * 2) + 1];
-				bool found = false;
-				for (int p = 0; p < 15; ++p) {
-					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
-					++escape_count;
-				}
-			}
-		}
-	}
-	const int sv_base = 3 * field_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t a = src[sv_base + (i * 2)];
-		const uint8_t b = src[sv_base + (i * 2) + 1];
-		if (implicit_sv) {
-			if (a != 127 || b != 0) {
-				return PackedByteArray();
-			}
-			continue;
-		}
-		if (!((a == 127 && b == 0) || (a == 0 && b == 0) || (a == 127 && b == 127))) {
-			++escape_count;
-		}
-	}
-	const int mask_base = 4 * field_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t a = src[mask_base + (i * 2)];
-		const uint8_t b = src[mask_base + (i * 2) + 1];
-		if (implicit_mask) {
-			if (a != MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0] ||
-				b != MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1]) {
-				return PackedByteArray();
-			}
-			continue;
-		}
-		bool found = false;
-		int found_code = -1;
-		for (int p = 0; p < 10; ++p) {
-			if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
-				found = true;
-				found_code = p;
-				break;
-			}
-		}
-		if (!found || (mask1 && found_code != 0) || (mask2 && found_code != 0 && found_code != 3 && found_code != 4)) {
-			++escape_count;
-		} else if (mask3 && auth_input_low_entropy_mask3_code(static_cast<uint8_t>(found_code)) < 0) {
-			++escape_count;
-		}
-	}
-	PackedByteArray out;
-	const int table_code_bytes = (p_racer_count + 1) >> 1;
-	const int first_fields_size = pair_table ?
-		(3 * table_code_bytes) :
-		(3 * field_bytes);
-	const int out_size = (write_sublayout ? 1 : 0) + first_fields_size + sv_out_bytes + mask_class_bytes + (escape_count * 2);
-	if (out.resize(out_size) != 0) {
-		return PackedByteArray();
-	}
-	uint8_t* dst = out.ptrw();
-	int pos = 0;
-	if (write_sublayout) {
-		dst[pos++] = sublayout;
-	}
-	if (pair_table && escape_tail) {
-		int field_code_pos[3] = {};
-		for (int field = 0; field < 3; ++field) {
-			field_code_pos[field] = pos;
-			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
-			pos += table_code_bytes;
-		}
-		int sv_class_pos = 0;
-		if (!implicit_sv) {
-			sv_class_pos = pos;
-			std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
-			pos += sv_class_bytes;
-		}
-		const int mask_code_pos = pos;
-		std::memset(dst + pos, 0, static_cast<size_t>(mask_class_bytes));
-		pos += mask_class_bytes;
-		for (int field = 0; field < 3; ++field) {
-			const int base = field * field_bytes;
-			const int code_pos = field_code_pos[field];
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t a = src[base + (i * 2)];
-				const uint8_t b = src[base + (i * 2) + 1];
-				uint8_t code = 15;
-				for (int p = 0; p < 15; ++p) {
-					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
-						code = static_cast<uint8_t>(p);
-						break;
-					}
-				}
-				dst[code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-				if (code == 15) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-		if (!implicit_sv) {
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t a = src[sv_base + (i * 2)];
-				const uint8_t b = src[sv_base + (i * 2) + 1];
-				uint8_t code = 2;
-				if (a == 127 && b == 0) {
-					code = 0;
-				} else if (a == 0 && b == 0) {
-					code = 1;
-				} else if (a == 127 && b == 127) {
-					code = 2;
-				} else {
-					code = 3;
-				}
-				dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
-				if (code == 3) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-		if (implicit_mask) {
-			if (pos != out_size) {
-				return PackedByteArray();
-			}
-			return out;
-		}
-		for (int i = 0; i < p_racer_count; ++i) {
-			const uint8_t a = src[mask_base + (i * 2)];
-			const uint8_t b = src[mask_base + (i * 2) + 1];
-			uint8_t code = 15;
-			for (int p = 0; p < 10; ++p) {
-				if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
-					code = static_cast<uint8_t>(p);
-					break;
-				}
-			}
-			if (mask1) {
-				if (code == 0) {
-					dst[mask_code_pos + (i >> 3)] &= static_cast<uint8_t>(~(1u << (i & 7)));
-				} else {
-					dst[mask_code_pos + (i >> 3)] |= static_cast<uint8_t>(1u << (i & 7));
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			} else if (mask2) {
-				uint8_t compact_code = 3;
-				if (code == 0) {
-					compact_code = 0;
-				} else if (code == 3) {
-					compact_code = 1;
-				} else if (code == 4) {
-					compact_code = 2;
-				}
-				dst[mask_code_pos + (i >> 2)] |= static_cast<uint8_t>(compact_code << ((i & 3) * 2));
-				if (compact_code == 3) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			} else if (mask3) {
-				const int compact_code = auth_input_low_entropy_mask3_code(code);
-				if (compact_code >= 0) {
-					auth_input_write_packed3(dst + mask_code_pos, i, static_cast<uint8_t>(compact_code));
-				} else {
-					auth_input_write_packed3(dst + mask_code_pos, i, 7);
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			} else {
-				dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-				if (code == 15) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-	} else if (pair_table) {
-		for (int field = 0; field < 3; ++field) {
-			const int base = field * field_bytes;
-			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
-			const int code_pos = pos;
-			pos += table_code_bytes;
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t a = src[base + (i * 2)];
-				const uint8_t b = src[base + (i * 2) + 1];
-				uint8_t code = 15;
-				for (int p = 0; p < 15; ++p) {
-					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
-						code = static_cast<uint8_t>(p);
-						break;
-					}
-				}
-				dst[code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-				if (code == 15) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-	} else {
-		std::memcpy(dst + pos, src, static_cast<size_t>(3 * field_bytes));
-		pos += 3 * field_bytes;
-	}
-	if (implicit_tail) {
-		if (pos != out_size) {
-			return PackedByteArray();
-		}
-		return out;
-	}
-	if (!escape_tail) {
-		if (!implicit_sv) {
-			std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
-			const int sv_class_pos = pos;
-			pos += sv_class_bytes;
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t a = src[sv_base + (i * 2)];
-				const uint8_t b = src[sv_base + (i * 2) + 1];
-				uint8_t code = 2;
-				if (a == 127 && b == 0) {
-					code = 0;
-				} else if (a == 0 && b == 0) {
-					code = 1;
-				} else if (a == 127 && b == 127) {
-					code = 2;
-				} else {
-					code = 3;
-				}
-				dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
-				if (code == 3) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-		if (implicit_mask) {
-			if (pos != out_size) {
-				return PackedByteArray();
-			}
-			return out;
-		}
-		std::memset(dst + pos, 0, static_cast<size_t>(mask_class_bytes));
-		const int mask_code_pos = pos;
-		pos += mask_class_bytes;
-		for (int i = 0; i < p_racer_count; ++i) {
-			const uint8_t a = src[mask_base + (i * 2)];
-			const uint8_t b = src[mask_base + (i * 2) + 1];
-			uint8_t code = 15;
-			for (int p = 0; p < 10; ++p) {
-				if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
-					code = static_cast<uint8_t>(p);
-					break;
-				}
-			}
-			if (mask1) {
-				if (code == 0) {
-					dst[mask_code_pos + (i >> 3)] &= static_cast<uint8_t>(~(1u << (i & 7)));
-				} else {
-					dst[mask_code_pos + (i >> 3)] |= static_cast<uint8_t>(1u << (i & 7));
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			} else {
-				dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-				if (code == 15) {
-					dst[pos++] = a;
-					dst[pos++] = b;
-				}
-			}
-		}
-	}
-	if (pos != out_size) {
-		return PackedByteArray();
-	}
-	return out;
-}
-
-bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArray& out, int frame_count, int p_racer_count, int external_sublayout)
-{
-	if (frame_count != 2 || p_racer_count <= 0) {
-		return false;
-	}
-	const int field_bytes = frame_count * p_racer_count;
-	const int sv_class_bytes = (p_racer_count + 3) >> 2;
-	const int mask_code_bytes = (p_racer_count + 1) >> 1;
-	const bool read_sublayout = external_sublayout < 0;
-	if (encoded.size() < (read_sublayout ? 1 : 0) || out.resize(5 * field_bytes) != 0) {
-		return false;
-	}
-	const uint8_t* src = encoded.ptr();
-	uint8_t* dst = out.ptrw();
-	int pos = 0;
-	const uint8_t sublayout = read_sublayout ? src[pos++] : static_cast<uint8_t>(external_sublayout);
-	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
-	const uint8_t layout_sublayout = auth_input_low_entropy_layout_sublayout(sublayout);
-	const bool implicit_tail = false;
-	const bool implicit_mask =
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 ||
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
-	const bool implicit_sv = implicit_tail || pair_table != nullptr;
-	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
-	const bool mask1 = auth_input_low_entropy_sublayout_mask1(sublayout);
-	const bool mask2 = auth_input_low_entropy_sublayout_mask2(sublayout);
-	const bool mask3 = auth_input_low_entropy_sublayout_mask3(sublayout);
-	const int mask1_bytes = (p_racer_count + 7) >> 3;
-	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
-	const int sv_min_bytes = implicit_sv ? 0 : sv_class_bytes;
-	const int mask_class_bytes = implicit_mask ? 0 : (mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes)));
-	if (encoded.size() < pos + sv_min_bytes + mask_class_bytes) {
-		return false;
-	}
-	int tail_field_code_pos[3] = {};
-	int tail_sv_class_pos = 0;
-	int tail_mask_code_pos = 0;
-	if (pair_table && escape_tail) {
-		const int table_code_bytes = (p_racer_count + 1) >> 1;
-		for (int field = 0; field < 3; ++field) {
-			tail_field_code_pos[field] = pos;
-			pos += table_code_bytes;
-		}
-		if (!implicit_sv) {
-			tail_sv_class_pos = pos;
-			pos += sv_class_bytes;
-		}
-		tail_mask_code_pos = pos;
-		pos += mask_class_bytes;
-		if (pos > encoded.size()) {
-			return false;
-		}
-		for (int field = 0; field < 3; ++field) {
-			const int base = field * field_bytes;
-			const int code_pos = tail_field_code_pos[field];
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t code = static_cast<uint8_t>((src[code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f);
-				uint8_t a = 0;
-				uint8_t b = 0;
-				if (code < 15) {
-					a = pair_table[field][code][0];
-					b = pair_table[field][code][1];
-				} else {
-					if (pos + 2 > encoded.size()) {
-						return false;
-					}
-					a = src[pos++];
-					b = src[pos++];
-				}
-				dst[base + (i * 2)] = a;
-				dst[base + (i * 2) + 1] = b;
-			}
-		}
-	} else if (pair_table) {
-		const int table_code_bytes = (p_racer_count + 1) >> 1;
-		for (int field = 0; field < 3; ++field) {
-			const int base = field * field_bytes;
-			const int code_pos = pos;
-			pos += table_code_bytes;
-			if (pos > encoded.size()) {
-				return false;
-			}
-			for (int i = 0; i < p_racer_count; ++i) {
-				const uint8_t code = static_cast<uint8_t>((src[code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f);
-				uint8_t a = 0;
-				uint8_t b = 0;
-				if (code < 15) {
-					a = pair_table[field][code][0];
-					b = pair_table[field][code][1];
-				} else {
-					if (pos + 2 > encoded.size()) {
-						return false;
-					}
-					a = src[pos++];
-					b = src[pos++];
-				}
-				dst[base + (i * 2)] = a;
-				dst[base + (i * 2) + 1] = b;
-			}
-		}
-	} else if (layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT ||
-		layout_sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1) {
-		if (pos + (3 * field_bytes) > encoded.size()) {
-			return false;
-		}
-		std::memcpy(dst, src + pos, static_cast<size_t>(3 * field_bytes));
-		pos += 3 * field_bytes;
-	} else {
-		return false;
-	}
-	if (implicit_tail) {
-		if (pos != encoded.size()) {
-			return false;
-		}
-		const int sv_base = 3 * field_bytes;
-		const int mask_base = 4 * field_bytes;
-		for (int i = 0; i < p_racer_count; ++i) {
-			dst[sv_base + (i * 2)] = 127;
-			dst[sv_base + (i * 2) + 1] = 0;
-			dst[mask_base + (i * 2)] = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
-			dst[mask_base + (i * 2) + 1] = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
-		}
-		return true;
-	}
-	const int sv_base = 3 * field_bytes;
-	if (implicit_sv) {
-		for (int i = 0; i < p_racer_count; ++i) {
-			dst[sv_base + (i * 2)] = 127;
-			dst[sv_base + (i * 2) + 1] = 0;
-		}
-	} else {
-		const int sv_class_pos = escape_tail ? tail_sv_class_pos : pos;
-		if (!escape_tail) {
-			pos += sv_class_bytes;
-			if (pos > encoded.size()) {
-				return false;
-			}
-		}
-		for (int i = 0; i < p_racer_count; ++i) {
-			const uint8_t code = static_cast<uint8_t>((src[sv_class_pos + (i >> 2)] >> ((i & 3) * 2)) & 0x03);
-			uint8_t a = 127;
-			uint8_t b = 0;
-			if (code == 1) {
-				a = 0;
-				b = 0;
-			} else if (code == 2) {
-				a = 127;
-				b = 127;
-			} else if (code == 3) {
-				if (pos + 2 > encoded.size()) {
-					return false;
-				}
-				a = src[pos++];
-				b = src[pos++];
-			}
-			dst[sv_base + (i * 2)] = a;
-			dst[sv_base + (i * 2) + 1] = b;
-		}
-	}
-	if (implicit_mask) {
-		if (pos != encoded.size()) {
-			return false;
-		}
-		const int mask_base = 4 * field_bytes;
-		for (int i = 0; i < p_racer_count; ++i) {
-			dst[mask_base + (i * 2)] = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
-			dst[mask_base + (i * 2) + 1] = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
-		}
-		return true;
-	}
-	const int mask_code_pos = escape_tail ? tail_mask_code_pos : pos;
-	if (!escape_tail) {
-		pos += mask_class_bytes;
-		if (pos > encoded.size()) {
-			return false;
-		}
-	}
-	const int mask_base = 4 * field_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t code = mask1 ?
-			static_cast<uint8_t>((src[mask_code_pos + (i >> 3)] >> (i & 7)) & 0x01) : (mask3 ?
-			auth_input_read_packed3(src + mask_code_pos, i) : (mask2 ?
-			static_cast<uint8_t>((src[mask_code_pos + (i >> 2)] >> ((i & 3) * 2)) & 0x03) :
-			static_cast<uint8_t>((src[mask_code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f)));
-		uint8_t a = 0;
-		uint8_t b = 0;
-		if (mask1 && code == 0) {
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
-		} else if (mask3 && code < 7) {
-			const uint8_t table_code = MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[code];
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[table_code][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[table_code][1];
-		} else if (mask2 && code == 0) {
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
-		} else if (mask2 && code == 1) {
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[3][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[3][1];
-		} else if (mask2 && code == 2) {
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[4][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[4][1];
-		} else if (!mask1 && !mask2 && !mask3 && code < 10) {
-			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[code][0];
-			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[code][1];
-		} else if ((mask1 && code == 1) || (mask3 && code == 7) || (mask2 && code == 3) || (!mask2 && !mask3 && code == 15)) {
-			if (pos + 2 > encoded.size()) {
-				return false;
-			}
-			a = src[pos++];
-			b = src[pos++];
-		} else {
-			return false;
-		}
-		dst[mask_base + (i * 2)] = a;
-		dst[mask_base + (i * 2) + 1] = b;
-	}
-	return pos == encoded.size();
-}
-
-PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false, bool delta_low_entropy_surface_s11_dict = false, bool delta_low_entropy_surface_fallback_s1_dict = false, bool delta_low_entropy_surface_fallback_s3_dict = false, bool delta_low_entropy_surface_fallback_s6_dict = false, bool zero_bitmap_strafe_sparse_dict = false, bool delta_pairs_alt_dict = false, bool delta_pairs_surface_alt_dict = false)
+PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, AuthInputDictionary dictionary)
 {
 	const int raw_size = raw.size();
-	if (raw_size <= 0) {
-		return PackedByteArray();
-	}
 	ZSTD_CCtx* cctx = auth_input_zstd_cctx();
-	ZSTD_CDict* cdict = nullptr;
-	if (delta_low_entropy_s15_dict) {
-		cdict = auth_input_delta_low_entropy_s15_zstd_cdict();
-	} else if (delta_low_entropy_surface_s11_dict) {
-		cdict = auth_input_delta_low_entropy_surface_s11_zstd_cdict();
-	} else if (delta_low_entropy_s12_dict) {
-		cdict = auth_input_delta_low_entropy_s12_zstd_cdict();
-	} else if (delta_low_entropy_s11_dict) {
-		cdict = auth_input_delta_low_entropy_s11_zstd_cdict();
-	} else if (delta_low_entropy_s1_dict) {
-		cdict = auth_input_delta_low_entropy_s1_zstd_cdict();
-	} else if (delta_low_entropy_surface_alt_dict) {
-		cdict = auth_input_delta_low_entropy_surface_alt_zstd_cdict();
-	} else if (delta_low_entropy_alt_dict) {
-		cdict = auth_input_delta_low_entropy_alt_zstd_cdict();
-	} else if (delta_low_entropy_surface_fallback_s1_dict) {
-		cdict = auth_input_delta_low_entropy_surface_fallback_s1_zstd_cdict();
-	} else if (delta_low_entropy_surface_fallback_s3_dict) {
-		cdict = auth_input_delta_low_entropy_surface_fallback_s3_zstd_cdict();
-	} else if (delta_low_entropy_surface_fallback_s6_dict) {
-		cdict = auth_input_delta_low_entropy_surface_fallback_s6_zstd_cdict();
-	} else if (delta_low_entropy_surface_fallback_alt_dict) {
-		cdict = auth_input_delta_low_entropy_surface_fallback_alt_zstd_cdict();
-	} else if (delta_low_entropy_surface_fallback_dict) {
-		cdict = auth_input_delta_low_entropy_surface_fallback_zstd_cdict();
-	} else if (delta_low_entropy_surface_dict) {
-		cdict = auth_input_delta_low_entropy_surface_zstd_cdict();
-	} else if (delta_pairs_surface_alt_dict) {
-		cdict = auth_input_delta_pairs_surface_alt_zstd_cdict();
-	} else if (delta_pairs_surface_dict) {
-		cdict = auth_input_delta_pairs_surface_zstd_cdict();
-	} else if (delta_low_entropy_dict) {
-		cdict = auth_input_delta_low_entropy_zstd_cdict();
-	} else if (delta_pairs_alt_dict) {
-		cdict = auth_input_delta_pairs_alt_zstd_cdict();
-	} else if (delta_pairs_dict) {
-		cdict = auth_input_delta_pairs_zstd_cdict();
-	} else if (hybrid_smooth_dict) {
-		cdict = auth_input_hybrid_smooth_zstd_cdict();
-	} else if (hybrid_dict) {
-		cdict = auth_input_hybrid_zstd_cdict();
-	} else if (zero_bitmap_strafe_sparse_dict) {
-		cdict = auth_input_zero_bitmap_strafe_sparse_zstd_cdict();
-	} else if (zero_bitmap_dict) {
-		cdict = auth_input_zero_bitmap_zstd_cdict();
-	} else {
-		cdict = auth_input_zstd_cdict();
-	}
-	if (!cctx || !cdict) {
+	ZSTD_CDict* cdict = auth_input_cdict(dictionary);
+	if (raw_size <= 0 || !cctx || !cdict) {
 		return PackedByteArray();
 	}
 	const size_t bound = ZSTD_compressBound(static_cast<size_t>(raw_size));
@@ -2066,17 +548,11 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 	if (out.resize(static_cast<int>(bound)) != 0) {
 		return PackedByteArray();
 	}
-	size_t zstd_result = ZSTD_compressBegin_usingCDict(cctx, cdict);
-	if (ZSTD_isError(zstd_result)) {
+	const size_t begin_result = ZSTD_compressBegin_usingCDict(cctx, cdict);
+	if (ZSTD_isError(begin_result)) {
 		return PackedByteArray();
 	}
-	const size_t compressed_size = ZSTD_compressBlock(
-		cctx,
-		out.ptrw(),
-		bound,
-		raw.ptr(),
-		static_cast<size_t>(raw_size)
-	);
+	const size_t compressed_size = ZSTD_compressBlock(cctx, out.ptrw(), bound, raw.ptr(), static_cast<size_t>(raw_size));
 	if (ZSTD_isError(compressed_size) || compressed_size == 0 || compressed_size > bound || compressed_size > static_cast<size_t>(INT32_MAX)) {
 		return PackedByteArray();
 	}
@@ -2087,11 +563,8 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 PackedByteArray compress_auth_input_plain(const PackedByteArray& raw)
 {
 	const int raw_size = raw.size();
-	if (raw_size <= 0) {
-		return PackedByteArray();
-	}
 	ZSTD_CCtx* cctx = auth_input_zstd_cctx();
-	if (!cctx) {
+	if (raw_size <= 0 || !cctx) {
 		return PackedByteArray();
 	}
 	const size_t bound = ZSTD_compressBound(static_cast<size_t>(raw_size));
@@ -2103,29 +576,13 @@ PackedByteArray compress_auth_input_plain(const PackedByteArray& raw)
 		return PackedByteArray();
 	}
 	ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
-	size_t zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, MXT_NET_AUTH_ZSTD_LEVEL);
-	if (ZSTD_isError(zstd_result)) {
+	if (ZSTD_isError(ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, MXT_NET_AUTH_ZSTD_LEVEL)) ||
+		ZSTD_isError(ZSTD_CCtx_setParameter(cctx, ZSTD_c_contentSizeFlag, 0)) ||
+		ZSTD_isError(ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0)) ||
+		ZSTD_isError(ZSTD_CCtx_setParameter(cctx, ZSTD_c_dictIDFlag, 0))) {
 		return PackedByteArray();
 	}
-	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_contentSizeFlag, 0);
-	if (ZSTD_isError(zstd_result)) {
-		return PackedByteArray();
-	}
-	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0);
-	if (ZSTD_isError(zstd_result)) {
-		return PackedByteArray();
-	}
-	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_dictIDFlag, 0);
-	if (ZSTD_isError(zstd_result)) {
-		return PackedByteArray();
-	}
-	const size_t compressed_size = ZSTD_compress2(
-		cctx,
-		out.ptrw(),
-		bound,
-		raw.ptr(),
-		static_cast<size_t>(raw_size)
-	);
+	const size_t compressed_size = ZSTD_compress2(cctx, out.ptrw(), bound, raw.ptr(), static_cast<size_t>(raw_size));
 	if (ZSTD_isError(compressed_size) || compressed_size > bound || compressed_size > static_cast<size_t>(INT32_MAX)) {
 		return PackedByteArray();
 	}
@@ -2133,259 +590,60 @@ PackedByteArray compress_auth_input_plain(const PackedByteArray& raw)
 	return out;
 }
 
-PackedByteArray compress_auth_input_zero_bitmap_strafe_sparse_with_dict(const PackedByteArray& raw)
+PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, AuthInputDictionary dictionary)
 {
-	return compress_auth_input_with_dict(
-		raw,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, true
-	);
-}
-
-PackedByteArray compress_auth_input_delta_pairs_alt_with_dict(const PackedByteArray& raw)
-{
-	return compress_auth_input_with_dict(
-		raw,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false, true
-	);
-}
-
-PackedByteArray compress_auth_input_delta_pairs_surface_alt_with_dict(const PackedByteArray& raw)
-{
-	return compress_auth_input_with_dict(
-		raw,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false, false, true
-	);
-}
-
-PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false, bool delta_low_entropy_surface_s11_dict = false, bool delta_low_entropy_surface_fallback_s1_dict = false, bool delta_low_entropy_surface_fallback_s3_dict = false, bool delta_low_entropy_surface_fallback_s6_dict = false, bool zero_bitmap_strafe_sparse_dict = false, bool delta_pairs_alt_dict = false, bool delta_pairs_surface_alt_dict = false)
-{
-	if (raw_size <= 0 || compressed.size() <= 0) {
-		return PackedByteArray();
-	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
-	ZSTD_DDict* ddict = nullptr;
-	if (delta_low_entropy_s15_dict) {
-		ddict = auth_input_delta_low_entropy_s15_zstd_ddict();
-	} else if (delta_low_entropy_surface_s11_dict) {
-		ddict = auth_input_delta_low_entropy_surface_s11_zstd_ddict();
-	} else if (delta_low_entropy_s12_dict) {
-		ddict = auth_input_delta_low_entropy_s12_zstd_ddict();
-	} else if (delta_low_entropy_s11_dict) {
-		ddict = auth_input_delta_low_entropy_s11_zstd_ddict();
-	} else if (delta_low_entropy_s1_dict) {
-		ddict = auth_input_delta_low_entropy_s1_zstd_ddict();
-	} else if (delta_low_entropy_surface_alt_dict) {
-		ddict = auth_input_delta_low_entropy_surface_alt_zstd_ddict();
-	} else if (delta_low_entropy_alt_dict) {
-		ddict = auth_input_delta_low_entropy_alt_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s1_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s3_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s6_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_alt_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_zstd_ddict();
-	} else if (delta_low_entropy_surface_dict) {
-		ddict = auth_input_delta_low_entropy_surface_zstd_ddict();
-	} else if (delta_pairs_surface_alt_dict) {
-		ddict = auth_input_delta_pairs_surface_alt_zstd_ddict();
-	} else if (delta_pairs_surface_dict) {
-		ddict = auth_input_delta_pairs_surface_zstd_ddict();
-	} else if (delta_low_entropy_dict) {
-		ddict = auth_input_delta_low_entropy_zstd_ddict();
-	} else if (delta_pairs_alt_dict) {
-		ddict = auth_input_delta_pairs_alt_zstd_ddict();
-	} else if (delta_pairs_dict) {
-		ddict = auth_input_delta_pairs_zstd_ddict();
-	} else if (hybrid_smooth_dict) {
-		ddict = auth_input_hybrid_smooth_zstd_ddict();
-	} else if (hybrid_dict) {
-		ddict = auth_input_hybrid_zstd_ddict();
-	} else if (zero_bitmap_strafe_sparse_dict) {
-		ddict = auth_input_zero_bitmap_strafe_sparse_zstd_ddict();
-	} else if (zero_bitmap_dict) {
-		ddict = auth_input_zero_bitmap_zstd_ddict();
-	} else {
-		ddict = auth_input_zstd_ddict();
-	}
-	if (!dctx || !ddict) {
+	ZSTD_DDict* ddict = auth_input_ddict(dictionary);
+	if (raw_size <= 0 || compressed.size() <= 0 || !dctx || !ddict) {
 		return PackedByteArray();
 	}
 	PackedByteArray out;
-	if (out.resize(raw_size) != 0) {
+	if (out.resize(raw_size) != 0 || ZSTD_isError(ZSTD_decompressBegin_usingDDict(dctx, ddict))) {
 		return PackedByteArray();
 	}
-	size_t zstd_result = ZSTD_decompressBegin_usingDDict(dctx, ddict);
-	if (ZSTD_isError(zstd_result)) {
-		return PackedByteArray();
-	}
-	const size_t decompressed_size = ZSTD_decompressBlock(
-		dctx,
-		out.ptrw(),
-		static_cast<size_t>(raw_size),
-		compressed.ptr(),
-		static_cast<size_t>(compressed.size())
-	);
+	const size_t decompressed_size = ZSTD_decompressBlock(dctx, out.ptrw(), static_cast<size_t>(raw_size), compressed.ptr(), static_cast<size_t>(compressed.size()));
 	if (ZSTD_isError(decompressed_size) || decompressed_size != static_cast<size_t>(raw_size)) {
 		return PackedByteArray();
 	}
 	return out;
 }
 
+PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, AuthInputDictionary dictionary)
+{
+	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
+	ZSTD_DDict* ddict = auth_input_ddict(dictionary);
+	if (raw_size_bound <= 0 || compressed.size() <= 0 || !dctx || !ddict) {
+		return PackedByteArray();
+	}
+	PackedByteArray out;
+	if (out.resize(raw_size_bound) != 0 || ZSTD_isError(ZSTD_decompressBegin_usingDDict(dctx, ddict))) {
+		return PackedByteArray();
+	}
+	const size_t decompressed_size = ZSTD_decompressBlock(dctx, out.ptrw(), static_cast<size_t>(raw_size_bound), compressed.ptr(), static_cast<size_t>(compressed.size()));
+	if (ZSTD_isError(decompressed_size) || decompressed_size == 0 || decompressed_size > static_cast<size_t>(raw_size_bound) || decompressed_size > static_cast<size_t>(INT32_MAX)) {
+		return PackedByteArray();
+	}
+	out.resize(static_cast<int>(decompressed_size));
+	return out;
+}
+
 PackedByteArray decompress_auth_input_plain_bound(const PackedByteArray& compressed, int raw_size_bound)
 {
-	if (raw_size_bound <= 0 || compressed.size() <= 0) {
-		return PackedByteArray();
-	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
-	if (!dctx) {
+	if (raw_size_bound <= 0 || compressed.size() <= 0 || !dctx) {
 		return PackedByteArray();
 	}
 	PackedByteArray out;
 	if (out.resize(raw_size_bound) != 0) {
 		return PackedByteArray();
 	}
-	const size_t decompressed_size = ZSTD_decompressDCtx(
-		dctx,
-		out.ptrw(),
-		static_cast<size_t>(raw_size_bound),
-		compressed.ptr(),
-		static_cast<size_t>(compressed.size())
-	);
-	if (ZSTD_isError(decompressed_size) || decompressed_size > static_cast<size_t>(raw_size_bound) || decompressed_size > static_cast<size_t>(INT32_MAX)) {
+	const size_t decompressed_size = ZSTD_decompressDCtx(dctx, out.ptrw(), static_cast<size_t>(raw_size_bound), compressed.ptr(), static_cast<size_t>(compressed.size()));
+	if (ZSTD_isError(decompressed_size) || decompressed_size == 0 || decompressed_size > static_cast<size_t>(raw_size_bound) || decompressed_size > static_cast<size_t>(INT32_MAX)) {
 		return PackedByteArray();
 	}
 	out.resize(static_cast<int>(decompressed_size));
 	return out;
 }
-
-PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false, bool delta_low_entropy_surface_s11_dict = false, bool delta_low_entropy_surface_fallback_s1_dict = false, bool delta_low_entropy_surface_fallback_s3_dict = false, bool delta_low_entropy_surface_fallback_s6_dict = false, bool zero_bitmap_strafe_sparse_dict = false, bool delta_pairs_alt_dict = false, bool delta_pairs_surface_alt_dict = false)
-{
-	if (raw_size_bound <= 0 || compressed.size() <= 0) {
-		return PackedByteArray();
-	}
-	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
-	ZSTD_DDict* ddict = nullptr;
-	if (delta_low_entropy_s15_dict) {
-		ddict = auth_input_delta_low_entropy_s15_zstd_ddict();
-	} else if (delta_low_entropy_surface_s11_dict) {
-		ddict = auth_input_delta_low_entropy_surface_s11_zstd_ddict();
-	} else if (delta_low_entropy_s12_dict) {
-		ddict = auth_input_delta_low_entropy_s12_zstd_ddict();
-	} else if (delta_low_entropy_s11_dict) {
-		ddict = auth_input_delta_low_entropy_s11_zstd_ddict();
-	} else if (delta_low_entropy_s1_dict) {
-		ddict = auth_input_delta_low_entropy_s1_zstd_ddict();
-	} else if (delta_low_entropy_surface_alt_dict) {
-		ddict = auth_input_delta_low_entropy_surface_alt_zstd_ddict();
-	} else if (delta_low_entropy_alt_dict) {
-		ddict = auth_input_delta_low_entropy_alt_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s1_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s1_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s3_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s3_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_s6_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_s6_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_alt_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_alt_zstd_ddict();
-	} else if (delta_low_entropy_surface_fallback_dict) {
-		ddict = auth_input_delta_low_entropy_surface_fallback_zstd_ddict();
-	} else if (delta_low_entropy_surface_dict) {
-		ddict = auth_input_delta_low_entropy_surface_zstd_ddict();
-	} else if (delta_pairs_surface_alt_dict) {
-		ddict = auth_input_delta_pairs_surface_alt_zstd_ddict();
-	} else if (delta_pairs_surface_dict) {
-		ddict = auth_input_delta_pairs_surface_zstd_ddict();
-	} else if (delta_low_entropy_dict) {
-		ddict = auth_input_delta_low_entropy_zstd_ddict();
-	} else if (delta_pairs_alt_dict) {
-		ddict = auth_input_delta_pairs_alt_zstd_ddict();
-	} else if (delta_pairs_dict) {
-		ddict = auth_input_delta_pairs_zstd_ddict();
-	} else if (hybrid_smooth_dict) {
-		ddict = auth_input_hybrid_smooth_zstd_ddict();
-	} else if (hybrid_dict) {
-		ddict = auth_input_hybrid_zstd_ddict();
-	} else if (zero_bitmap_strafe_sparse_dict) {
-		ddict = auth_input_zero_bitmap_strafe_sparse_zstd_ddict();
-	} else if (zero_bitmap_dict) {
-		ddict = auth_input_zero_bitmap_zstd_ddict();
-	} else {
-		ddict = auth_input_zstd_ddict();
-	}
-	if (!dctx || !ddict) {
-		return PackedByteArray();
-	}
-	PackedByteArray out;
-	if (out.resize(raw_size_bound) != 0) {
-		return PackedByteArray();
-	}
-	size_t zstd_result = ZSTD_decompressBegin_usingDDict(dctx, ddict);
-	if (ZSTD_isError(zstd_result)) {
-		return PackedByteArray();
-	}
-	const size_t decompressed_size = ZSTD_decompressBlock(
-		dctx,
-		out.ptrw(),
-		static_cast<size_t>(raw_size_bound),
-		compressed.ptr(),
-		static_cast<size_t>(compressed.size())
-	);
-	if (ZSTD_isError(decompressed_size) || decompressed_size > static_cast<size_t>(raw_size_bound) || decompressed_size > static_cast<size_t>(INT32_MAX)) {
-		return PackedByteArray();
-	}
-	out.resize(static_cast<int>(decompressed_size));
-	return out;
-}
-
-PackedByteArray decompress_auth_input_zero_bitmap_strafe_sparse_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound)
-{
-	return decompress_auth_input_with_dict_bound(
-		compressed,
-		raw_size_bound,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, true
-	);
-}
-
-PackedByteArray decompress_auth_input_delta_pairs_alt_with_dict(const PackedByteArray& compressed, int raw_size)
-{
-	return decompress_auth_input_with_dict(
-		compressed,
-		raw_size,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false, true
-	);
-}
-
-PackedByteArray decompress_auth_input_delta_pairs_surface_alt_with_dict(const PackedByteArray& compressed, int raw_size)
-{
-	return decompress_auth_input_with_dict(
-		compressed,
-		raw_size,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false,
-		false, false, false, false, false, false, true
-	);
-}
-
 }
 
 bool NetcodeSession::write_authoritative_input_raw(
@@ -2397,12 +655,13 @@ bool NetcodeSession::write_authoritative_input_raw(
 	const AuthInputLayout layout = static_cast<AuthInputLayout>(p_layout);
 	uint8_t* raw_bytes = raw.ptrw();
 	int raw_pos = 0;
-	const bool delta_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
-	const bool delta_pairs_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
 	const bool bitpacked_layout = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS ||
 		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 	const bool bitpacked_analog_delta = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
-	if (bitpacked_layout) {
+	if (!bitpacked_layout) {
+		return false;
+	}
+	{
 		std::memset(raw_bytes, 0, static_cast<size_t>(raw.size()));
 		const int input_count = frame_count * racer_count;
 		const int bitset_bytes = (input_count + 7) >> 3;
@@ -2474,168 +733,6 @@ bool NetcodeSession::write_authoritative_input_raw(
 		}
 		return raw_pos == raw.size();
 	}
-	if (delta_pairs_layout) {
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_trigger_byte(input.strafe_left);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_trigger_byte(input.strafe_right);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_axis_byte(input.steer_horizontal);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_axis_byte(input.steer_vertical);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_button_mask(input);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		return raw_pos == raw.size();
-	}
-	if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS || delta_layout) {
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_button_mask(input);
-				if (delta_layout && f > 0) {
-					const InputFrame* prev_frame = frames[f - 1];
-					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
-					value = zigzag_i8(wrapped_i8_delta(value, input_button_mask(prev)));
-				}
-				raw_bytes[raw_pos++] = value;
-			}
-		}
-	} else {
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input.accelerate > 0.0f ? 1 : 0;
-			}
-		}
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input.brake > 0.0f ? 1 : 0;
-			}
-		}
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input.spinattack ? 1 : 0;
-			}
-		}
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input.sideattack ? 1 : 0;
-			}
-		}
-		for (int f = 0; f < frame_count; ++f) {
-			const InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input.boost ? 1 : 0;
-			}
-		}
-	}
-	for (int f = 0; f < frame_count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			uint8_t value = input_trigger_byte(input.strafe_left);
-			if (delta_layout && f > 0) {
-				const InputFrame* prev_frame = frames[f - 1];
-				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
-				value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_left)));
-			}
-			raw_bytes[raw_pos++] = value;
-		}
-	}
-	for (int f = 0; f < frame_count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			uint8_t value = input_trigger_byte(input.strafe_right);
-			if (delta_layout && f > 0) {
-				const InputFrame* prev_frame = frames[f - 1];
-				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
-				value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_right)));
-			}
-			raw_bytes[raw_pos++] = value;
-		}
-	}
-	for (int f = 0; f < frame_count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			uint8_t value = input_axis_byte(input.steer_horizontal);
-			if (delta_layout && f > 0) {
-				const InputFrame* prev_frame = frames[f - 1];
-				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
-				value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_horizontal)));
-			}
-			raw_bytes[raw_pos++] = value;
-		}
-	}
-	for (int f = 0; f < frame_count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			uint8_t value = input_axis_byte(input.steer_vertical);
-			if (delta_layout && f > 0) {
-				const InputFrame* prev_frame = frames[f - 1];
-				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
-				value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_vertical)));
-			}
-			raw_bytes[raw_pos++] = value;
-		}
-	}
-	return raw_pos == raw.size();
 }
 
 PlayerInput NetcodeSession::decay_predicted_input(const PlayerInput& prev)
@@ -3114,21 +1211,21 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	int selected_raw_size = bitpacked_zero_raw.size();
 	PackedByteArray candidate;
 	if (bitpacked_zero_strafe_sparse_raw.size() > 0) {
-		compressed = compress_auth_input_zero_bitmap_strafe_sparse_with_dict(bitpacked_zero_strafe_sparse_raw);
+		compressed = compress_auth_input_with_dict(bitpacked_zero_strafe_sparse_raw, AUTH_INPUT_DICTIONARY_STRAFE_SPARSE);
 		if (compressed.size() > 0) {
 			compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD;
 			selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE;
 			selected_raw_size = bitpacked_zero_strafe_sparse_raw.size();
 		}
 	}
-	candidate = compress_auth_input_with_dict(bitpacked_zero_raw, false, true);
+	candidate = compress_auth_input_with_dict(bitpacked_zero_raw, AUTH_INPUT_DICTIONARY_ZERO_BITMAP);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
 		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD;
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
 		selected_raw_size = bitpacked_zero_raw.size();
 	}
-	candidate = compress_auth_input_with_dict(hybrid_raw, false, false, true);
+	candidate = compress_auth_input_with_dict(hybrid_raw, AUTH_INPUT_DICTIONARY_SMOOTH_ANALOG_DELTA);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
 		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD;
@@ -3137,16 +1234,14 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	}
 	if (compressed.size() <= 0) {
 		compressed = compress_auth_input_plain(bitpacked_zero_raw);
-		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD;
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD;
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
 		selected_raw_size = bitpacked_zero_raw.size();
 	}
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
-	writer.data[mode_count_pos] = selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE ?
-			pack_auth_low_entropy_mode_sublayout_phase(compression_mode, MXT_NET_AUTH_ZERO_BITMAP_STRAFE_SPARSE_COUNT_CODE, race_phase) :
-			pack_auth_mode_count_phase(compression_mode, count, race_phase);
+	writer.data[mode_count_pos] = pack_auth_mode_count_phase(compression_mode, count, race_phase);
 	stat_auth_raw_bytes += static_cast<uint64_t>(selected_raw_size);
 	stat_auth_payload_bytes += static_cast<uint64_t>(writer.pos);
 	stat_auth_compression_candidates += static_cast<uint64_t>(bitpacked_zero_strafe_sparse_raw.size() > 0 ? 3 : 2);
@@ -3160,7 +1255,7 @@ int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray pack
 
 	PacketReader reader(packet);
 	uint8_t count = 0;
-	uint8_t mode_count_phase = MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD;
+	uint8_t mode_count_phase = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD;
 	if (external_mode_count_phase >= 0) {
 		mode_count_phase = static_cast<uint8_t>(external_mode_count_phase & 0xff);
 	} else {
@@ -3169,28 +1264,8 @@ int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray pack
 		}
 	}
 	const uint8_t compression_mode = mode_count_phase & MXT_NET_AUTH_MODE_MASK;
-	const bool mode_is_low_entropy =
-		compression_mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD ||
-		compression_mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT_ZSTD ||
-		compression_mode == MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT_ZSTD;
 	const uint8_t count_code = static_cast<uint8_t>((mode_count_phase & MXT_NET_AUTH_COUNT_MASK) >> MXT_NET_AUTH_COUNT_SHIFT);
-	const bool mode_is_zero_bitmap_strafe_sparse =
-		compression_mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD &&
-		count_code == MXT_NET_AUTH_ZERO_BITMAP_STRAFE_SPARSE_COUNT_CODE;
-	const bool mode_is_delta_pairs_alt =
-		(compression_mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_DICT_ZSTD ||
-			compression_mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD) &&
-		count_code == MXT_NET_AUTH_DELTA_PAIRS_ALT_COUNT_CODE;
-	int low_entropy_sublayout = -1;
-	if (mode_is_zero_bitmap_strafe_sparse || mode_is_delta_pairs_alt) {
-		count = 2;
-	} else if (mode_is_low_entropy) {
-		if (count_code > MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT) {
-			return PACKET_STORE_INVALID;
-		}
-		count = 2;
-		low_entropy_sublayout = static_cast<int>(count_code);
-	} else if (count_code == MXT_NET_AUTH_COUNT_ESCAPE) {
+	if (count_code == MXT_NET_AUTH_COUNT_ESCAPE) {
 		if (!reader.read_u8(count)) {
 			return PACKET_STORE_INVALID;
 		}
@@ -3200,129 +1275,47 @@ int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray pack
 	if (((mode_count_phase & MXT_NET_AUTH_PHASE_BIT) ? 1 : 0) != (expected_race_phase & 1)) {
 		return PACKET_STORE_STALE;
 	}
-	if (authoritative_last_tick < 0 || static_cast<int>(count) - 1 > authoritative_last_tick) {
+	if (!auth_input_mode_valid(compression_mode) || authoritative_last_tick < 0 || static_cast<int>(count) - 1 > authoritative_last_tick) {
 		return PACKET_STORE_INVALID;
 	}
 	const int first_tick = authoritative_last_tick - static_cast<int>(count) + 1;
 	last_authoritative_packet_result.first_tick = first_tick;
 	last_authoritative_packet_result.count = static_cast<int32_t>(count);
-	if (!auth_input_mode_valid(compression_mode)) {
-		return PACKET_STORE_INVALID;
-	}
-	const AuthInputLayout packet_layout = mode_is_zero_bitmap_strafe_sparse ?
-		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE :
-		auth_input_layout_from_mode(compression_mode);
-	const bool zero_bitmap_strafe_sparse_layout = packet_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE;
-	const bool zero_bitmap_layout = packet_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ||
-		zero_bitmap_strafe_sparse_layout;
-	const bool low_entropy_layout = packet_layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY;
-	const int raw_size = low_entropy_layout ?
-		auth_input_delta_low_entropy_raw_size_bound(static_cast<int>(count), racer_count, low_entropy_sublayout < 0) :
-		auth_input_raw_size(static_cast<int>(count), racer_count, packet_layout);
-	if (raw_size < 0) {
-		return PACKET_STORE_INVALID;
-	}
 	if (count == 0) {
 		return PACKET_STORE_VALID;
 	}
-	PackedByteArray compressed = packet.slice(reader.pos, packet.size());
-	PackedByteArray raw;
-	if (mode_is_zero_bitmap_strafe_sparse) {
-		raw = decompress_auth_input_zero_bitmap_strafe_sparse_with_dict_bound(compressed, raw_size);
-	} else if (auth_input_mode_uses_dict(compression_mode)) {
-		if (zero_bitmap_layout) {
-			raw = decompress_auth_input_with_dict_bound(
-				compressed,
-				raw_size,
-				false,
-				auth_input_mode_uses_zero_bitmap_dict(compression_mode)
-			);
-		} else if (low_entropy_layout) {
-			raw = decompress_auth_input_with_dict_bound(
-				compressed,
-				raw_size,
-				false,
-				false,
-				false,
-				false,
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					!auth_input_low_entropy_default_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				false,
-				auth_input_mode_uses_delta_low_entropy_surface_dict(compression_mode) &&
-					!auth_input_low_entropy_surface_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_surface_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(compression_mode) &&
-					!auth_input_low_entropy_fallback_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s3_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s6_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(compression_mode) &&
-					auth_input_low_entropy_fallback_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s3_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_fallback_s6_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_dict(compression_mode) &&
-					auth_input_low_entropy_surface_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_surface_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_dict(compression_mode) &&
-					auth_input_low_entropy_surface_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(compression_mode) &&
-					auth_input_low_entropy_fallback_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(compression_mode) &&
-					auth_input_low_entropy_fallback_s3_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
-				auth_input_mode_uses_delta_low_entropy_surface_fallback_dict(compression_mode) &&
-					auth_input_low_entropy_fallback_s6_sublayout(static_cast<uint8_t>(low_entropy_sublayout))
-			);
-		} else if (mode_is_delta_pairs_alt) {
-			raw = compression_mode == MXT_NET_AUTH_MODE_DELTA_RACER_PAIRS_SURFACE_DICT_ZSTD ?
-				decompress_auth_input_delta_pairs_surface_alt_with_dict(compressed, raw_size) :
-				decompress_auth_input_delta_pairs_alt_with_dict(compressed, raw_size);
-		} else {
-			raw = decompress_auth_input_with_dict(
-				compressed,
-				raw_size,
-				auth_input_mode_uses_hybrid_dict(compression_mode),
-				false,
-				auth_input_mode_uses_hybrid_smooth_dict(compression_mode),
-				auth_input_mode_uses_delta_pairs_dict(compression_mode),
-				false,
-				auth_input_mode_uses_delta_pairs_surface_dict(compression_mode)
-			);
-		}
-	} else if (zero_bitmap_layout) {
-		raw = decompress_auth_input_plain_bound(compressed, raw_size);
-	} else {
-		raw = decompress_auth_input_plain_bound(compressed, raw_size);
-	}
-	if ((!zero_bitmap_layout && !low_entropy_layout && raw.size() != raw_size) ||
-		((zero_bitmap_layout || low_entropy_layout) && raw.size() > raw_size)) {
+
+	const AuthInputLayout packet_layout = auth_input_layout_from_mode(compression_mode);
+	const bool zero_bitmap_strafe_sparse_layout = packet_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE;
+	const bool zero_bitmap_layout = packet_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP || zero_bitmap_strafe_sparse_layout;
+	const int raw_size = auth_input_raw_size(static_cast<int>(count), racer_count, packet_layout);
+	if (raw_size <= 0) {
 		return PACKET_STORE_INVALID;
 	}
-	AuthInputLayout layout = packet_layout;
-	if (low_entropy_layout) {
-		PackedByteArray expanded_raw;
-		if (!decode_delta_low_entropy_raw(raw, expanded_raw, static_cast<int>(count), racer_count, low_entropy_sublayout)) {
+
+	const PackedByteArray compressed = packet.slice(reader.pos, packet.size());
+	PackedByteArray raw;
+	switch (compression_mode) {
+		case MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD:
+			raw = decompress_auth_input_with_dict_bound(compressed, raw_size, AUTH_INPUT_DICTIONARY_ZERO_BITMAP);
+			break;
+		case MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD:
+			raw = decompress_auth_input_with_dict_bound(compressed, raw_size, AUTH_INPUT_DICTIONARY_STRAFE_SPARSE);
+			break;
+		case MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD:
+			raw = decompress_auth_input_with_dict(compressed, raw_size, AUTH_INPUT_DICTIONARY_SMOOTH_ANALOG_DELTA);
+			break;
+		case MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD:
+			raw = decompress_auth_input_plain_bound(compressed, raw_size);
+			break;
+		default:
 			return PACKET_STORE_INVALID;
-		}
-		raw = expanded_raw;
-		layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
 	}
+	if ((!zero_bitmap_layout && raw.size() != raw_size) || (zero_bitmap_layout && (raw.size() <= 0 || raw.size() > raw_size))) {
+		return PACKET_STORE_INVALID;
+	}
+
+	AuthInputLayout layout = packet_layout;
 	if (zero_bitmap_strafe_sparse_layout) {
 		PackedByteArray expanded_raw;
 		if (!decode_zero_bitmap_strafe_sparse_raw(raw, expanded_raw, static_cast<int>(count), racer_count)) {
@@ -3340,176 +1333,15 @@ int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray pack
 		layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 	}
 	const uint8_t* raw_bytes = raw.ptr();
-	int raw_pos = 0;
-	const bool delta_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
-	const bool delta_pairs_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
-	const bool analog_delta_layout = delta_layout || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+	const bool analog_delta_layout = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+	const int input_count = static_cast<int>(count) * racer_count;
+	const int bitset_bytes = (input_count + 7) >> 3;
+	const int expected_bitpacked_size = bitset_bytes * 5 + input_count * 4;
+	if (raw.size() != expected_bitpacked_size) {
+		return PACKET_STORE_INVALID;
+	}
+
 	InputFrame* frames[MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET] = {};
-	for (int f = 0; f < static_cast<int>(count); ++f) {
-		const int tick = first_tick + f;
-		InputFrame& frame = frame_for(authoritative_history, tick);
-		clear_frame(frame, tick);
-		frames[f] = &frame;
-		for (int i = 0; i < racer_count; ++i) {
-			frame.inputs[i] = neutral_input;
-			frame.present[i] = 1;
-		}
-	}
-	uint8_t previous_values[MAX_RACERS] = {};
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
-		const int input_count = static_cast<int>(count) * racer_count;
-		const int bitset_bytes = (input_count + 7) >> 3;
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				const int input_index = f * racer_count + i;
-				uint8_t mask = 0;
-				for (int bit = 0; bit < 5; ++bit) {
-					if ((raw_bytes[bit * bitset_bytes + (input_index >> 3)] & static_cast<uint8_t>(1u << (input_index & 7))) != 0) {
-						mask |= static_cast<uint8_t>(1u << bit);
-					}
-				}
-				frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
-				frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
-				frame->inputs[i].boost = (mask & (1u << 4)) != 0;
-			}
-		}
-		raw_pos = bitset_bytes * 5;
-	} else if (delta_pairs_layout) {
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t value = raw_bytes[raw_pos++];
-				if (f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
-				}
-				previous = value;
-				frame->inputs[i].strafe_left = trigger_from_byte(value);
-			}
-		}
-	} else {
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				uint8_t mask = raw_bytes[raw_pos++];
-				if (delta_layout && f > 0) {
-					mask = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(mask));
-				}
-				previous_values[i] = mask;
-				frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
-				frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
-				frame->inputs[i].boost = (mask & (1u << 4)) != 0;
-			}
-		}
-	}
-	if (delta_pairs_layout) {
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t value = raw_bytes[raw_pos++];
-				if (f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
-				}
-				previous = value;
-				frame->inputs[i].strafe_right = trigger_from_byte(value);
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t value = raw_bytes[raw_pos++];
-				if (f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
-				}
-				previous = value;
-				frame->inputs[i].steer_horizontal = axis_from_byte(value);
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t value = raw_bytes[raw_pos++];
-				if (f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
-				}
-				previous = value;
-				frame->inputs[i].steer_vertical = axis_from_byte(value);
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t mask = raw_bytes[raw_pos++];
-				if (f > 0) {
-					mask = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(mask));
-				}
-				previous = mask;
-				frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
-				frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
-				frame->inputs[i].boost = (mask & (1u << 4)) != 0;
-			}
-		}
-	} else {
-		std::memset(previous_values, 0, sizeof(previous_values));
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				uint8_t value = raw_bytes[raw_pos++];
-				if (analog_delta_layout && f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
-				}
-				previous_values[i] = value;
-				frame->inputs[i].strafe_left = trigger_from_byte(value);
-			}
-		}
-		std::memset(previous_values, 0, sizeof(previous_values));
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				uint8_t value = raw_bytes[raw_pos++];
-				if (analog_delta_layout && f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
-				}
-				previous_values[i] = value;
-				frame->inputs[i].strafe_right = trigger_from_byte(value);
-			}
-		}
-		std::memset(previous_values, 0, sizeof(previous_values));
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				uint8_t value = raw_bytes[raw_pos++];
-				if (analog_delta_layout && f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
-				}
-				previous_values[i] = value;
-				frame->inputs[i].steer_horizontal = axis_from_byte(value);
-			}
-		}
-		std::memset(previous_values, 0, sizeof(previous_values));
-		for (int f = 0; f < static_cast<int>(count); ++f) {
-			InputFrame* frame = frames[f];
-			for (int i = 0; i < racer_count; ++i) {
-				uint8_t value = raw_bytes[raw_pos++];
-				if (analog_delta_layout && f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
-				}
-				previous_values[i] = value;
-				frame->inputs[i].steer_vertical = axis_from_byte(value);
-			}
-		}
-	}
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		const int tick = first_tick + f;
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
