@@ -263,6 +263,21 @@ size_flags_horizontal = 3
 text = "Right Stick Button"
 alignment = 0
 
+[node name="HBoxContainer25" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer25"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Toggle Minimap Mode"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer25"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "X"
+alignment = 0
+
 [node name="HBoxContainer14" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 

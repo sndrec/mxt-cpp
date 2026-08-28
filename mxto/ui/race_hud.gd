@@ -12,9 +12,10 @@ const RacePresentationControllerClass = preload("res://ui/race_presentation_cont
 @onready var leaderboard_container := $Control/leaderboard_container
 @onready var place_badge := $PlaceBadge as Control
 @onready var minimap_rect := $MinimapControl/TextureRect
-@onready var sub_viewport := $MinimapControl/SubViewport
-@onready var minimap_cam := $MinimapControl/SubViewport/Camera3D
-@onready var minimap_mesh := $MinimapControl/SubViewport/MeshInstance3D
+@onready var minimap_control := $MinimapControl as Control
+@onready var sub_viewport := $MinimapControl/SubViewport as SubViewport
+@onready var minimap_cam := $MinimapControl/SubViewport/Camera3D as Camera3D
+@onready var minimap_mesh := $MinimapControl/SubViewport/MeshInstance3D as MeshInstance3D
 #@onready var race_placement_hud := $RacePlacementHud
 @onready var check_control: Control = $CheckControl
 @onready var sboost_meter_bg: ColorRect = %sboost_meter_bg
@@ -28,6 +29,11 @@ var race_presentation_controller: RacePresentationControllerClass
 var boost_energy_use_rate: float = 1.0
 var _sboost_full_width: float = 0.0
 var focus_player_id := 0
+var minimap_mode := 0
+var minimap_initialized := false
+var minimap_markers: MultiMesh
+var minimap_marker_layer: MultiMeshInstance2D
+const MINIMAP_MARKER_TEXTURE: Texture2D = preload("res://ui/circle.png")
 const MAX_LEADERBOARD_ENTRIES := 5
 var leaderboard_labels: Array[Label] = []
 const ATTACK_COOLDOWN_FRAMES := 240.0
@@ -436,6 +442,117 @@ func _update_world_stickers(car: VisualCar) -> void:
 		if normal != null:
 			_set_world_sticker_sprite(normal, texture, pixel_size, life_alpha, screen_direction)
 
+
+func _minimap_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = color
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return material
+
+
+func _configure_minimap_materials(mesh: ArrayMesh) -> void:
+	var colors := {
+		"road": Color(1.0, 1.0, 1.0),
+		"recharge": Color(1.0, 0.3, 0.5),
+		"dirt": Color(0.5, 0.2, 0.2),
+		"ice": Color(0.35, 0.75, 1.0),
+		"lava": Color(1.0, 0.25, 0.05),
+	}
+	for surface in mesh.get_surface_count():
+		var surface_name := mesh.surface_get_name(surface)
+		minimap_mesh.set_surface_override_material(
+			surface,
+			_minimap_material(colors.get(surface_name, Color.WHITE)))
+
+
+func _create_minimap_markers() -> void:
+	var marker_mesh := QuadMesh.new()
+	marker_mesh.size = Vector2(6.0, 6.0)
+	minimap_markers = MultiMesh.new()
+	minimap_markers.transform_format = MultiMesh.TRANSFORM_2D
+	minimap_markers.use_colors = true
+	minimap_markers.mesh = marker_mesh
+	minimap_marker_layer = MultiMeshInstance2D.new()
+	minimap_marker_layer.name = "RacerMarkers"
+	minimap_marker_layer.multimesh = minimap_markers
+	minimap_marker_layer.texture = MINIMAP_MARKER_TEXTURE
+	minimap_marker_layer.z_index = 1
+	minimap_rect.add_child(minimap_marker_layer)
+
+
+func _configure_whole_course_minimap() -> void:
+	var bounds: AABB = minimap_mesh.get_aabb()
+	var center: Vector3 = bounds.get_center()
+	var diagonal := maxf(bounds.size.length(), 1.0)
+	minimap_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	minimap_cam.rotation_degrees = Vector3(-25.0, 45.0, 0.0)
+	minimap_cam.position = center + minimap_cam.basis.z * diagonal * 1.5
+	minimap_cam.near = 0.05
+	minimap_cam.far = diagonal * 4.0
+	var half_width := 0.0
+	var half_height := 0.0
+	for endpoint in 8:
+		var relative: Vector3 = bounds.get_endpoint(endpoint) - center
+		half_width = maxf(half_width, absf(relative.dot(minimap_cam.basis.x)))
+		half_height = maxf(half_height, absf(relative.dot(minimap_cam.basis.y)))
+	var aspect := float(sub_viewport.size.x) / maxf(float(sub_viewport.size.y), 1.0)
+	minimap_cam.size = maxf(half_height * 2.0, half_width * 2.0 / aspect) * 1.08
+	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _configure_follow_minimap(car: VisualCar) -> void:
+	var car_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(focus_player_id)
+	minimap_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+	minimap_cam.basis = car_transform.basis.rotated(car_transform.basis.x, -PI * 0.5)
+	minimap_cam.basis = minimap_cam.basis.rotated(minimap_cam.basis.z, PI)
+	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 128.0
+	minimap_cam.fov = 45.0
+	minimap_cam.near = 96.0
+	minimap_cam.far = 192.0
+	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+
+func _apply_minimap_mode(car: VisualCar) -> void:
+	if minimap_mode == 0:
+		_configure_whole_course_minimap()
+	else:
+		_configure_follow_minimap(car)
+
+
+func _try_initialize_minimap(car: VisualCar) -> void:
+	if minimap_initialized or !minimap_control.visible or car.game_manager == null \
+			or car.game_manager.game_sim == null:
+		return
+	var generated_mesh := car.game_manager.game_sim.get_minimap_mesh() as ArrayMesh
+	if generated_mesh == null or generated_mesh.get_surface_count() == 0:
+		return
+	minimap_mesh.mesh = generated_mesh
+	_configure_minimap_materials(generated_mesh)
+	_create_minimap_markers()
+	minimap_rect.texture = sub_viewport.get_texture()
+	minimap_initialized = true
+	_apply_minimap_mode(car)
+
+
+func _update_minimap(car: VisualCar) -> void:
+	_try_initialize_minimap(car)
+	if !minimap_initialized:
+		return
+	var accepts_input := true
+	if car.game_manager.has_method("_window_accepts_input"):
+		accepts_input = bool(car.game_manager.call("_window_accepts_input"))
+	if accepts_input and Input.is_action_just_pressed("MinimapModeToggle"):
+		minimap_mode = wrapi(minimap_mode + 1, 0, 2)
+		_apply_minimap_mode(car)
+	if minimap_mode == 1:
+		_configure_follow_minimap(car)
+	if minimap_marker_layer != null:
+		minimap_marker_layer.scale = Vector2(
+			minimap_rect.size.x / maxf(float(sub_viewport.size.x), 1.0),
+			minimap_rect.size.y / maxf(float(sub_viewport.size.y), 1.0))
+	car.game_manager.game_sim.update_minimap_markers(minimap_markers, minimap_cam, focus_player_id)
+
 func _ready() -> void:
 	if leaderboard_container:
 		for child in leaderboard_container.get_children():
@@ -510,6 +627,7 @@ func _process( _delta:float ) -> void:
 	var profile_total_start := Time.get_ticks_usec() if profile_enabled else 0
 	if focus_player_id == 0:
 		focus_player_id = car.owning_id
+	_update_minimap(car)
 	var profile_phase_start := Time.get_ticks_usec() if profile_enabled else 0
 	_update_sticker_input(car)
 	if profile_enabled:

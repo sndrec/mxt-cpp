@@ -1296,6 +1296,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	void GameSim::destroy_gamesim()
 	{
+		minimap_mesh.unref();
 		clear_trigger_visuals();
 		reset_collision_spark_effects(true);
 		reset_drift_plasma_effects(true);

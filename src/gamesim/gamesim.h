@@ -3,6 +3,7 @@
 
 #include "godot_cpp/classes/node.hpp"
 #include "godot_cpp/classes/node3d.hpp"
+#include "godot_cpp/classes/array_mesh.hpp"
 #include "godot_cpp/classes/multi_mesh_instance3d.hpp"
 #include "godot_cpp/classes/multi_mesh.hpp"
 #include "godot_cpp/classes/camera3d.hpp"
@@ -160,6 +161,7 @@ namespace godot {
 		std::vector<uint64_t> super_spark_candidate_mask_lo;
 		std::vector<uint64_t> super_spark_candidate_mask_hi;
 		godot::MultiMeshInstance3D* spark_multimesh_instance = nullptr;
+		godot::Ref<godot::ArrayMesh> minimap_mesh;
 		int32_t* car_player_ids = nullptr;
 		uint8_t* car_is_cpu = nullptr;
 		int32_t player_index_lookup_ids[PLAYER_INDEX_LOOKUP_SIZE] = {};
@@ -642,6 +644,8 @@ namespace godot {
 		godot::Transform3D get_player_physical_render_transform(int player_id) const;
 		godot::Vector3 get_player_physical_render_up(int player_id) const;
 		godot::Transform3D get_car_render_transform(int car_index) const;
+		godot::Ref<godot::ArrayMesh> get_minimap_mesh();
+		void update_minimap_markers(const godot::Ref<godot::MultiMesh>& markers, godot::Camera3D* camera, int focus_player_id) const;
 		godot::Transform3D get_saved_player_voice_transform(int player_id, int target_tick) const;
 		godot::Array get_saved_player_voice_transforms(int target_tick) const;
 		godot::Dictionary select_saved_voice_recipients(int sender_id, int local_id, int target_tick, godot::Array eligible_peer_ids, godot::Array excluded_peer_ids, double voice_range, int max_recipients) const;

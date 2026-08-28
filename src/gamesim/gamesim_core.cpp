@@ -86,6 +86,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_player_physical_render_transform", "player_id"), &GameSim::get_player_physical_render_transform);
 	ClassDB::bind_method(D_METHOD("get_player_physical_render_up", "player_id"), &GameSim::get_player_physical_render_up);
 	ClassDB::bind_method(D_METHOD("get_car_render_transform", "car_index"), &GameSim::get_car_render_transform);
+	ClassDB::bind_method(D_METHOD("get_minimap_mesh"), &GameSim::get_minimap_mesh);
+	ClassDB::bind_method(D_METHOD("update_minimap_markers", "markers", "camera", "focus_player_id"), &GameSim::update_minimap_markers);
 	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transform", "player_id", "target_tick"), &GameSim::get_saved_player_voice_transform);
 	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transforms", "target_tick"), &GameSim::get_saved_player_voice_transforms);
 	ClassDB::bind_method(D_METHOD("select_saved_voice_recipients", "sender_id", "local_id", "target_tick", "eligible_peer_ids", "excluded_peer_ids", "voice_range", "max_recipients"), &GameSim::select_saved_voice_recipients);
