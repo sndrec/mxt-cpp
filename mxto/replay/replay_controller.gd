@@ -638,10 +638,10 @@ func refresh_pause_button() -> void:
 	race_pause_save_replay_button.visible = can_save
 	race_pause_save_replay_button.disabled = !can_save
 
-func record_frame(tick: int, frame_inputs: Dictionary) -> void:
-	if !replay_recording_active or replay_recording_saved or frame_inputs.is_empty():
+func record_frame(tick: int) -> void:
+	if !replay_recording_active or replay_recording_saved:
 		return
-	if !replay_recording_stream.append_frame_inputs(tick, frame_inputs):
+	if !replay_recording_stream.append_game_sim_frame(game_manager.network_manager.server_game_sim, tick):
 		push_error("Replay recording rejected authoritative frame %d." % tick)
 
 func _write_replay_recording(reason: String, replay_dir: String) -> String:

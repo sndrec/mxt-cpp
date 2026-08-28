@@ -1,15 +1,13 @@
 class_name InputTransportController
 extends Node
 
-signal authoritative_server_frame(tick: int, frame_inputs: Dictionary)
+signal authoritative_server_frame(tick: int)
 signal disconnect_peer_requested(peer_id: int)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES: PackedByteArray = PlayerInputClass.new().serialize()
 
-const INPUT_HISTORY_SIZE := 30
 const MAX_AHEAD_TICKS := 30
-const MAX_HISTORY_TICKS := 60
 const INPUT_FORWARD_REDUNDANCY_TICKS := 12
 const STARTUP_LIGHT_NET_TICKS := 120
 const SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS := 5
@@ -59,7 +57,6 @@ var simulation_roster: Array = []
 var disconnected_during_race := {}
 
 var pending_inputs := {}
-var input_history := {}
 var last_input_time := {}
 var last_local_input_bytes: PackedByteArray = NEUTRAL_INPUT_BYTES.duplicate()
 var sent_inputs_bytes := {}
@@ -84,7 +81,6 @@ var clients_target_tick := 0
 var last_target_tick_update := 0
 var last_client_timing_ping_msec := 0
 var clients_max_ahead_from_server := 2.0
-var authoritative_history := {}
 var last_server_input_tick := -1
 var use_state_compression := true
 var use_physics_ticks := 1.0
@@ -236,7 +232,6 @@ func start_authoritative_simulation() -> void:
 
 func reset() -> void:
 	pending_inputs.clear()
-	input_history.clear()
 	sent_inputs_bytes.clear()
 	sent_input_times.clear()
 	last_input_time.clear()
@@ -291,7 +286,6 @@ func reset() -> void:
 	clients_target_tick = 0
 	last_client_timing_ping_msec = 0
 	clients_max_ahead_from_server = 2.0
-	authoritative_history.clear()
 	last_server_input_tick = -1
 	use_physics_ticks = 1.0
 	rollback_frametime_us = 0
@@ -429,10 +423,10 @@ func process() -> void:
 		const MAX_SERVER_TICKS_PER_PROCESS := 8
 		while server_tick < target_tick and loops < MAX_SERVER_TICKS_PER_PROCESS:
 			var _collect_t0 := Time.get_ticks_usec()
-			var server_inputs := collect_server_inputs()
+			var collected := collect_server_inputs()
 			var _collect_t1 := Time.get_ticks_usec()
 			prof_collect_server_inputs_us_interval += _collect_t1 - _collect_t0
-			if server_inputs.is_empty():
+			if !collected:
 				break
 			post_tick()
 			loops += 1
@@ -509,11 +503,11 @@ func _fill_delayed_missing_inputs_for_tick(tick: int) -> void:
 		_log_add_int(log_peer_replacements, pid, 1)
 	pending_inputs[tick] = waiting
 
-func collect_server_inputs() -> Dictionary:
+func collect_server_inputs() -> bool:
 	if not is_server:
-		return {}
+		return false
 	if server_game_sim == null or !server_game_sim.sim_started:
-		return {}
+		return false
 	if not pending_inputs.has(server_tick):
 		pending_inputs[server_tick] = {}
 	if _startup_light_net_active(server_tick):
@@ -539,17 +533,15 @@ func collect_server_inputs() -> Dictionary:
 				pending_inputs[server_tick][id] = cpu_input
 				server_netcode_session.store_pending_input(server_tick, int(id), cpu_input)
 	if server_tick > target_tick:
-		return {}
+		return false
 	_fill_delayed_missing_inputs_for_tick(server_tick)
 	var sim_t0 := Time.get_ticks_usec()
 	var ticked := server_netcode_session.tick_server_frame(server_game_sim, server_tick)
 	log_sim_cpu_us_interval += Time.get_ticks_usec() - sim_t0
 	if !ticked:
-		return {}
-	var frame_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
-	authoritative_history[server_tick] = frame_inputs
+		return false
 	pending_inputs.erase(server_tick)
-	return frame_inputs
+	return true
 
 func _input_forward_window(last_tick: int) -> Vector2i:
 	if last_tick < STARTUP_LIGHT_NET_TICKS:
@@ -557,24 +549,20 @@ func _input_forward_window(last_tick: int) -> Vector2i:
 	var first_tick := maxi(STARTUP_LIGHT_NET_TICKS, last_tick - INPUT_FORWARD_REDUNDANCY_TICKS + 1)
 	return Vector2i(first_tick, last_tick - first_tick + 1)
 
-func collect_client_inputs() -> Dictionary:
+func collect_client_inputs() -> bool:
 	if game_sim != null and !game_sim.sim_started:
-		return {}
+		return false
 	var my_settings = lobby_settings.player_settings.get(multiplayer.get_unique_id(), {})
 	var is_spec = typeof(my_settings) == TYPE_DICTIONARY and my_settings.get("spectator", false)
 	if is_spec:
 		if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 			log_client_ahead_throttle_frames += 1
-			return {}
+			return false
 		netcode_session.tick_client_predicted_frame(game_sim, local_tick)
-		var spectator_frame := netcode_session.get_frame_as_dictionary(local_tick)
-		input_history[local_tick] = spectator_frame
-		if input_history.has(local_tick - INPUT_HISTORY_SIZE):
-			input_history.erase(local_tick - INPUT_HISTORY_SIZE)
 		local_tick += 1
 		log_client_sim_ticks += 1
 		_adjust_time_scale()
-		return spectator_frame
+		return true
 	if _startup_light_net_active(local_tick):
 		_store_neutral_authoritative_frame_for_all_racers(local_tick)
 		netcode_session.store_local_input(local_tick, NEUTRAL_INPUT_BYTES)
@@ -582,14 +570,10 @@ func collect_client_inputs() -> Dictionary:
 			_client_startup_sync.rpc_id(1, desired_ahead_ticks, _pack_race_phase_tick(local_tick), rtt_s)
 			acc_log_out(12)
 		netcode_session.tick_client_predicted_frame(game_sim, local_tick)
-		var startup_frame_inputs := netcode_session.get_frame_as_dictionary(local_tick)
-		input_history[local_tick] = startup_frame_inputs
-		if input_history.has(local_tick - INPUT_HISTORY_SIZE):
-			input_history.erase(local_tick - INPUT_HISTORY_SIZE)
 		local_tick += 1
 		log_client_sim_ticks += 1
 		_adjust_time_scale()
-		return startup_frame_inputs
+		return true
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		log_client_ahead_throttle_frames += 1
 		if !is_server:
@@ -601,7 +585,7 @@ func collect_client_inputs() -> Dictionary:
 				acc_log_out(12 + packet.size())
 				_client_send_input_flat.rpc_id(1, packet, desired_ahead_ticks, rtt_s)
 				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-		return {}
+		return false
 	var local_input_for_tick: PackedByteArray = last_local_input_bytes
 	var local_player_id := multiplayer.get_unique_id()
 	if race_results.player_eliminations.has(local_player_id):
@@ -629,14 +613,10 @@ func collect_client_inputs() -> Dictionary:
 		_client_send_input_flat.rpc_id(1, input_packet, desired_ahead_ticks, rtt_s)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	netcode_session.tick_client_predicted_frame(game_sim, local_tick)
-	var frame_inputs := netcode_session.get_frame_as_dictionary(local_tick)
-	input_history[local_tick] = frame_inputs
-	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
-		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
 	local_tick += 1
 	log_client_sim_ticks += 1
 	_adjust_time_scale()
-	return frame_inputs
+	return true
 
 func _send_server_timing_sync(peer_id: int, sync_tick: int, max_ahead: float, echo_client_msec: int = -1) -> void:
 	if !is_server or !race_active:
@@ -719,7 +699,6 @@ func _client_startup_sync(ahead: float, client_tick: int, client_rtt_s: float) -
 	last_received_tick[sender_id] = max(int(last_received_tick.get(sender_id, -1)), min(unpacked_client_tick, STARTUP_LIGHT_NET_TICKS - 1))
 	server_netcode_session.set_peer_last_received(sender_id, int(last_received_tick[sender_id]), now_sec)
 	acc_log_in(12)
-	_prune_authoritative_history()
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s: float) -> void:
@@ -773,7 +752,6 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 		peer_client_rtt_s[sender_id] = client_rtt_s
 		log_flat_client_payload_in += packet.size()
 		acc_log_in(12 + packet.size())
-		_prune_authoritative_history()
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
@@ -870,9 +848,7 @@ func post_tick() -> void:
 		return
 	if is_server and server_game_sim != null:
 		var _t0 := Time.get_ticks_usec()
-		var authoritative_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
-		if !authoritative_inputs.is_empty():
-			authoritative_server_frame.emit(server_tick, authoritative_inputs)
+		authoritative_server_frame.emit(server_tick)
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead
 		var recipients: Array = state_transfer.peer_ids
@@ -913,8 +889,6 @@ func post_tick() -> void:
 			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id))
 		server_tick += 1
 		race_results.set_race_tick(server_tick)
-		if listen_server:
-			_prune_authoritative_history()
 		var _t1 := Time.get_ticks_usec()
 		log_net_cpu_us_interval += _t1 - _t0
 
@@ -991,14 +965,6 @@ func _recalculate_future_predictions(start_tick: int) -> void:
 	if !race_active:
 		return
 	netcode_session.recalculate_predictions(start_tick, local_tick)
-
-func _prune_authoritative_history() -> void:
-	var window_cutoff := server_tick - MAX_HISTORY_TICKS
-	if window_cutoff < 0:
-		return
-	for key in authoritative_history.keys():
-		if key <= window_cutoff:
-			authoritative_history.erase(key)
 
 func _record_rtt_sample(sample_s: float) -> void:
 	sample_s = maxf(sample_s, 0.0)

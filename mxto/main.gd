@@ -1761,8 +1761,8 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 	const MAX_TICKS_PER_FRAME := 120
 	while loops < MAX_TICKS_PER_FRAME:
 		network_manager.input_transport.set_local_input(local_input_bytes)
-		var server_inputs := network_manager.input_transport.collect_server_inputs()
-		if server_inputs.is_empty():
+		var collected := network_manager.input_transport.collect_server_inputs()
+		if !collected:
 			break
 		network_manager.input_transport.post_tick()
 		loops += 1
@@ -1772,12 +1772,12 @@ func _simulate_single_tick():
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
 	while loops < MAX_TICKS_PER_FRAME:
-		var frame_inputs := network_manager.input_transport.collect_client_inputs()
-		if frame_inputs.is_empty():
+		var collected_client := network_manager.input_transport.collect_client_inputs()
+		if !collected_client:
 			return
 		if network_manager.is_server:
-			var server_inputs := network_manager.input_transport.collect_server_inputs()
-			if !server_inputs.is_empty():
+			var collected_server := network_manager.input_transport.collect_server_inputs()
+			if collected_server:
 				network_manager.input_transport.post_tick()
 		else:
 			network_manager.input_transport.post_tick()
