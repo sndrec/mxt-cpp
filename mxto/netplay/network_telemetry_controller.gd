@@ -33,9 +33,6 @@ var log_lobby_chibi_bytes_out := 0
 var log_lobby_peer_connects := 0
 var log_lobby_peer_disconnects := 0
 
-var dump_auth_input_samples := false
-var auth_input_sample_limit := 20000
-var auth_input_sample_dir := "user://auth_input_samples"
 var dump_state_samples := false
 var state_sample_limit := 5000
 var state_sample_dir := "user://state_samples"
@@ -57,8 +54,8 @@ func initialize(in_game_manager: Node, in_custom_stamp_network: Node, in_state_t
 	lobby_settings = in_lobby_settings
 	race_admission = in_race_admission
 	input_transport = in_input_transport
-	_parse_auth_input_sample_dump_args()
-	_apply_auth_input_sample_dump_settings()
+	_parse_state_sample_dump_args()
+	_apply_state_sample_dump_settings()
 	telemetry_history.resize(TELEMETRY_HISTORY_CAPACITY)
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
@@ -535,19 +532,11 @@ func _acc_log_in(bytes: int) -> void:
 	log_bytes_in_interval += bytes
 	log_bytes_in_total += bytes
 
-func _parse_auth_input_sample_dump_args() -> void:
+func _parse_state_sample_dump_args() -> void:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
 	for arg in args:
-		if arg == "--mxt-dump-auth-input-samples":
-			dump_auth_input_samples = true
-		elif arg == "--mxt-no-dump-auth-input-samples":
-			dump_auth_input_samples = false
-		elif arg.begins_with("--mxt-auth-input-sample-limit="):
-			auth_input_sample_limit = maxi(0, int(arg.get_slice("=", 1)))
-		elif arg.begins_with("--mxt-auth-input-sample-dir="):
-			auth_input_sample_dir = arg.get_slice("=", 1)
-		elif arg == "--mxt-dump-state-samples" or arg == "--mxt-dump-gamestate-samples":
+		if arg == "--mxt-dump-state-samples" or arg == "--mxt-dump-gamestate-samples":
 			dump_state_samples = true
 		elif arg == "--mxt-no-dump-state-samples" or arg == "--mxt-no-dump-gamestate-samples":
 			dump_state_samples = false
@@ -560,17 +549,7 @@ func _parse_auth_input_sample_dump_args() -> void:
 		elif arg.begins_with("--mxt-gamestate-sample-dir="):
 			state_sample_dir = arg.get_slice("=", 1)
 
-func _apply_auth_input_sample_dump_settings() -> void:
-	input_transport.netcode_session.configure_authoritative_input_sample_dump(
-		dump_auth_input_samples,
-		auth_input_sample_limit,
-		auth_input_sample_dir
-	)
-	input_transport.server_netcode_session.configure_authoritative_input_sample_dump(
-		dump_auth_input_samples,
-		auth_input_sample_limit,
-		auth_input_sample_dir
-	)
+func _apply_state_sample_dump_settings() -> void:
 	state_sample_index = 0
 	if dump_state_samples:
 		var resolved_dir := ProjectSettings.globalize_path(state_sample_dir)

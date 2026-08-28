@@ -141,7 +141,6 @@ public:
 	int get_last_authoritative_packet_first_tick() const;
 	int get_last_authoritative_packet_last_tick() const;
 	int get_last_authoritative_packet_count() const;
-	godot::Dictionary debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase = 0) const;
 	void consume_authoritative_packet_stats();
 	int64_t get_authoritative_stat_packets() const;
 	int64_t get_authoritative_stat_frames() const;
@@ -152,7 +151,6 @@ public:
 	int64_t get_authoritative_stat_compression_candidates() const;
 	int64_t get_authoritative_stat_build_usec() const;
 	godot::Dictionary get_input_frame_debug(int tick) const;
-	void configure_authoritative_input_sample_dump(bool enabled, int limit, godot::String directory);
 	void clear_peer_state();
 	void remove_peer(int peer_id);
 	void set_peer_last_received(int peer_id, int tick, double now_sec);

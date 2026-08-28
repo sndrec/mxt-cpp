@@ -1691,7 +1691,6 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		if spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 	replay_controller.record_debug_input(input_bytes)
-	_dump_offline_auth_input_sample(input_bytes)
 	_dump_offline_state_sample()
 	var tick_to_record := _singleplayer_tick
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
@@ -1719,28 +1718,6 @@ func reconcile_practice_state_restore() -> void:
 	_update_native_render_camera()
 	game_sim.render_gamesim()
 	_sync_gameplay_camera_settings()
-
-func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
-	if !network_manager.telemetry.dump_auth_input_samples:
-		return
-	if game_sim == null:
-		return
-	var roster := network_manager.get_simulation_roster()
-	if roster.is_empty():
-		return
-	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
-	var local_id := _local_player_id()
-	for id in roster:
-		var input_bytes := network_manager.input_transport.NEUTRAL_INPUT_BYTES
-		if cpu_ids.has(id) or network_manager.race_results.player_dnfs.has(int(id)) or network_manager._disconnected_during_race.has(int(id)):
-			input_bytes = game_sim.get_native_cpu_input_for_tick(int(id), _singleplayer_tick)
-		elif int(id) == local_id:
-			input_bytes = local_input_bytes
-		network_manager.input_transport.netcode_session.store_authoritative_input(_singleplayer_tick, int(id), input_bytes)
-	network_manager.input_transport.netcode_session.build_authoritative_input_packet(
-		_singleplayer_tick,
-		network_manager.input_transport.AUTH_INPUT_REDUNDANCY_FRAMES
-	)
 
 func _dump_offline_state_sample() -> void:
 	if !network_manager.telemetry.dump_state_samples:

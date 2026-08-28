@@ -89,6 +89,5 @@ python -m unittest discover track-editor-blender-plugin/tests
 - Blender add-on setup: [track-editor-blender-plugin/README.md](track-editor-blender-plugin/README.md)
 - official vehicle reference repair: [tools/car/README.md](tools/car/README.md)
 - F-Zero track conversion: [tools/track/fzgx/README.md](tools/track/fzgx/README.md)
-- auth-input dictionary training: `scripts/train_auth_input_dict.py --help`
 - playtester export packaging: `scripts/build_playtester_exports.ps1`
 - leaderboard service: [services/leaderboard_verifier/README.md](services/leaderboard_verifier/README.md)

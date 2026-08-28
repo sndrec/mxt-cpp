@@ -24,7 +24,6 @@
 #include "netcode/generated/auth_input_zstd_dictionary.h"
 #include "netcode/generated/auth_input_zero_bitmap_zstd_dictionary.h"
 #include "netcode/generated/auth_input_zero_bitmap_strafe_sparse_zstd_dictionary.h"
-#include "godot_cpp/classes/dir_access.hpp"
 #include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/core/class_db.hpp"
 #define ZSTD_STATIC_LINKING_ONLY
@@ -33,7 +32,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 
 using namespace godot;
@@ -64,9 +62,6 @@ constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 3;
 constexpr int MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL = 12;
 constexpr int MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL = 7;
 constexpr int MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL = 7;
-constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
-constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
-constexpr const char* MXT_NET_DEFAULT_AUTH_SAMPLE_DIR = "user://auth_input_samples";
 constexpr uint32_t MXT_NET_RACE_PHASE_BIT = 0x80000000u;
 constexpr uint32_t MXT_NET_TICK_MASK = 0x7fffffffu;
 enum AuthInputLayout : uint8_t {
@@ -80,10 +75,6 @@ enum AuthInputLayout : uint8_t {
 	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY = 7,
 	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE = 8,
 };
-bool g_auth_input_sample_dump_enabled = false;
-int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
-int64_t g_auth_input_sample_dump_index = 0;
-char g_auth_input_sample_dump_dir[MXT_NET_AUTH_SAMPLE_DIR_BYTES] = "user://auth_input_samples";
 ZSTD_CCtx* g_auth_input_zstd_cctx = nullptr;
 ZSTD_DCtx* g_auth_input_zstd_dctx = nullptr;
 ZSTD_CDict* g_auth_input_zstd_cdict = nullptr;
@@ -2395,40 +2386,6 @@ PackedByteArray decompress_auth_input_delta_pairs_surface_alt_with_dict(const Pa
 	);
 }
 
-void set_auth_input_sample_dump_dir(const String& directory)
-{
-	const String selected_dir = directory.is_empty() ? String(MXT_NET_DEFAULT_AUTH_SAMPLE_DIR) : directory;
-	const CharString selected_dir_utf8 = selected_dir.utf8();
-	std::snprintf(
-		g_auth_input_sample_dump_dir,
-		static_cast<size_t>(MXT_NET_AUTH_SAMPLE_DIR_BYTES),
-		"%s",
-		selected_dir_utf8.get_data()
-	);
-}
-
-void dump_auth_input_sample(const PackedByteArray& raw, int first_tick, int count, int racer_count, int mode, int sublayout)
-{
-	if (!g_auth_input_sample_dump_enabled) {
-		return;
-	}
-	if (g_auth_input_sample_dump_limit > 0 && g_auth_input_sample_dump_index >= g_auth_input_sample_dump_limit) {
-		return;
-	}
-	const String file_name = "auth_" + String::num_int64(g_auth_input_sample_dump_index).pad_zeros(8) +
-		"_t" + String::num_int64(first_tick) +
-		"_f" + String::num_int64(count) +
-		"_p" + String::num_int64(racer_count) +
-		"_m" + String::num_int64(mode) +
-		"_s" + String::num_int64(sublayout) + ".bin";
-	const String path = String(g_auth_input_sample_dump_dir) + String("/") + file_name;
-	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
-	if (file.is_valid()) {
-		file->store_buffer(raw);
-		file->close();
-		++g_auth_input_sample_dump_index;
-	}
-}
 }
 
 bool NetcodeSession::write_authoritative_input_raw(
@@ -3187,15 +3144,6 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
-	if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
-		dump_auth_input_sample(bitpacked_raw, first_tick, count, racer_count, compression_mode, -1);
-	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
-		dump_auth_input_sample(hybrid_raw, first_tick, count, racer_count, compression_mode, -1);
-	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE) {
-		dump_auth_input_sample(bitpacked_zero_strafe_sparse_raw, first_tick, count, racer_count, compression_mode, -1);
-	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
-		dump_auth_input_sample(bitpacked_zero_raw, first_tick, count, racer_count, compression_mode, -1);
-	}
 	writer.data[mode_count_pos] = selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE ?
 			pack_auth_low_entropy_mode_sublayout_phase(compression_mode, MXT_NET_AUTH_ZERO_BITMAP_STRAFE_SPARSE_COUNT_CODE, race_phase) :
 			pack_auth_mode_count_phase(compression_mode, count, race_phase);
@@ -3583,274 +3531,4 @@ int NetcodeSession::get_last_authoritative_packet_last_tick() const
 int NetcodeSession::get_last_authoritative_packet_count() const
 {
 	return last_authoritative_packet_result.count;
-}
-
-godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase) const
-{
-	Dictionary out;
-	out["valid"] = false;
-	out["first_tick"] = -1;
-	out["last_tick"] = -1;
-	out["count"] = 0;
-	out["racer_count"] = racer_count;
-	out["race_phase"] = race_phase & 1;
-	if (max_frame_count <= 0 || last_tick < 0 || racer_count <= 0) {
-		return out;
-	}
-	max_frame_count = std::min(max_frame_count, MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET);
-	int first_tick = last_tick - max_frame_count + 1;
-	if (first_tick < 0) {
-		first_tick = 0;
-	}
-	while (first_tick <= last_tick && !find_frame(authoritative_history, first_tick)) {
-		++first_tick;
-	}
-	int count = last_tick >= first_tick ? last_tick - first_tick + 1 : 0;
-	while (count > 0 && !find_frame(authoritative_history, first_tick + count - 1)) {
-		--count;
-	}
-	if (count <= 0) {
-		return out;
-	}
-	const InputFrame* frames[MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET] = {};
-	for (int f = 0; f < count; ++f) {
-		frames[f] = find_frame(authoritative_history, first_tick + f);
-		if (!frames[f]) {
-			return out;
-		}
-	}
-	const AuthInputLayout layouts[9] = {
-		AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES,
-		AUTH_INPUT_LAYOUT_PACKED_BUTTONS,
-		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA,
-		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS,
-		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY,
-		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS,
-		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA,
-		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP,
-		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE,
-	};
-	const char* names[9] = {
-		"old",
-		"packed",
-		"delta",
-		"delta_pairs",
-		"delta_low_entropy",
-		"bitpacked",
-		"hybrid",
-		"bitpacked_zero",
-		"bitpacked_zero_strafe_sparse",
-	};
-	for (int l = 0; l < 9; ++l) {
-		const AuthInputLayout layout = layouts[l];
-		int raw_size = auth_input_raw_size(count, racer_count, layout);
-		int best_low_entropy_default_sublayout = -1;
-		int best_low_entropy_surface_sublayout = -1;
-		int best_low_entropy_surface_fallback_sublayout = -1;
-		int best_low_entropy_default_payload = 0;
-		int best_low_entropy_surface_payload = 0;
-		int best_low_entropy_surface_fallback_payload = 0;
-		int low_entropy_mask_pair_counts[11] = {};
-		PackedByteArray raw;
-		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ||
-			layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE) {
-			PackedByteArray bitpacked_raw;
-			const int bitpacked_raw_size = auth_input_bitpacked_raw_size(count, racer_count);
-			if (bitpacked_raw.resize(bitpacked_raw_size) != 0) {
-				return out;
-			}
-			if (!write_authoritative_input_raw(bitpacked_raw, frames, count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS)) {
-				return out;
-			}
-			raw = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE ?
-				encode_zero_bitmap_strafe_sparse_raw(bitpacked_raw, count, racer_count) :
-				encode_zero_bitmap_raw(bitpacked_raw);
-			raw_size = raw.size();
-		} else if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY) {
-			PackedByteArray delta_pairs_raw;
-			const int delta_pairs_raw_size = auth_input_raw_size(count, racer_count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS);
-			if (delta_pairs_raw.resize(delta_pairs_raw_size) != 0) {
-				return out;
-			}
-			if (!write_authoritative_input_raw(delta_pairs_raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS)) {
-				return out;
-			}
-			const int field_bytes = count * racer_count;
-			const int mask_base = 4 * field_bytes;
-			const uint8_t* delta_pairs_src = delta_pairs_raw.ptr();
-			for (int i = 0; i < racer_count; ++i) {
-				const uint8_t a = delta_pairs_src[mask_base + (i * 2)];
-				const uint8_t b = delta_pairs_src[mask_base + (i * 2) + 1];
-				int code = 10;
-				for (int p = 0; p < 10; ++p) {
-					if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
-						code = p;
-						break;
-					}
-				}
-				++low_entropy_mask_pair_counts[code];
-			}
-			int best_compressed_size = 0;
-			for (uint8_t sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT; sublayout <= MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT; ++sublayout) {
-				PackedByteArray candidate_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, sublayout, false);
-				const bool default_alt = auth_input_low_entropy_default_alt_sublayout(sublayout);
-				const bool default_s1 = auth_input_low_entropy_default_s1_sublayout(sublayout);
-				const bool default_s11 = auth_input_low_entropy_default_s11_sublayout(sublayout);
-				const bool default_s12 = auth_input_low_entropy_default_s12_sublayout(sublayout);
-				const bool default_s15 = auth_input_low_entropy_default_s15_sublayout(sublayout);
-				const PackedByteArray compressed_default = compress_auth_input_with_dict(candidate_raw, false, false, false, false, !default_alt && !default_s1 && !default_s11 && !default_s12 && !default_s15, false, false, false, false, default_alt && !default_s12 && !default_s15, false, default_s1, default_s11, default_s12, default_s15);
-				if (compressed_default.size() > 0 && (best_low_entropy_default_payload <= 0 || compressed_default.size() < best_low_entropy_default_payload)) {
-					best_low_entropy_default_payload = compressed_default.size();
-					best_low_entropy_default_sublayout = static_cast<int>(sublayout);
-				}
-				if (compressed_default.size() > 0 && (best_compressed_size <= 0 || compressed_default.size() < best_compressed_size)) {
-					raw = candidate_raw;
-					best_compressed_size = compressed_default.size();
-				}
-				const bool surface_alt = auth_input_low_entropy_surface_alt_sublayout(sublayout);
-				const bool surface_s11 = auth_input_low_entropy_surface_s11_sublayout(sublayout);
-				const PackedByteArray compressed_surface = compress_auth_input_with_dict(candidate_raw, false, false, false, false, false, false, !surface_alt && !surface_s11, false, false, false, surface_alt && !surface_s11, false, false, false, false, surface_s11);
-				if (compressed_surface.size() > 0 && (best_low_entropy_surface_payload <= 0 || compressed_surface.size() < best_low_entropy_surface_payload)) {
-					best_low_entropy_surface_payload = compressed_surface.size();
-					best_low_entropy_surface_sublayout = static_cast<int>(sublayout);
-				}
-				if (compressed_surface.size() > 0 && (best_compressed_size <= 0 || compressed_surface.size() < best_compressed_size)) {
-					raw = candidate_raw;
-					best_compressed_size = compressed_surface.size();
-				}
-				const bool fallback_alt = auth_input_low_entropy_fallback_alt_sublayout(sublayout);
-				const bool fallback_s1 = auth_input_low_entropy_fallback_s1_sublayout(sublayout);
-				const bool fallback_s3 = auth_input_low_entropy_fallback_s3_sublayout(sublayout);
-				const bool fallback_s6 = auth_input_low_entropy_fallback_s6_sublayout(sublayout);
-				const PackedByteArray compressed_surface_fallback = compress_auth_input_with_dict(candidate_raw, false, false, false, false, false, false, false, !fallback_alt && !fallback_s1 && !fallback_s3 && !fallback_s6, fallback_alt && !fallback_s1 && !fallback_s3 && !fallback_s6, false, false, false, false, false, false, false, fallback_s1, fallback_s3, fallback_s6);
-				if (compressed_surface_fallback.size() > 0 && (best_low_entropy_surface_fallback_payload <= 0 || compressed_surface_fallback.size() < best_low_entropy_surface_fallback_payload)) {
-					best_low_entropy_surface_fallback_payload = compressed_surface_fallback.size();
-					best_low_entropy_surface_fallback_sublayout = static_cast<int>(sublayout);
-				}
-				if (compressed_surface_fallback.size() > 0 && (best_compressed_size <= 0 || compressed_surface_fallback.size() < best_compressed_size)) {
-					raw = candidate_raw;
-					best_compressed_size = compressed_surface_fallback.size();
-				}
-			}
-			raw_size = raw.size();
-		} else {
-			if (raw.resize(raw_size) != 0) {
-				return out;
-			}
-			if (!write_authoritative_input_raw(raw, frames, count, layout)) {
-				return out;
-			}
-		}
-		const PackedByteArray plain = compress_auth_input_plain(raw);
-		const PackedByteArray dict = compress_auth_input_with_dict(raw);
-		const PackedByteArray hybrid_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ?
-			compress_auth_input_with_dict(raw, true) :
-			PackedByteArray();
-		const PackedByteArray hybrid_smooth_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ?
-			compress_auth_input_with_dict(raw, false, false, true) :
-			PackedByteArray();
-		const PackedByteArray zero_bitmap_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ?
-			compress_auth_input_with_dict(raw, false, true) :
-			PackedByteArray();
-		const PackedByteArray zero_bitmap_strafe_sparse_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE ?
-			compress_auth_input_zero_bitmap_strafe_sparse_with_dict(raw) :
-			PackedByteArray();
-		const PackedByteArray delta_pairs_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS ?
-			compress_auth_input_with_dict(raw, false, false, false, true) :
-			PackedByteArray();
-		const PackedByteArray delta_pairs_alt_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS && count == 2 ?
-			compress_auth_input_delta_pairs_alt_with_dict(raw) :
-			PackedByteArray();
-		const PackedByteArray delta_pairs_surface_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS ?
-			compress_auth_input_with_dict(raw, false, false, false, false, false, true) :
-			PackedByteArray();
-		const PackedByteArray delta_pairs_surface_alt_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS && count == 2 ?
-			compress_auth_input_delta_pairs_surface_alt_with_dict(raw) :
-			PackedByteArray();
-		const PackedByteArray delta_low_entropy_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY ?
-			compress_auth_input_with_dict(raw, false, false, false, false, true) :
-			PackedByteArray();
-		const PackedByteArray delta_low_entropy_surface_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY ?
-			compress_auth_input_with_dict(raw, false, false, false, false, false, false, true) :
-			PackedByteArray();
-		const PackedByteArray delta_low_entropy_surface_fallback_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY ?
-			compress_auth_input_with_dict(raw, false, false, false, false, false, false, false, true) :
-			PackedByteArray();
-		const bool low_entropy_compare_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY;
-		const int delta_low_entropy_best_default_size = low_entropy_compare_layout ?
-			best_low_entropy_default_payload :
-			delta_low_entropy_dict.size();
-		const int delta_low_entropy_best_surface_size = low_entropy_compare_layout ?
-			best_low_entropy_surface_payload :
-			delta_low_entropy_surface_dict.size();
-		const int delta_low_entropy_best_surface_fallback_size = low_entropy_compare_layout ?
-			best_low_entropy_surface_fallback_payload :
-			delta_low_entropy_surface_fallback_dict.size();
-		const String prefix = String(names[l]) + String("_");
-		out[prefix + String("raw")] = raw_size;
-		out[prefix + String("plain_payload")] = plain.size();
-		out[prefix + String("plain_packet")] = plain.size() + auth_input_packet_header_size(count);
-		if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY) {
-			out[prefix + String("best_default_sublayout")] = best_low_entropy_default_sublayout;
-			out[prefix + String("best_surface_sublayout")] = best_low_entropy_surface_sublayout;
-			out[prefix + String("best_surface_fallback_sublayout")] = best_low_entropy_surface_fallback_sublayout;
-			out[prefix + String("best_default_payload")] = best_low_entropy_default_payload;
-			out[prefix + String("best_surface_payload")] = best_low_entropy_surface_payload;
-			out[prefix + String("best_surface_fallback_payload")] = best_low_entropy_surface_fallback_payload;
-			for (int i = 0; i < 11; ++i) {
-				out[prefix + String("mask_pair_count_") + String::num_int64(i)] = low_entropy_mask_pair_counts[i];
-			}
-		}
-		const int dict_size = delta_low_entropy_best_default_size > 0 ? delta_low_entropy_best_default_size :
-			(delta_pairs_dict.size() > 0 ? delta_pairs_dict.size() :
-				(hybrid_dict.size() > 0 ? hybrid_dict.size() :
-					(zero_bitmap_strafe_sparse_dict.size() > 0 ? zero_bitmap_strafe_sparse_dict.size() :
-						(zero_bitmap_dict.size() > 0 ? zero_bitmap_dict.size() : dict.size()))));
-		out[prefix + String("dict_payload")] = dict_size;
-		out[prefix + String("dict_packet")] = dict_size + auth_input_packet_header_size(count);
-		if (zero_bitmap_strafe_sparse_dict.size() > 0) {
-			out[prefix + String("strafe_sparse_dict_payload")] = zero_bitmap_strafe_sparse_dict.size();
-			out[prefix + String("strafe_sparse_dict_packet")] = zero_bitmap_strafe_sparse_dict.size() + auth_input_packet_header_size(count);
-		}
-		if (hybrid_smooth_dict.size() > 0) {
-			out[prefix + String("smooth_dict_payload")] = hybrid_smooth_dict.size();
-			out[prefix + String("smooth_dict_packet")] = hybrid_smooth_dict.size() + auth_input_packet_header_size(count);
-		}
-		if (delta_pairs_surface_dict.size() > 0) {
-			out[prefix + String("surface_dict_payload")] = delta_pairs_surface_dict.size();
-			out[prefix + String("surface_dict_packet")] = delta_pairs_surface_dict.size() + auth_input_packet_header_size(count);
-		}
-		if (delta_pairs_alt_dict.size() > 0) {
-			out[prefix + String("alt_dict_payload")] = delta_pairs_alt_dict.size();
-			out[prefix + String("alt_dict_packet")] = delta_pairs_alt_dict.size() + auth_input_packet_header_size(count);
-		}
-		if (delta_pairs_surface_alt_dict.size() > 0) {
-			out[prefix + String("surface_alt_dict_payload")] = delta_pairs_surface_alt_dict.size();
-			out[prefix + String("surface_alt_dict_packet")] = delta_pairs_surface_alt_dict.size() + auth_input_packet_header_size(count);
-		}
-		if (delta_low_entropy_best_surface_size > 0) {
-			out[prefix + String("surface_dict_payload")] = delta_low_entropy_best_surface_size;
-			out[prefix + String("surface_dict_packet")] = delta_low_entropy_best_surface_size + auth_input_packet_header_size(count);
-		}
-		if (delta_low_entropy_best_surface_fallback_size > 0) {
-			out[prefix + String("surface_fallback_dict_payload")] = delta_low_entropy_best_surface_fallback_size;
-			out[prefix + String("surface_fallback_dict_packet")] = delta_low_entropy_best_surface_fallback_size + auth_input_packet_header_size(count);
-		}
-	}
-	out["valid"] = true;
-	out["first_tick"] = first_tick;
-	out["last_tick"] = first_tick + count - 1;
-	out["count"] = count;
-	return out;
-}
-
-void NetcodeSession::configure_authoritative_input_sample_dump(bool enabled, int limit, godot::String directory)
-{
-	g_auth_input_sample_dump_enabled = enabled;
-	g_auth_input_sample_dump_limit = std::max<int64_t>(0, static_cast<int64_t>(limit));
-	g_auth_input_sample_dump_index = 0;
-	set_auth_input_sample_dump_dir(directory);
-	if (g_auth_input_sample_dump_enabled) {
-		DirAccess::make_dir_recursive_absolute(String(g_auth_input_sample_dump_dir));
-	}
 }
