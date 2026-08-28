@@ -47,6 +47,23 @@ After deploying a fresh verifier bundle, use the backend manager in this order:
 
 Both operations are resumable and idempotent. Invalid attached replays remain invalid audit records. Trusted score-only entries are reserved for snapshot rows with a genuinely absent replay attachment.
 
+### Legacy curated Steam board manifests
+
+`mxto/steam/curate_workshop_track.gd` validates one Workshop track package and
+adds its gameplay identity to a generated legacy Steam leaderboard manifest.
+The current trusted verifier accepts official tracks only; this command remains
+available for historical Steam board maintenance.
+
+```powershell
+A:\programs\Godot_v4.7.1-stable_win64\Godot_v4.7.1-stable_win64.exe `
+  --headless --path mxto `
+  --script res://steam/curate_workshop_track.gd -- `
+  --package C:\path\to\track.mxtpkg `
+  --workshop-id 1234567890 `
+  --slug example-track `
+  --output C:\path\to\leaderboards.generated.json
+```
+
 ## Bundle and deployment
 
 Build the release GDExtension first:
