@@ -143,6 +143,37 @@ static std::vector<float> build_longitudinal_samples(const TrackSegment& segment
 	return times;
 }
 
+static std::vector<float> build_embed_longitudinal_samples(
+	const TrackSegment& segment,
+	const RoadEmbed& embed)
+{
+	const float start = std::clamp(std::min(embed.start_offset, embed.end_offset), 0.0f, 1.0f);
+	const float end = std::clamp(std::max(embed.start_offset, embed.end_offset), 0.0f, 1.0f);
+	const float embed_length = std::max(segment.segment_length, 1.0f) * (end - start);
+	const int distance_steps = std::clamp(
+		static_cast<int>(std::ceil(embed_length / 10.0f)),
+		1,
+		512);
+	std::vector<float> times;
+	times.reserve(static_cast<size_t>(distance_steps + 3 +
+		(embed.left_border ? embed.left_border->num_keyframes : 0) +
+		(embed.right_border ? embed.right_border->num_keyframes : 0)));
+	for (int step = 0; step <= distance_steps; ++step) {
+		times.push_back(start + (end - start) *
+			static_cast<float>(step) / static_cast<float>(distance_steps));
+	}
+	append_curve_times(times, embed.left_border);
+	append_curve_times(times, embed.right_border);
+	std::sort(times.begin(), times.end());
+	times.erase(std::remove_if(times.begin(), times.end(), [start, end](float time) {
+		return time < start || time > end;
+	}), times.end());
+	times.erase(std::unique(times.begin(), times.end(), [](float a, float b) {
+		return std::abs(a - b) <= 0.00001f;
+	}), times.end());
+	return times;
+}
+
 static int lateral_step_count(int shape_type)
 {
 	switch (shape_type) {
@@ -151,6 +182,63 @@ static int lateral_step_count(int shape_type)
 			return 24;
 		default:
 			return 32;
+	}
+}
+
+static godot::Vector3 sample_embed_position(
+	const RoadShape& shape,
+	float x,
+	float y)
+{
+	SimTransform surface_transform;
+	shape.get_oriented_transform_at_time(surface_transform, SimVec2(x, y));
+	return to_godot(surface_transform.origin + surface_transform.basis[1] * 0.5f);
+}
+
+static void append_analytic_embed(
+	MinimapMeshData& data,
+	const TrackSegment& segment,
+	const RoadEmbed& embed)
+{
+	const int surface = surface_for_terrain(static_cast<uint32_t>(embed.embed_type), false);
+	if (surface == MINIMAP_SURFACE_EXCLUDED ||
+			embed.left_border == nullptr || embed.right_border == nullptr) {
+		return;
+	}
+	const RoadShape& shape = *segment.road_shape;
+	const std::vector<float> longitudinal = build_embed_longitudinal_samples(segment, embed);
+	if (longitudinal.size() < 2) {
+		return;
+	}
+	static constexpr int EMBED_LATERAL_STEPS = 7;
+	std::vector<godot::Vector3> previous(EMBED_LATERAL_STEPS + 1);
+	std::vector<godot::Vector3> current(EMBED_LATERAL_STEPS + 1);
+
+	auto fill_row = [&](std::vector<godot::Vector3>& row, float y) {
+		float left = embed.left_border->sample(y);
+		float right = embed.right_border->sample(y);
+		if (left > right) {
+			std::swap(left, right);
+		}
+		for (int step = 0; step <= EMBED_LATERAL_STEPS; ++step) {
+			const float x = left + (right - left) *
+				static_cast<float>(step) / static_cast<float>(EMBED_LATERAL_STEPS);
+			row[static_cast<size_t>(step)] = sample_embed_position(shape, x, y);
+		}
+	};
+
+	fill_row(previous, longitudinal.front());
+	for (size_t row = 1; row < longitudinal.size(); ++row) {
+		fill_row(current, longitudinal[row]);
+		for (int column = 0; column < EMBED_LATERAL_STEPS; ++column) {
+			append_quad(
+				data.vertices[surface],
+				previous[static_cast<size_t>(column)],
+				current[static_cast<size_t>(column)],
+				current[static_cast<size_t>(column + 1)],
+				previous[static_cast<size_t>(column + 1)]);
+		}
+		previous.swap(current);
 	}
 }
 
@@ -187,18 +275,20 @@ static void append_analytic_segment(MinimapMeshData& data, const TrackSegment& s
 			const float x0 = -1.0f + 2.0f * static_cast<float>(column) / static_cast<float>(lateral_steps);
 			const float x1 = -1.0f + 2.0f * static_cast<float>(column + 1) / static_cast<float>(lateral_steps);
 			const uint32_t terrain = analytic_terrain_at(shape, 0.5f * (x0 + x1), 0.5f * (y0 + y1));
-			const int surface = surface_for_terrain(terrain, true);
-			if (surface == MINIMAP_SURFACE_EXCLUDED) {
+			if ((terrain & (TERRAIN::HOLE | TERRAIN::KILL | TERRAIN::FALL | TERRAIN::RAIL)) != 0u) {
 				continue;
 			}
 			append_quad(
-				data.vertices[surface],
+				data.vertices[MINIMAP_SURFACE_ROAD],
 				previous[static_cast<size_t>(column)],
 				current[static_cast<size_t>(column)],
 				current[static_cast<size_t>(column + 1)],
 				previous[static_cast<size_t>(column + 1)]);
 		}
 		previous.swap(current);
+	}
+	for (int index = 0; index < shape.num_embeds; ++index) {
+		append_analytic_embed(data, segment, shape.road_embeds[index]);
 	}
 }
 

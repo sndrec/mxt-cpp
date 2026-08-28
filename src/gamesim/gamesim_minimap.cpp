@@ -56,7 +56,7 @@ void GameSim::update_minimap_markers(
 				LOAD_INDEXED_VEC3(soa, position_current, lane), alpha));
 		}
 
-		if (camera->is_position_behind(position)) {
+		if (!camera->is_position_in_frustum(position)) {
 			markers->set_instance_transform_2d(index, hidden_transform);
 			markers->set_instance_color(index, Color(1.0f, 1.0f, 1.0f, 0.0f));
 			continue;
