@@ -505,11 +505,10 @@ func _configure_follow_minimap(car: VisualCar) -> void:
 	var car_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(focus_player_id)
 	minimap_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 	minimap_cam.basis = car_transform.basis.rotated(car_transform.basis.x, -PI * 0.5)
-	minimap_cam.basis = minimap_cam.basis.rotated(minimap_cam.basis.z, PI)
-	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 128.0
+	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 192.0
 	minimap_cam.fov = 45.0
-	minimap_cam.near = 96.0
-	minimap_cam.far = 192.0
+	minimap_cam.near = 144.0
+	minimap_cam.far = 288.0
 	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 
