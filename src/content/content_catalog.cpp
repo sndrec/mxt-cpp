@@ -30,36 +30,6 @@ String content_source_name(ContentSource source)
 	return String();
 }
 
-Dictionary content_record_to_dictionary(const ContentRecord &record)
-{
-	Dictionary output;
-	output["content_type"] = content_type_name(record.content_type);
-	output["source"] = content_source_name(record.source);
-	output["content_id"] = record.content_id;
-	output["package_digest"] = record.package_digest;
-	output["gameplay_digest"] = record.gameplay_digest;
-	output["root_path"] = record.root_path;
-	output["preview_path"] = record.preview_path;
-	output["authoritative_path"] = record.authoritative_path;
-	output["visual_path"] = record.visual_path;
-	output["metadata_path"] = record.metadata_path;
-	output["manual_boost_sfx_path"] = record.manual_boost_sfx_path;
-	output["albedo_texture_path"] = record.albedo_texture_path;
-	output["normal_texture_path"] = record.normal_texture_path;
-	output["paint_mask_texture_path"] = record.paint_mask_texture_path;
-	output["title"] = record.title;
-	output["description"] = record.description;
-	output["author_name"] = record.author_name;
-	output["visual_metadata"] = record.visual_metadata;
-	output["authoring_metadata"] = record.authoring_metadata;
-	output["published_file_id"] = record.published_file_id == 0
-			? String()
-			: String::num_uint64(record.published_file_id);
-	output["availability"] = "ready";
-	output["validation"] = "valid";
-	return output;
-}
-
 } // namespace mxt::content
 
 namespace {
@@ -288,6 +258,14 @@ static bool valid_official_slug(const String &slug)
 	return true;
 }
 
+static Ref<MxtContentRecord> make_record_ref(const mxt::content::ContentRecord &record)
+{
+	Ref<MxtContentRecord> output;
+	output.instantiate();
+	output->set_record(record);
+	return output;
+}
+
 } // namespace
 
 void MxtContentCatalog::_bind_methods()
@@ -364,7 +342,7 @@ Dictionary MxtContentCatalog::add_official_vehicle(
 	replace_record(record);
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
-	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["record"] = make_record_ref(record);
 	return result;
 }
 
@@ -425,7 +403,7 @@ Dictionary MxtContentCatalog::add_official_track(
 	replace_record(record);
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
-	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["record"] = make_record_ref(record);
 	return result;
 }
 
@@ -469,7 +447,7 @@ Dictionary MxtContentCatalog::add_loose_track(
 			existing.gameplay_digest == gameplay_digest) {
 			result["valid"] = true;
 			result["errors"] = PackedStringArray();
-			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			result["record"] = make_record_ref(existing);
 			return result;
 		}
 	}
@@ -488,14 +466,14 @@ Dictionary MxtContentCatalog::add_loose_track(
 		if (existing.content_id == record.content_id) {
 			result["valid"] = true;
 			result["errors"] = PackedStringArray();
-			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			result["record"] = make_record_ref(existing);
 			return result;
 		}
 	}
 	replace_record(record);
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
-	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["record"] = make_record_ref(record);
 	return result;
 }
 
@@ -556,7 +534,7 @@ Dictionary MxtContentCatalog::add_package_internal(
 	Dictionary result;
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
-	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["record"] = make_record_ref(record);
 	result["validation_profile"] = validation_profile;
 	return result;
 }
@@ -595,7 +573,7 @@ Dictionary MxtContentCatalog::snapshot_draft_package(
 			Dictionary result;
 			result["valid"] = true;
 			result["errors"] = PackedStringArray();
-			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			result["record"] = make_record_ref(existing);
 			result["package_path"] = existing.root_path;
 			result["package_digest"] = existing.package_digest;
 			result["gameplay_digest"] = existing.gameplay_digest;
@@ -621,7 +599,7 @@ Dictionary MxtContentCatalog::snapshot_draft_package(
 	Dictionary result;
 	result["valid"] = true;
 	result["errors"] = PackedStringArray();
-	result["record"] = mxt::content::content_record_to_dictionary(record);
+	result["record"] = make_record_ref(record);
 	result["package_path"] = package.root_path;
 	result["package_digest"] = package.package_digest;
 	result["gameplay_digest"] = package.gameplay_digest;
@@ -714,7 +692,7 @@ Dictionary MxtContentCatalog::sync_workshop_packages(const Array &items)
 		if (state.valid) {
 			item_result["package_digest"] = state.package.package_digest;
 			item_result["gameplay_digest"] = state.package.gameplay_digest;
-			item_result["record"] = mxt::content::content_record_to_dictionary(state.record);
+			item_result["record"] = make_record_ref(state.record);
 		}
 		return item_result;
 	};
@@ -929,14 +907,14 @@ bool MxtContentCatalog::has_content(const String &content_id) const
 	});
 }
 
-Dictionary MxtContentCatalog::resolve_content(const String &content_id) const
+Ref<MxtContentRecord> MxtContentCatalog::resolve_content(const String &content_id) const
 {
 	for (const mxt::content::ContentRecord &record : records) {
 		if (record.content_id == content_id) {
-			return mxt::content::content_record_to_dictionary(record);
+			return make_record_ref(record);
 		}
 	}
-	return Dictionary();
+	return Ref<MxtContentRecord>();
 }
 
 Array MxtContentCatalog::get_records(const String &content_type) const
@@ -944,7 +922,7 @@ Array MxtContentCatalog::get_records(const String &content_type) const
 	Array output;
 	for (const mxt::content::ContentRecord &record : records) {
 		if (content_type.is_empty() || mxt::content::content_type_name(record.content_type) == content_type) {
-			output.push_back(mxt::content::content_record_to_dictionary(record));
+			output.push_back(make_record_ref(record));
 		}
 	}
 	return output;
@@ -956,7 +934,7 @@ Array MxtContentCatalog::find_gameplay(const String &content_type, const String 
 	for (const mxt::content::ContentRecord &record : records) {
 		if (mxt::content::content_type_name(record.content_type) == content_type &&
 				record.gameplay_digest == gameplay_digest) {
-			output.push_back(mxt::content::content_record_to_dictionary(record));
+			output.push_back(make_record_ref(record));
 		}
 	}
 	return output;

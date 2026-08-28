@@ -435,10 +435,11 @@ func _vehicle_selection_allowed(settings: Dictionary) -> bool:
 	if content_id.begins_with(OFFICIAL_VEHICLE_PREFIX):
 		if game_manager == null or game_manager.vehicle_content_controller == null:
 			return false
-		var record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(content_id)
+		var record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(content_id)
 		return (
-			String(record.get("source", "")) == "official"
-			and String(record.get("gameplay_digest", "")) == String(settings.get("vehicle_gameplay_digest", ""))
+			record != null
+			and record.source == MxtContentRecord.SOURCE_OFFICIAL
+			and record.gameplay_digest == String(settings.get("vehicle_gameplay_digest", ""))
 			and String(settings.get("vehicle_package_digest", "")).is_empty()
 			and String(settings.get("vehicle_workshop_id", "")).is_empty())
 	if !_workshop_vehicles_allowed():

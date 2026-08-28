@@ -65,8 +65,8 @@ static func vehicle_name(game_manager: GameManager, content_id: String, gameplay
 			var candidate: CarDefinition = definition_value
 			if candidate == null:
 				continue
-			var record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(candidate.content_id)
-			if String(record.get("gameplay_digest", "")) == gameplay_digest:
+			var record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(candidate.content_id)
+			if record != null and record.gameplay_digest == gameplay_digest:
 				return candidate.name
 	return "Digest %s…" % gameplay_digest.trim_prefix("sha256:").left(8)
 

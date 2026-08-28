@@ -3,6 +3,7 @@
 #include "content/content_validator.h"
 #include "content/content_package_io.h"
 #include "content/content_catalog.h"
+#include "content/content_record.h"
 #include "core/race_configuration.h"
 #include "core/race_roster.h"
 #include "core/track_content_evidence.h"
@@ -48,6 +49,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtContentValidator);
 	GDREGISTER_CLASS(MxtContentPackageIO);
 	GDREGISTER_CLASS(MxtContentCatalog);
+	GDREGISTER_CLASS(MxtContentRecord);
 	GDREGISTER_CLASS(MxtRaceConfiguration);
 	GDREGISTER_CLASS(MxtRaceRoster);
 	GDREGISTER_CLASS(MxtTrackContentEvidence);

@@ -34,11 +34,12 @@ func _initialize() -> void:
 	if !bool(package_result.get("valid", false)):
 		_fail("package validation failed: %s" % str(package_result.get("errors", [])))
 		return
-	var record: Dictionary = package_result.get("record", {})
-	if String(record.get("content_type", "")) != "track" or String(record.get("source", "")) != "workshop":
+	var record := package_result.get("record") as MxtContentRecord
+	if record == null or record.content_type != MxtContentRecord.CONTENT_TRACK \
+			or record.source != MxtContentRecord.SOURCE_WORKSHOP:
 		_fail("validated package is not a Workshop track")
 		return
-	var gameplay_digest := String(record.get("gameplay_digest", ""))
+	var gameplay_digest := record.gameplay_digest
 	var digest_hex := gameplay_digest.trim_prefix("sha256:")
 	if digest_hex.length() != 64:
 		_fail("validated package returned an invalid gameplay digest")
@@ -64,7 +65,7 @@ func _initialize() -> void:
 	var board_name := "mxt_ta_curated_%s_%s_r%d" % [slug, digest_hex.left(8), RULESET_REVISION]
 	boards.append({
 		"track_slug": slug,
-		"track_title": String(record.get("title", slug.replace("-", " ").capitalize())),
+		"track_title": record.title if !record.title.is_empty() else slug.replace("-", " ").capitalize(),
 		"track_source": "curated_workshop",
 		"published_file_id": workshop_id_text,
 		"track_gameplay_digest": gameplay_digest,
@@ -89,6 +90,6 @@ func _initialize() -> void:
 		"steam_name": board_name,
 		"published_file_id": workshop_id_text,
 		"track_gameplay_digest": gameplay_digest,
-		"package_digest": String(record.get("package_digest", "")),
+		"package_digest": record.package_digest,
 	}))
 	quit()

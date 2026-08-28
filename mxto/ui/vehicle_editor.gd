@@ -863,7 +863,7 @@ func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
 	if definition.car_scene != null:
 		visual_result = _copy_official_vehicle_visual(definition)
 	else:
-		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(definition.content_id)
+		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(definition.content_id)
 		visual_result = _copy_packaged_vehicle_visual(record)
 	if !bool(visual_result.get("valid", false)):
 		return visual_result
@@ -872,14 +872,14 @@ func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
 	return session.validate()
 
 
-func _copy_packaged_vehicle_visual(record: Dictionary) -> Dictionary:
-	var source_path := String(record.get("visual_path", ""))
+func _copy_packaged_vehicle_visual(record: MxtContentRecord) -> Dictionary:
+	var source_path := record.visual_path if record != null else ""
 	if source_path.is_empty() or !FileAccess.file_exists(source_path):
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle package has no readable model"]), "warnings": PackedStringArray()}
 	var imported: Dictionary = session.import_model(source_path, _draft_root())
 	if !bool(imported.get("valid", false)):
 		return imported
-	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	var visual_metadata: Dictionary = record.visual_metadata
 	if !session.set_model_transform(visual_metadata.get("model_transform", {})):
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid model-transform metadata"]), "warnings": PackedStringArray()}
 	var material_setup: Dictionary = visual_metadata.get("material_inputs", {}).duplicate(true)
@@ -888,7 +888,7 @@ func _copy_packaged_vehicle_visual(record: Dictionary) -> Dictionary:
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid material metadata"]), "warnings": PackedStringArray()}
 	if !session.set_thrusters(visual_metadata.get("thrusters", [])):
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid thruster metadata"]), "warnings": PackedStringArray()}
-	var intent_result: Dictionary = session.set_authoring_intent(record.get("authoring_metadata", {}))
+	var intent_result: Dictionary = session.set_authoring_intent(record.authoring_metadata)
 	if !bool(intent_result.get("valid", false)):
 		return intent_result
 	return {"valid": true, "errors": PackedStringArray(), "warnings": PackedStringArray()}
@@ -1505,7 +1505,7 @@ func _test_drive() -> void:
 		return
 	test_drive_requested.emit({
 		"draft_id": draft_id,
-		"record": snapshot.get("record", {}),
+		"record": snapshot.get("record"),
 		"package_path": String(snapshot.get("package_path", "")),
 		"package_digest": String(snapshot.get("package_digest", "")),
 	})
@@ -2130,7 +2130,7 @@ func _refresh_preview() -> void:
 			"thrusters": session.get_thrusters(),
 		},
 	}
-	preview_definition = vehicle_content_controller.create_runtime_definition(record)
+	preview_definition = vehicle_content_controller.create_runtime_definition_from_draft(record)
 	if preview_definition != null:
 		preview_render_manager.configure_manual([preview_definition], [{"car_livery": preview_livery.to_dict()}])
 		preview_render_manager.begin_manual_submit()

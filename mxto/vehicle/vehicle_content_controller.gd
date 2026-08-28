@@ -56,16 +56,17 @@ func get_garage_vehicle_definitions() -> Array:
 		var definition := definition_value as CarDefinition
 		if definition == null:
 			continue
-		var record: Dictionary = content_catalog.resolve_content(definition.content_id)
-		var source := String(record.get("source", ""))
+		var record: MxtContentRecord = content_catalog.resolve_content(definition.content_id)
+		if record == null:
+			continue
+		var source := record.source_name
 		if source == "official":
 			garage_definitions.append(definition)
 			continue
 		if source != "workshop":
 			continue
-		var published_file_id_text := String(record.get("published_file_id", ""))
-		if published_file_id_text.is_valid_int() \
-				and subscribed_workshop_item_ids.has(published_file_id_text.to_int()):
+		if record.published_file_id > 0 \
+				and subscribed_workshop_item_ids.has(record.published_file_id):
 			garage_definitions.append(definition)
 	return garage_definitions
 
@@ -77,27 +78,29 @@ func get_multiplayer_vehicle_content_ids(allow_workshop: bool) -> Array:
 	return content_ids
 
 func is_multiplayer_vehicle_content(content_id: String, allow_workshop: bool) -> bool:
-	var record: Dictionary = content_catalog.resolve_content(content_id)
-	var source := String(record.get("source", ""))
+	var record: MxtContentRecord = content_catalog.resolve_content(content_id)
+	if record == null:
+		return false
+	var source := record.source_name
 	if source == "official":
 		return true
-	var workshop_id_text := String(record.get("published_file_id", ""))
-	return allow_workshop and source == "workshop" and workshop_id_text.is_valid_int() and workshop_id_text.to_int() > 0
+	return allow_workshop and source == "workshop" and record.published_file_id > 0
 
 func get_definition(vehicle_content_id: String) -> CarDefinition:
 	var definition := definitions_by_content_id.get(vehicle_content_id) as CarDefinition
 	if definition != null:
 		return definition
-	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
-	if String(record.get("source", "")) != "local_draft" or String(record.get("content_type", "")) != "vehicle":
+	var record: MxtContentRecord = content_catalog.resolve_content(vehicle_content_id)
+	if record == null or record.source != MxtContentRecord.SOURCE_LOCAL_DRAFT \
+			or record.content_type != MxtContentRecord.CONTENT_VEHICLE:
 		return null
 	definition = _definition_from_package_record(record)
 	if definition != null:
 		definitions_by_content_id[vehicle_content_id] = definition
 	return definition
 
-func create_runtime_definition(record: Dictionary) -> CarDefinition:
-	return _definition_from_package_record(record)
+func create_runtime_definition_from_draft(record: Dictionary) -> CarDefinition:
+	return _definition_from_draft_record(record)
 
 func prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Array, warning_context := "race") -> Dictionary:
 	var render_data := prepare_custom_stamp_render_data(racer_ids, racer_settings, warning_context)
@@ -300,11 +303,11 @@ func _custom_stamp_manifest_region_size(entry: Dictionary) -> Vector2i:
 	return Vector2i(int(values[0]), int(values[1]))
 
 func get_evidence(vehicle_content_id: String) -> Dictionary:
-	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
+	var record: MxtContentRecord = content_catalog.resolve_content(vehicle_content_id)
 	return {
-		"vehicle_gameplay_digest": String(record.get("gameplay_digest", "")),
-		"vehicle_package_digest": String(record.get("package_digest", "")),
-		"vehicle_workshop_id": String(record.get("published_file_id", "")),
+		"vehicle_gameplay_digest": record.gameplay_digest if record != null else "",
+		"vehicle_package_digest": record.package_digest if record != null else "",
+		"vehicle_workshop_id": str(record.published_file_id) if record != null and record.published_file_id > 0 else "",
 	}
 
 func apply_evidence(settings: PlayerSettings) -> bool:
@@ -319,12 +322,12 @@ func apply_evidence(settings: PlayerSettings) -> bool:
 func evidence_matches(settings: PlayerSettings) -> bool:
 	if settings == null:
 		return false
-	var record: Dictionary = content_catalog.resolve_content(settings.vehicle_content_id)
+	var record: MxtContentRecord = content_catalog.resolve_content(settings.vehicle_content_id)
 	return (
-		!record.is_empty()
-		and String(record.get("gameplay_digest", "")) == settings.vehicle_gameplay_digest
-		and String(record.get("package_digest", "")) == settings.vehicle_package_digest
-		and String(record.get("published_file_id", "")) == settings.vehicle_workshop_id)
+		record != null
+		and record.gameplay_digest == settings.vehicle_gameplay_digest
+		and record.package_digest == settings.vehicle_package_digest
+		and (str(record.published_file_id) if record.published_file_id > 0 else "") == settings.vehicle_workshop_id)
 
 func reload_definitions() -> void:
 	definitions.clear()
@@ -390,11 +393,11 @@ func request_lobby_vehicle_content(settings: Dictionary) -> bool:
 		return false
 	if String(lobby_ready_workshop_packages.get(workshop_id, "")) == package_digest:
 		return true
-	var record: Dictionary = content_catalog.resolve_content(content_id)
+	var record: MxtContentRecord = content_catalog.resolve_content(content_id)
 	var expected_gameplay_digest := String(settings.get("vehicle_gameplay_digest", ""))
-	var local_published_file_id := String(record.get("published_file_id", ""))
-	var local_gameplay_digest := String(record.get("gameplay_digest", ""))
-	var local_package_digest := String(record.get("package_digest", ""))
+	var local_published_file_id := str(record.published_file_id) if record != null and record.published_file_id > 0 else ""
+	var local_gameplay_digest := record.gameplay_digest if record != null else ""
+	var local_package_digest := record.package_digest if record != null else ""
 	if (
 		local_published_file_id == workshop_id_text
 		and local_gameplay_digest == expected_gameplay_digest
@@ -507,8 +510,10 @@ func _on_workshop_request_completed(_request_id: int, operation: String, result:
 
 func _load_packaged_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):
-		var record: Dictionary = record_value
-		var source := String(record.get("source", ""))
+		var record := record_value as MxtContentRecord
+		if record == null:
+			continue
+		var source := record.source_name
 		if source == "official" or source == "local_draft":
 			continue
 		var definition := _definition_from_package_record(record)
@@ -533,8 +538,8 @@ func _apply_workshop_content_delta(delta: Dictionary) -> void:
 	load_ids.append_array(delta.get("changed_content_ids", []))
 	for content_id_value in load_ids:
 		var content_id := String(content_id_value)
-		var record: Dictionary = content_catalog.resolve_content(content_id)
-		if String(record.get("content_type", "")) != "vehicle":
+		var record: MxtContentRecord = content_catalog.resolve_content(content_id)
+		if record == null or record.content_type != MxtContentRecord.CONTENT_VEHICLE:
 			continue
 		var definition := _definition_from_package_record(record)
 		if definition != null:
@@ -543,8 +548,26 @@ func _apply_workshop_content_delta(delta: Dictionary) -> void:
 	definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
 
 
-func _definition_from_package_record(record: Dictionary) -> CarDefinition:
-	var visual_path := String(record.get("visual_path", ""))
+func _definition_from_package_record(record: MxtContentRecord) -> CarDefinition:
+	return _definition_from_record_fields(
+		record.content_id, record.title, record.authoritative_path, record.visual_path,
+		record.visual_metadata, record.manual_boost_sfx_path,
+		record.albedo_texture_path, record.normal_texture_path, record.paint_mask_texture_path)
+
+
+func _definition_from_draft_record(record: Dictionary) -> CarDefinition:
+	return _definition_from_record_fields(
+		String(record.get("content_id", "")), String(record.get("title", "Vehicle")),
+		String(record.get("authoritative_path", "")), String(record.get("visual_path", "")),
+		record.get("visual_metadata", {}) as Dictionary, String(record.get("manual_boost_sfx_path", "")),
+		String(record.get("albedo_texture_path", "")), String(record.get("normal_texture_path", "")),
+		String(record.get("paint_mask_texture_path", "")))
+
+
+func _definition_from_record_fields(
+		content_id: String, title: String, authoritative_path: String, visual_path: String,
+		visual_metadata: Dictionary, manual_boost_sfx_path: String, albedo_texture_path: String,
+		normal_texture_path: String, paint_mask_texture_path: String) -> CarDefinition:
 	var gltf_document := GLTFDocument.new()
 	var gltf_state := GLTFState.new()
 	gltf_state.base_path = visual_path.get_base_dir()
@@ -562,20 +585,19 @@ func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 		instance.free()
 		return null
 	var mesh_instance: MeshInstance3D = mesh_data["instance"]
-	var visual_metadata: Dictionary = record.get("visual_metadata", {})
 	var runtime_mesh := _build_body_mesh(mesh_instance.mesh, visual_metadata.get("body_surfaces", []))
 	if runtime_mesh == null:
 		push_error("Packaged vehicle has no selected runtime body surfaces: %s" % visual_path)
 		instance.free()
 		return null
 	var definition := CarDefinition.new()
-	definition.name = String(record.get("title", "Vehicle"))
-	definition.content_id = String(record.get("content_id", ""))
-	definition.properties_path = String(record.get("authoritative_path", ""))
+	definition.name = title
+	definition.content_id = content_id
+	definition.properties_path = authoritative_path
 	definition.runtime_mesh = runtime_mesh
-	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), record)
+	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), albedo_texture_path, normal_texture_path, paint_mask_texture_path)
 	definition.runtime_transform = _transform_from_metadata(visual_metadata.get("model_transform", {})) * mesh_data["transform"]
-	definition.manual_boost_sfx = _load_packaged_boost_sfx(String(record.get("manual_boost_sfx_path", "")))
+	definition.manual_boost_sfx = _load_packaged_boost_sfx(manual_boost_sfx_path)
 	definition.manual_boost_volume_db = clampf(
 		float(visual_metadata.get("manual_boost_volume_db", 0.0)), -20.0, 20.0)
 	for thruster_value in visual_metadata.get("thrusters", []):
@@ -603,7 +625,7 @@ func _build_body_mesh(source: Mesh, selected_surfaces: Array) -> ArrayMesh:
 		body.add_surface_from_arrays(source.surface_get_primitive_type(surface), source.surface_get_arrays(surface))
 	return body
 
-func _build_material(source: Mesh, inputs: Dictionary, record: Dictionary) -> ShaderMaterial:
+func _build_material(source: Mesh, inputs: Dictionary, albedo_path: String, normal_path: String, paint_mask_path: String) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = COMMUNITY_VEHICLE_SHADER
 	material.set_shader_parameter("in_lightwarp", _community_lightwarp())
@@ -612,9 +634,9 @@ func _build_material(source: Mesh, inputs: Dictionary, record: Dictionary) -> Sh
 	material.set_shader_parameter("in_overlay_colour", Color.BLACK)
 	# Revision-1 Workshop packages predate standalone PNG payloads. Missing paths must
 	# permanently fall back to their embedded GLB textures so published cars keep rendering.
-	var albedo_override := _load_packaged_texture(String(record.get("albedo_texture_path", "")))
-	var normal_override := _load_packaged_texture(String(record.get("normal_texture_path", "")))
-	var paint_mask_override := _load_packaged_texture(String(record.get("paint_mask_texture_path", "")))
+	var albedo_override := _load_packaged_texture(albedo_path)
+	var normal_override := _load_packaged_texture(normal_path)
+	var paint_mask_override := _load_packaged_texture(paint_mask_path)
 	material.set_shader_parameter("in_albedo", albedo_override if albedo_override != null else _texture(source, int(inputs.get("albedo_surface", -1)), "albedo_texture", Color.WHITE))
 	material.set_shader_parameter("in_normal", normal_override if normal_override != null else _texture(source, int(inputs.get("normal_surface", -1)), "normal_texture", Color(0.5, 0.5, 1.0, 1.0)))
 	material.set_shader_parameter("in_paint_mask", paint_mask_override if paint_mask_override != null else _texture(source, int(inputs.get("paint_mask_surface", -1)), "ao_texture", Color.BLACK))

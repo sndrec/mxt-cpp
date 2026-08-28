@@ -60,12 +60,14 @@ func build_track_content_evidence(track_indices: Array) -> MxtTrackContentEviden
 		var content_id := track_id_for_index(int(index_value))
 		if content_id.is_empty():
 			continue
-		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
+		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+		if record == null:
+			continue
 		if !result.append(
 				content_id,
-				String(record.get("gameplay_digest", "")),
-				String(record.get("package_digest", "")),
-				String(record.get("published_file_id", ""))):
+				record.gameplay_digest,
+				record.package_digest,
+				str(record.published_file_id) if record.published_file_id > 0 else ""):
 			push_error(result.get_last_error())
 			break
 	return result
@@ -75,12 +77,12 @@ func track_content_evidence_matches(
 		gameplay_digest: String,
 		package_digest: String,
 		workshop_id: String) -> bool:
-	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
+	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+	if record == null or record.gameplay_digest != gameplay_digest:
 		return false
-	if String(record.get("package_digest", "")) != package_digest:
+	if record.package_digest != package_digest:
 		return false
-	if String(record.get("published_file_id", "")) != workshop_id:
+	if (str(record.published_file_id) if record.published_file_id > 0 else "") != workshop_id:
 		return false
 	return true
 
@@ -255,10 +257,13 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 		if !bool(result.get("valid", false)):
 			push_error("Official track catalog registration failed for %s: %s" % [slug, str(result.get("errors", []))])
 			return
-		var record: Dictionary = result.get("record", {})
+		var record := result.get("record") as MxtContentRecord
+		if record == null:
+			push_error("Official track catalog registration returned no content record for %s" % slug)
+			return
 		tracks.append({
-			"content_id": String(record.get("content_id", "")),
-			"gameplay_digest": String(record.get("gameplay_digest", "")),
+			"content_id": record.content_id,
+			"gameplay_digest": record.gameplay_digest,
 			"name": title,
 			"mxt": mxt_path,
 			"json": metadata_path,
@@ -319,16 +324,16 @@ func _register_loose_track(json_path: String, seen_paths: Dictionary, seen_conte
 	if !bool(result.get("valid", false)):
 		push_warning("Skipped loose track %s: %s" % [json_path.get_base_dir(), str(result.get("errors", []))])
 		return
-	var record: Dictionary = result.get("record", {})
-	if String(record.get("source", "")) != "local_loose":
+	var record := result.get("record") as MxtContentRecord
+	if record == null or record.source != MxtContentRecord.SOURCE_LOCAL_LOOSE:
 		return
-	var content_id := String(record.get("content_id", ""))
+	var content_id := record.content_id
 	if content_id.is_empty() or seen_content_ids.has(content_id):
 		return
 	seen_content_ids[content_id] = true
 	tracks.append({
 		"content_id": content_id,
-		"gameplay_digest": String(record.get("gameplay_digest", "")),
+		"gameplay_digest": record.gameplay_digest,
 		"name": title,
 		"mxt": mxt_path,
 		"json": json_path,
@@ -339,18 +344,18 @@ func _register_loose_track(json_path: String, seen_paths: Dictionary, seen_conte
 
 func _scan_installed_tracks() -> void:
 	for record_value in vehicle_content_controller.content_catalog.get_records("track"):
-		var record: Dictionary = record_value
-		if String(record.get("source", "")) in ["official", "local_loose"]:
+		var record := record_value as MxtContentRecord
+		if record == null or record.source in [MxtContentRecord.SOURCE_OFFICIAL, MxtContentRecord.SOURCE_LOCAL_LOOSE]:
 			continue
 		tracks.append({
-			"content_id": String(record.get("content_id", "")),
-			"gameplay_digest": String(record.get("gameplay_digest", "")),
-			"name": String(record.get("title", "Track")),
-			"mxt": String(record.get("authoritative_path", "")),
-			"json": String(record.get("metadata_path", "")),
-			"dir": String(record.get("root_path", "")),
-			"visual": String(record.get("visual_path", "")),
-			"source": String(record.get("source", "")),
+			"content_id": record.content_id,
+			"gameplay_digest": record.gameplay_digest,
+			"name": record.title,
+			"mxt": record.authoritative_path,
+			"json": record.metadata_path,
+			"dir": record.root_path,
+			"visual": record.visual_path,
+			"source": record.source_name,
 		})
 
 func _clear_visual_scene() -> void:

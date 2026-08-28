@@ -48,11 +48,11 @@ static func board_for_track_digest(gameplay_digest: String) -> Dictionary:
 			return (value as Dictionary).duplicate(true)
 	return {}
 
-static func track_record_matches_board(record: Dictionary, board: Dictionary) -> bool:
-	if String(record.get("gameplay_digest", "")) != String(board.get("track_gameplay_digest", "")):
+static func track_record_matches_board(record: MxtContentRecord, board: Dictionary) -> bool:
+	if record == null or record.gameplay_digest != String(board.get("track_gameplay_digest", "")):
 		return false
 	return String(board.get("track_source", "official")) == "official" \
-		and String(record.get("source", "")) == "official"
+		and record.source == MxtContentRecord.SOURCE_OFFICIAL
 
 static func board_for_name(steam_name: String) -> Dictionary:
 	for value in manifest().get("boards", []):

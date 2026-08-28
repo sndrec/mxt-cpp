@@ -528,8 +528,8 @@ func _on_time_attack_leaderboard_requested(board_name: String) -> void:
 func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
 	if vehicle_test_drive_active:
 		return
-	var record: Dictionary = snapshot.get("record", {})
-	var content_id := String(record.get("content_id", ""))
+	var record := snapshot.get("record") as MxtContentRecord
+	var content_id := record.content_id if record != null else ""
 	if content_id.is_empty():
 		push_error("Vehicle test-drive snapshot has no registered content record")
 		return

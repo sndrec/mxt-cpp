@@ -120,7 +120,7 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 			or track_evidence.get_content_id(0) != track_id \
 			or track_evidence.get_gameplay_digest(0) != track_digest:
 		return reject("track_identity_mismatch")
-	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_id)
+	var track_record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_id)
 	var board := TimeAttackRulesClass.board_for_track_digest(track_digest)
 	if board.is_empty():
 		return reject("track_has_no_ranked_board")
@@ -141,9 +141,9 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 		return reject("invalid_player_settings")
 	var vehicle_id := String(player_settings.get("vehicle_content_id", ""))
 	var vehicle_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
-	var vehicle_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(vehicle_id)
-	if String(vehicle_record.get("source", "")) != "official" \
-		or String(vehicle_record.get("gameplay_digest", "")) != vehicle_digest:
+	var vehicle_record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(vehicle_id)
+	if vehicle_record == null or vehicle_record.source != MxtContentRecord.SOURCE_OFFICIAL \
+		or vehicle_record.gameplay_digest != vehicle_digest:
 		return reject("unofficial_or_mismatched_vehicle")
 	if String(player.get("vehicle_content_id", "")) != vehicle_id \
 		or String(player.get("vehicle_gameplay_digest", "")) != vehicle_digest:

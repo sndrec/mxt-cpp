@@ -49,8 +49,8 @@ func _show_items(new_items: Array) -> void:
 	item_list.clear()
 	for value in items:
 		var item: Dictionary = value
-		var record: Dictionary = item.get("record", {})
-		var title := String(record.get("title", "Workshop item %d" % int(item.get("published_file_id", 0))))
+		var record := item.get("record") as MxtContentRecord
+		var title := record.title if record != null else "Workshop item %d" % int(item.get("published_file_id", 0))
 		item_list.add_item("%s  [%s]" % [title, String(item.get("status", "unknown")).replace("_", " ")])
 	status_label.text = "%d subscribed item%s" % [items.size(), "" if items.size() == 1 else "s"]
 	if !items.is_empty():
@@ -71,15 +71,15 @@ func _refresh_details() -> void:
 		unsubscribe_button.disabled = true
 		open_button.disabled = true
 		return
-	var record: Dictionary = item.get("record", {})
+	var record := item.get("record") as MxtContentRecord
 	var lines: Array[String] = [
 		"[b]Published File ID:[/b] %d" % int(item.get("published_file_id", 0)),
 		"[b]Status:[/b] %s" % String(item.get("status", "unknown")).replace("_", " ").capitalize(),
 	]
-	if !record.is_empty():
-		lines.append("[b]Type:[/b] %s" % String(record.get("content_type", "")).capitalize())
-		lines.append("[b]Package:[/b] %s" % String(record.get("package_digest", "")))
-		lines.append("[b]Gameplay:[/b] %s" % String(record.get("gameplay_digest", "")))
+	if record != null:
+		lines.append("[b]Type:[/b] %s" % record.content_type_name.capitalize())
+		lines.append("[b]Package:[/b] %s" % record.package_digest)
+		lines.append("[b]Gameplay:[/b] %s" % record.gameplay_digest)
 	if item.has("install_path"):
 		lines.append("[b]Install path:[/b] %s" % String(item["install_path"]))
 	for error in item.get("errors", []):

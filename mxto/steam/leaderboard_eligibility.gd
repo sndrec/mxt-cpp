@@ -14,14 +14,15 @@ static func evaluate_start(game_manager: GameManager, configuration: MxtRaceConf
 		return reject("invalid_track_identity")
 	var track_content_id := track_evidence.get_content_id(0)
 	var track_gameplay_digest := track_evidence.get_gameplay_digest(0)
-	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_content_id)
+	var track_record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_content_id)
 	var board := TimeAttackRulesClass.board_for_track_digest(track_gameplay_digest)
 	if board.is_empty():
 		return reject("track_has_no_ranked_board")
 	if !TimeAttackRulesClass.track_record_matches_board(track_record, board):
 		return reject("uncurated_or_mismatched_track")
-	var vehicle_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(settings.vehicle_content_id)
-	if String(vehicle_record.get("source", "")) != "official" or String(vehicle_record.get("gameplay_digest", "")) != settings.vehicle_gameplay_digest:
+	var vehicle_record: MxtContentRecord = game_manager.vehicle_content_controller.content_catalog.resolve_content(settings.vehicle_content_id)
+	if vehicle_record == null or vehicle_record.source != MxtContentRecord.SOURCE_OFFICIAL \
+			or vehicle_record.gameplay_digest != settings.vehicle_gameplay_digest:
 		return reject("unofficial_or_mismatched_vehicle")
 	return {
 		"eligible": true,

@@ -1,6 +1,7 @@
 #ifndef MXT_CONTENT_CATALOG_H
 #define MXT_CONTENT_CATALOG_H
 
+#include "content/content_record.h"
 #include "content/content_validator.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -12,40 +13,6 @@
 #include <vector>
 
 namespace mxt::content {
-
-enum class ContentSource : uint8_t {
-	OFFICIAL = 0,
-	LOCAL_LOOSE,
-	LOCAL_PACKAGE,
-	LOCAL_DRAFT,
-	WORKSHOP,
-};
-
-struct ContentRecord {
-	ContentType content_type = ContentType::INVALID;
-	ContentSource source = ContentSource::LOCAL_PACKAGE;
-	godot::String content_id;
-	godot::String package_digest;
-	godot::String gameplay_digest;
-	godot::String root_path;
-	godot::String preview_path;
-	godot::String authoritative_path;
-	godot::String visual_path;
-	godot::String metadata_path;
-	godot::String manual_boost_sfx_path;
-	godot::String albedo_texture_path;
-	godot::String normal_texture_path;
-	godot::String paint_mask_texture_path;
-	godot::String title;
-	godot::String description;
-	godot::String author_name;
-	godot::Dictionary visual_metadata;
-	godot::Dictionary authoring_metadata;
-	uint64_t published_file_id = 0;
-};
-
-godot::String content_source_name(ContentSource source);
-godot::Dictionary content_record_to_dictionary(const ContentRecord &record);
 
 } // namespace mxt::content
 
@@ -109,7 +76,7 @@ public:
 	void clear();
 
 	bool has_content(const String &content_id) const;
-	Dictionary resolve_content(const String &content_id) const;
+	Ref<MxtContentRecord> resolve_content(const String &content_id) const;
 	Array get_records(const String &content_type = String()) const;
 	Array find_gameplay(const String &content_type, const String &gameplay_digest) const;
 	int64_t get_generation() const { return static_cast<int64_t>(generation); }

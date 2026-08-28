@@ -548,7 +548,7 @@ func start_recording(track_index: int, race_roster: MxtRaceRoster, start_grid_sl
 	if practice_session:
 		game_manager.practice_controller.configure_timeline_roster(replay_recording_racer_ids, replay_recording_cpu_flags)
 	var track_content_id := game_manager.track_content_controller.track_id_for_index(track_index)
-	var track_record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(track_content_id)
+	var track_record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(track_content_id)
 	replay_recording_metadata.schema_version = REPLAY_SCHEMA_VERSION
 	replay_recording_metadata.build = GameVersionData.display_string()
 	replay_recording_metadata.game_version_major = GameVersionData.MAJOR
@@ -561,8 +561,8 @@ func start_recording(track_index: int, race_roster: MxtRaceRoster, start_grid_sl
 	replay_recording_metadata.source = replay_recording_source
 	replay_recording_metadata.track_content_id = track_content_id
 	replay_recording_metadata.track_gameplay_digest = game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
-	replay_recording_metadata.track_package_digest = String(track_record.get("package_digest", ""))
-	replay_recording_metadata.track_workshop_id = String(track_record.get("published_file_id", ""))
+	replay_recording_metadata.track_package_digest = track_record.package_digest if track_record != null else ""
+	replay_recording_metadata.track_workshop_id = str(track_record.published_file_id) if track_record != null and track_record.published_file_id > 0 else ""
 	replay_recording_metadata.track_name = _current_track_name()
 	replay_recording_metadata.roster = normalized_roster
 	replay_recording_metadata.start_grid_slots = start_grid_slots
@@ -577,12 +577,12 @@ func start_recording(track_index: int, race_roster: MxtRaceRoster, start_grid_sl
 func _settings_with_vehicle_content_evidence(settings: Dictionary) -> Dictionary:
 	var output := settings.duplicate(true)
 	var content_id := String(output.get("vehicle_content_id", ""))
-	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	output["vehicle_gameplay_digest"] = String(record.get("gameplay_digest", ""))
-	var package_digest := String(record.get("package_digest", ""))
+	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+	output["vehicle_gameplay_digest"] = record.gameplay_digest if record != null else ""
+	var package_digest := record.package_digest if record != null else ""
 	if !package_digest.is_empty():
 		output["vehicle_package_digest"] = package_digest
-	var published_file_id := String(record.get("published_file_id", ""))
+	var published_file_id := str(record.published_file_id) if record != null and record.published_file_id > 0 else ""
 	if !published_file_id.is_empty():
 		output["vehicle_workshop_id"] = published_file_id
 	return output
@@ -2444,13 +2444,13 @@ func _find_track_index(data: Dictionary) -> int:
 		return -1
 	if game_manager.track_content_controller.track_gameplay_digest_for_index(track_index) != replay_gameplay_digest:
 		return -1
-	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(replay_track_id)
-	if record.is_empty():
+	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(replay_track_id)
+	if record == null:
 		return -1
-	var record_package_digest := String(record.get("package_digest", ""))
+	var record_package_digest := record.package_digest
 	if !record_package_digest.is_empty() and String(data.get("track_package_digest", "")) != record_package_digest:
 		return -1
-	var record_workshop_id := String(record.get("published_file_id", ""))
+	var record_workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
 	if !record_workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != record_workshop_id:
 		return -1
 	return track_index
@@ -2464,13 +2464,13 @@ func _replay_vehicle_content_available(settings: Array) -> bool:
 		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
 		if content_id.is_empty() or gameplay_digest.is_empty():
 			return false
-		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
-		if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
+		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+		if record == null or record.gameplay_digest != gameplay_digest:
 			return false
-		var record_package_digest := String(record.get("package_digest", ""))
+		var record_package_digest := record.package_digest
 		if !record_package_digest.is_empty() and String(player_settings.get("vehicle_package_digest", "")) != record_package_digest:
 			return false
-		var record_workshop_id := String(record.get("published_file_id", ""))
+		var record_workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
 		if !record_workshop_id.is_empty() and String(player_settings.get("vehicle_workshop_id", "")) != record_workshop_id:
 			return false
 	return true
@@ -2503,13 +2503,14 @@ func _stop_and_save_debug_replay_recording() -> void:
 	var input_b64: Array = []
 	for input_bytes: PackedByteArray in debug_replay_inputs:
 		input_b64.append(Marshalls.raw_to_base64(input_bytes))
+	var track_record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(_current_track_id())
 	var replay := {
 		"version": DEBUG_REPLAY_VERSION,
 		"created_unix": Time.get_unix_time_from_system(),
 		"track_content_id": _current_track_id(),
 		"track_gameplay_digest": _current_track_gameplay_digest(),
-		"track_package_digest": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("package_digest", "")),
-		"track_workshop_id": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("published_file_id", "")),
+		"track_package_digest": track_record.package_digest if track_record != null else "",
+		"track_workshop_id": str(track_record.published_file_id) if track_record != null and track_record.published_file_id > 0 else "",
 		"track_name": _current_track_name(),
 		"settings": _settings_array_with_vehicle_content_evidence(race_session_controller.last_race_settings),
 		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,
