@@ -3,12 +3,16 @@ class_name GameVersion extends RefCounted
 const MAJOR := 0
 const COMPATIBILITY := 3
 const PATCH := 2
+const NETPLAY_PROTOCOL := 2
 
 static func number_string() -> String:
 	return "%d.%d.%d" % [MAJOR, COMPATIBILITY, PATCH]
 
 static func display_string() -> String:
 	return "MaxX Throttle v%s" % number_string()
+
+static func netplay_protocol_string() -> String:
+	return "%s netplay/%d" % [display_string(), NETPLAY_PROTOCOL]
 
 static func metadata() -> Dictionary:
 	return {

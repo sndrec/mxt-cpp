@@ -77,7 +77,7 @@ var pending_next_race_state: Dictionary = {}
 var race_active: bool = false
 
 
-var version_string: String = GameVersionData.display_string()
+var version_string: String = GameVersionData.netplay_protocol_string()
 var _unverified_peers: Array = []
 var _version_request_time := {}
 

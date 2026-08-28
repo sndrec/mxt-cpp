@@ -5,6 +5,14 @@ const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd"
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 
+class OutgoingBlobMessage:
+	extends RefCounted
+	var peer_id := 0
+	var data := PackedByteArray()
+	var byte_count := 0
+	var submit_to_server := false
+	var key := ""
+
 @onready var network_manager: NetworkManager = get_parent() as NetworkManager
 
 var custom_stamp_manifests := {}
@@ -12,8 +20,8 @@ var custom_stamp_blob_cache := {}
 var custom_stamp_blob_waiters := {}
 var revision := 0
 const BLOB_SEND_BUDGET_BYTES_PER_FRAME := 24 * 1024
-const MANIFEST_SNAPSHOT_MAX_BYTES := 2 * 1024 * 1024
-var outgoing_blob_queue: Array[Dictionary] = []
+var wire_codec := MxtCustomStampWireCodec.new()
+var outgoing_blob_queue: Array[OutgoingBlobMessage] = []
 var outgoing_blob_queue_head := 0
 var outgoing_blob_queue_bytes := 0
 var outgoing_blob_keys := {}
@@ -36,21 +44,21 @@ func _process(_delta: float) -> void:
 		return
 	var budget := BLOB_SEND_BUDGET_BYTES_PER_FRAME
 	while outgoing_blob_queue_head < outgoing_blob_queue.size():
-		var entry: Dictionary = outgoing_blob_queue[outgoing_blob_queue_head]
-		var encoded_bytes := int(entry.get("bytes", 0))
+		var entry := outgoing_blob_queue[outgoing_blob_queue_head]
+		var encoded_bytes := entry.byte_count
 		if budget < BLOB_SEND_BUDGET_BYTES_PER_FRAME and encoded_bytes > budget:
 			break
 		outgoing_blob_queue_head += 1
 		outgoing_blob_queue_bytes = maxi(0, outgoing_blob_queue_bytes - encoded_bytes)
-		outgoing_blob_keys.erase(str(entry.get("key", "")))
-		var peer_id := int(entry.get("peer_id", 0))
+		outgoing_blob_keys.erase(entry.key)
+		var peer_id := entry.peer_id
 		if !network_manager._can_send_rpc_to_peer(peer_id):
 			continue
-		var blob_data: Dictionary = entry.get("data", {})
-		if bool(entry.get("submit", false)):
-			_submit_custom_stamp_blob.rpc_id(peer_id, blob_data)
+		var blob_wire := entry.data
+		if entry.submit_to_server:
+			_submit_custom_stamp_blob.rpc_id(peer_id, blob_wire)
 		else:
-			_receive_custom_stamp_blob.rpc_id(peer_id, blob_data)
+			_receive_custom_stamp_blob.rpc_id(peer_id, blob_wire)
 		log_blob_out += 1
 		log_blob_bytes_out += encoded_bytes
 		budget -= encoded_bytes
@@ -60,21 +68,25 @@ func _process(_delta: float) -> void:
 		outgoing_blob_queue = outgoing_blob_queue.slice(outgoing_blob_queue_head)
 		outgoing_blob_queue_head = 0
 
-func _queue_custom_stamp_blob(peer_id: int, blob_data: Dictionary, submit_to_server: bool) -> void:
+func _queue_custom_stamp_blob(peer_id: int, blob: CustomStampBlob, submit_to_server: bool) -> void:
 	if peer_id <= 0:
 		return
-	var stamp_hash := str(blob_data.get("stamp_hash", blob_data.get("hash", "")))
+	var stamp_hash := blob.stamp_hash
 	var key := "%d:%d:%s" % [peer_id, int(submit_to_server), stamp_hash]
 	if outgoing_blob_keys.has(key):
 		return
-	var encoded_bytes := var_to_bytes(blob_data).size()
-	outgoing_blob_queue.append({
-		"peer_id": peer_id,
-		"data": blob_data,
-		"bytes": encoded_bytes,
-		"submit": submit_to_server,
-		"key": key,
-	})
+	var blob_wire := wire_codec.encode_blob(blob.to_wire_dict())
+	if blob_wire.is_empty():
+		push_warning("Custom stamp blob not queued: %s" % wire_codec.get_last_error())
+		return
+	var encoded_bytes := blob_wire.size()
+	var entry := OutgoingBlobMessage.new()
+	entry.peer_id = peer_id
+	entry.data = blob_wire
+	entry.byte_count = encoded_bytes
+	entry.submit_to_server = submit_to_server
+	entry.key = key
+	outgoing_blob_queue.append(entry)
 	outgoing_blob_keys[key] = true
 	outgoing_blob_queue_bytes += encoded_bytes
 
@@ -92,16 +104,19 @@ func send_active_custom_stamp_manifest() -> void:
 		push_warning("Custom stamp manifest not sent: %s" % str(payload.get("error", "unknown error")))
 		return
 	var manifest: Array = payload.get("manifest", [])
-	var manifest_bytes := var_to_bytes(manifest).size()
+	var manifest_wire := wire_codec.encode_manifest(manifest)
+	if manifest_wire.is_empty():
+		push_warning("Custom stamp manifest not sent: %s" % wire_codec.get_last_error())
+		return
 	var my_id := multiplayer.get_unique_id()
 	_cache_custom_stamp_payload_blobs(payload)
 	_accept_custom_stamp_manifest(my_id, manifest)
 	if network_manager.is_server:
-		_send_custom_stamp_manifest_snapshot({my_id: manifest})
+		_send_custom_stamp_manifest(my_id, manifest_wire)
 	else:
-		_submit_custom_stamp_manifest.rpc_id(1, manifest)
+		_submit_custom_stamp_manifest.rpc_id(1, manifest_wire)
 		log_manifest_out += 1
-		log_manifest_bytes_out += manifest_bytes
+		log_manifest_bytes_out += manifest_wire.size()
 
 func _build_local_custom_stamp_payload() -> Dictionary:
 	var settings := network_manager.lobby_settings.get_local_player_settings_snapshot()
@@ -126,12 +141,16 @@ func _cache_custom_stamp_payload_blobs(payload: Dictionary) -> void:
 		CustomStampStore.save_blob(blob)
 
 @rpc("any_peer", "call_remote", "reliable", 11)
-func _submit_custom_stamp_manifest(manifest: Array) -> void:
+func _submit_custom_stamp_manifest(manifest_wire: PackedByteArray) -> void:
 	if !network_manager.is_server or network_manager.race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	log_manifest_in += 1
-	log_manifest_bytes_in += var_to_bytes(manifest).size()
+	log_manifest_bytes_in += manifest_wire.size()
+	var manifest := wire_codec.decode_manifest(manifest_wire)
+	if !wire_codec.get_last_error().is_empty():
+		push_warning("Rejected custom stamp manifest wire data: %s" % wire_codec.get_last_error())
+		return
 	if sender_id == 0:
 		sender_id = multiplayer.get_unique_id()
 	var was_duplicate: bool = custom_stamp_manifests.has(sender_id) and custom_stamp_manifests[sender_id] == manifest
@@ -140,7 +159,7 @@ func _submit_custom_stamp_manifest(manifest: Array) -> void:
 	if was_duplicate:
 		_request_missing_custom_stamp_blobs_from_owner(sender_id, manifest)
 		return
-	_send_custom_stamp_manifest_snapshot({sender_id: manifest})
+	_send_custom_stamp_manifest(sender_id, manifest_wire)
 	_request_missing_custom_stamp_blobs_from_owner(sender_id, manifest)
 
 func _apply_received_custom_stamp_manifest(player_id: int, manifest: Array) -> void:
@@ -153,7 +172,9 @@ func _apply_received_custom_stamp_manifest(player_id: int, manifest: Array) -> v
 		_queue_custom_stamp_blob_waiters(player_id, missing, multiplayer.get_unique_id())
 		_request_missing_custom_stamp_blobs_from_owner(player_id, manifest)
 	else:
-		_request_custom_stamp_blobs.rpc_id(1, player_id, Array(missing))
+		var hashes_wire := wire_codec.encode_hashes(Array(missing))
+		if !hashes_wire.is_empty():
+			_request_custom_stamp_blobs.rpc_id(1, player_id, hashes_wire)
 
 func _accept_custom_stamp_manifest(player_id: int, manifest: Array) -> bool:
 	var validation_error := _validate_custom_stamp_manifest(manifest)
@@ -170,8 +191,11 @@ func _accept_custom_stamp_manifest(player_id: int, manifest: Array) -> bool:
 	return true
 
 @rpc("any_peer", "call_remote", "reliable", 11)
-func _request_custom_stamp_blobs(owner_id: int, hashes: Array) -> void:
+func _request_custom_stamp_blobs(owner_id: int, hashes_wire: PackedByteArray) -> void:
 	if !network_manager.is_server or network_manager.race_active:
+		return
+	var hashes := wire_codec.decode_hashes(hashes_wire)
+	if !wire_codec.get_last_error().is_empty():
 		return
 	var requester_id := multiplayer.get_remote_sender_id()
 	if requester_id == 0:
@@ -184,7 +208,7 @@ func _request_custom_stamp_blobs(owner_id: int, hashes: Array) -> void:
 		var stamp_hash := str(hash_value)
 		var cached := get_custom_stamp_blob(stamp_hash)
 		if cached != null:
-			_queue_custom_stamp_blob(requester_id, cached.to_cache_dict(), false)
+			_queue_custom_stamp_blob(requester_id, cached, false)
 		else:
 			_add_custom_stamp_blob_waiter(stamp_hash, requester_id)
 			missing_for_server.append(stamp_hash)
@@ -192,8 +216,11 @@ func _request_custom_stamp_blobs(owner_id: int, hashes: Array) -> void:
 		_request_custom_stamp_blobs_from_owner(owner_id, missing_for_server)
 
 @rpc("any_peer", "call_remote", "reliable", 11)
-func _provide_custom_stamp_blobs(hashes: Array) -> void:
+func _provide_custom_stamp_blobs(hashes_wire: PackedByteArray) -> void:
 	if network_manager.race_active:
+		return
+	var hashes := wire_codec.decode_hashes(hashes_wire)
+	if !wire_codec.get_last_error().is_empty():
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if !network_manager.is_server and sender_id != 0 and sender_id != 1:
@@ -204,36 +231,47 @@ func _provide_custom_stamp_blobs(hashes: Array) -> void:
 		if blob == null:
 			continue
 		if network_manager.is_server:
-			_accept_custom_stamp_blob(blob.to_cache_dict())
+			_accept_custom_stamp_blob(blob)
 		else:
-			_queue_custom_stamp_blob(1, blob.to_cache_dict(), true)
+			_queue_custom_stamp_blob(1, blob, true)
 
 @rpc("any_peer", "call_remote", "reliable", 11)
-func _submit_custom_stamp_blob(blob_data: Dictionary) -> void:
+func _submit_custom_stamp_blob(blob_wire: PackedByteArray) -> void:
 	if !network_manager.is_server or network_manager.race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	log_blob_in += 1
-	log_blob_bytes_in += var_to_bytes(blob_data).size()
+	log_blob_bytes_in += blob_wire.size()
 	if sender_id == 0:
 		sender_id = multiplayer.get_unique_id()
-	_accept_custom_stamp_blob(blob_data, sender_id)
+	var blob := _decode_custom_stamp_blob(blob_wire)
+	if blob != null:
+		_accept_custom_stamp_blob(blob, sender_id)
 
 @rpc("any_peer", "call_remote", "reliable", 11)
-func _receive_custom_stamp_blob(blob_data: Dictionary) -> void:
+func _receive_custom_stamp_blob(blob_wire: PackedByteArray) -> void:
 	if network_manager.race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
 	if sender_id != 0:
 		log_blob_in += 1
-		log_blob_bytes_in += var_to_bytes(blob_data).size()
+		log_blob_bytes_in += blob_wire.size()
 	if !network_manager.is_server and sender_id != 0 and sender_id != 1:
 		return
-	_accept_custom_stamp_blob(blob_data)
+	var blob := _decode_custom_stamp_blob(blob_wire)
+	if blob != null:
+		_accept_custom_stamp_blob(blob)
 
-func _accept_custom_stamp_blob(blob_data: Dictionary, expected_owner_id := -1) -> bool:
+func _decode_custom_stamp_blob(blob_wire: PackedByteArray) -> CustomStampBlob:
+	var blob_data := wire_codec.decode_blob(blob_wire)
+	if blob_data.is_empty():
+		push_warning("Rejected custom stamp blob wire data: %s" % wire_codec.get_last_error())
+		return null
 	var blob := CustomStampBlob.new()
-	blob.from_cache_dict(blob_data)
+	blob.from_wire_dict(blob_data)
+	return blob
+
+func _accept_custom_stamp_blob(blob: CustomStampBlob, expected_owner_id := -1) -> bool:
 	var validation_error := blob.validate_blob()
 	if validation_error != "":
 		push_warning("Rejected custom stamp blob: %s" % validation_error)
@@ -258,7 +296,7 @@ func _accept_custom_stamp_blob(blob_data: Dictionary, expected_owner_id := -1) -
 			var waiter_id := int(waiter)
 			if waiter_id == multiplayer.get_unique_id():
 				continue
-			_queue_custom_stamp_blob(waiter_id, blob.to_cache_dict(), false)
+			_queue_custom_stamp_blob(waiter_id, blob, false)
 		custom_stamp_blob_waiters.erase(blob.stamp_hash)
 	return true
 
@@ -361,10 +399,13 @@ func _request_missing_custom_stamp_blobs_from_owner(owner_id: int, manifest: Arr
 func _request_custom_stamp_blobs_from_owner(owner_id: int, hashes: Array) -> void:
 	if hashes.is_empty():
 		return
+	var hashes_wire := wire_codec.encode_hashes(hashes)
+	if hashes_wire.is_empty():
+		return
 	if owner_id == multiplayer.get_unique_id():
-		_provide_custom_stamp_blobs(hashes)
+		_provide_custom_stamp_blobs(hashes_wire)
 	else:
-		_provide_custom_stamp_blobs.rpc_id(owner_id, hashes)
+		_provide_custom_stamp_blobs.rpc_id(owner_id, hashes_wire)
 
 func _queue_custom_stamp_blob_waiters(_owner_id: int, hashes: Array, waiter_id: int) -> void:
 	for hash_value in hashes:
@@ -432,63 +473,52 @@ func remove_peer(peer_id: int) -> void:
 func _drop_queued_blobs_for_peer(peer_id: int) -> void:
 	if outgoing_blob_queue_head >= outgoing_blob_queue.size():
 		return
-	var retained: Array[Dictionary] = []
+	var retained: Array[OutgoingBlobMessage] = []
 	for i in range(outgoing_blob_queue_head, outgoing_blob_queue.size()):
-		var entry: Dictionary = outgoing_blob_queue[i]
-		if int(entry.get("peer_id", 0)) != peer_id:
+		var entry := outgoing_blob_queue[i]
+		if entry.peer_id != peer_id:
 			retained.append(entry)
 	outgoing_blob_queue = retained
 	outgoing_blob_queue_head = 0
 	outgoing_blob_queue_bytes = 0
 	outgoing_blob_keys.clear()
 	for entry in outgoing_blob_queue:
-		outgoing_blob_queue_bytes += int(entry.get("bytes", 0))
-		outgoing_blob_keys[str(entry.get("key", ""))] = true
+		outgoing_blob_queue_bytes += entry.byte_count
+		outgoing_blob_keys[entry.key] = true
 
 func send_manifests_to_peer(peer_id: int) -> void:
 	if custom_stamp_manifests.is_empty() or !network_manager._can_send_rpc_to_peer(peer_id):
 		return
-	_send_custom_stamp_manifest_snapshot(custom_stamp_manifests, peer_id)
+	for player_id in custom_stamp_manifests:
+		var manifest_wire := wire_codec.encode_manifest(custom_stamp_manifests[player_id])
+		if !manifest_wire.is_empty():
+			_send_custom_stamp_manifest(int(player_id), manifest_wire, peer_id)
 
-func _send_custom_stamp_manifest_snapshot(manifests: Dictionary, peer_id: int = 0) -> void:
-	var raw := var_to_bytes(manifests)
-	if raw.is_empty() or raw.size() > MANIFEST_SNAPSHOT_MAX_BYTES:
-		push_warning("Custom stamp manifest snapshot rejected before send: %d bytes" % raw.size())
+func _send_custom_stamp_manifest(player_id: int, manifest_wire: PackedByteArray, peer_id: int = 0) -> void:
+	if manifest_wire.is_empty():
 		return
-	var payload := raw.compress(FileAccess.COMPRESSION_ZSTD)
-	if payload.is_empty():
-		payload = raw
 	if peer_id > 0:
-		_receive_custom_stamp_manifest_snapshot.rpc_id(peer_id, raw.size(), payload)
+		_receive_custom_stamp_manifest.rpc_id(peer_id, player_id, manifest_wire)
 		log_manifest_out += 1
-		log_manifest_bytes_out += payload.size()
+		log_manifest_bytes_out += manifest_wire.size()
 	else:
-		_receive_custom_stamp_manifest_snapshot.rpc(raw.size(), payload)
+		_receive_custom_stamp_manifest.rpc(player_id, manifest_wire)
 		var recipients := multiplayer.get_peers().size()
 		log_manifest_out += recipients
-		log_manifest_bytes_out += payload.size() * recipients
+		log_manifest_bytes_out += manifest_wire.size() * recipients
 
 @rpc("authority", "call_remote", "reliable", 11)
-func _receive_custom_stamp_manifest_snapshot(raw_size: int, payload: PackedByteArray) -> void:
+func _receive_custom_stamp_manifest(player_id: int, manifest_wire: PackedByteArray) -> void:
 	if network_manager.is_server or network_manager.race_active:
 		return
-	if raw_size <= 0 or raw_size > MANIFEST_SNAPSHOT_MAX_BYTES or payload.is_empty() or payload.size() > MANIFEST_SNAPSHOT_MAX_BYTES:
+	if player_id <= 0 or manifest_wire.is_empty():
 		return
 	log_manifest_in += 1
-	log_manifest_bytes_in += payload.size()
-	var raw := payload.decompress(raw_size, FileAccess.COMPRESSION_ZSTD)
-	if raw.is_empty() and payload.size() == raw_size:
-		raw = payload
-	if raw.size() != raw_size:
+	log_manifest_bytes_in += manifest_wire.size()
+	var manifest := wire_codec.decode_manifest(manifest_wire)
+	if !wire_codec.get_last_error().is_empty():
 		return
-	var decoded = bytes_to_var(raw)
-	if typeof(decoded) != TYPE_DICTIONARY:
-		return
-	for raw_player_id in (decoded as Dictionary).keys():
-		var manifest = (decoded as Dictionary)[raw_player_id]
-		if typeof(manifest) != TYPE_ARRAY:
-			continue
-		_apply_received_custom_stamp_manifest(int(raw_player_id), manifest)
+	_apply_received_custom_stamp_manifest(player_id, manifest)
 
 func consume_log_interval() -> Dictionary:
 	var snapshot := {

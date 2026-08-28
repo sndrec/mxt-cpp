@@ -83,6 +83,11 @@ func to_cache_dict() -> Dictionary:
 	out["compressed_indices_base64"] = Marshalls.raw_to_base64(compressed_indices)
 	return out
 
+func to_wire_dict() -> Dictionary:
+	var out := to_manifest(true)
+	out["compressed_indices"] = compressed_indices
+	return out
+
 func from_cache_dict(data: Dictionary) -> void:
 	if data.has("hash"):
 		stamp_hash = str(data["hash"])
@@ -100,6 +105,12 @@ func from_cache_dict(data: Dictionary) -> void:
 		custom_palette = _html_array_to_palette(data["custom_palette"])
 	if data.has("compressed_indices_base64"):
 		compressed_indices = Marshalls.base64_to_raw(str(data["compressed_indices_base64"]))
+	_decoded_indices = PackedByteArray()
+
+func from_wire_dict(data: Dictionary) -> void:
+	from_cache_dict(data)
+	if data.has("compressed_indices") and data["compressed_indices"] is PackedByteArray:
+		compressed_indices = data["compressed_indices"]
 	_decoded_indices = PackedByteArray()
 
 func validate_blob() -> String:
