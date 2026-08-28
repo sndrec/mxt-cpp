@@ -91,8 +91,8 @@ func _run() -> void:
 	if game_manager._local_player_id() != focus_id or game_manager.race_session_controller.local_player_index != source_ids.find(focus_id):
 		_fail("focused racer did not transfer to local control")
 		return
-	if String(game_manager.network_manager.race_options.get("session_kind", "")) != "practice" \
-			or bool(game_manager.network_manager.race_options.get("leaderboard_eligible", true)) \
+	if !game_manager.network_manager.race_configuration.is_practice() \
+			or game_manager.network_manager.race_configuration.leaderboard_eligible \
 			or game_manager.replay_controller.replay_recording_source != "practice" \
 			or practice.game_speed() != 0.0:
 		_fail("resumed Practice policy was not applied")

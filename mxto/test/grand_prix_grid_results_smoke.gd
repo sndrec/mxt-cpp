@@ -11,8 +11,8 @@ func _init() -> void:
 		push_error("grand_prix_grid_results_smoke missing native set_start_grid_slots")
 		quit(1)
 		return
-	main.network_manager.race_options = {
-		"game_mode": 1,
+	main.network_manager.race_configuration.game_mode = 1
+	main.network_manager.race_state = {
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {1: 10, 2: 7, 3: 2},
 	}
@@ -22,7 +22,7 @@ func _init() -> void:
 		push_error("first Grand Prix race should use randomized grid, got %s" % [first_grid])
 		quit(1)
 		return
-	main.network_manager.race_options["grand_prix_current_track"] = 1
+	main.network_manager.race_state["grand_prix_current_track"] = 1
 	var standings_grid: PackedInt32Array = main.race_session_controller.call(
 		"_build_start_grid_slots", [1, 2, 3], false)
 	if standings_grid != PackedInt32Array([2, 1, 0]):
@@ -44,13 +44,13 @@ func _init() -> void:
 	main.network_manager.race_results.player_finish_times = {1: 480}
 	main.network_manager.race_results.finish_order = [3, 1, 2]
 	main.network_manager.input_transport.server_tick = 900
-	main.network_manager.race_options = {
-		"game_mode": 1,
+	main.network_manager.race_configuration.game_mode = 1
+	main.network_manager.race_state = {
 		"grand_prix_current_track": 2,
 		"grand_prix_points": {1: 0, 2: 0, 3: 0},
 	}
 	main.call("_record_grand_prix_race_results", main.game_sim)
-	var points: Dictionary = main.network_manager.race_options.get("grand_prix_points", {})
+	var points: Dictionary = main.network_manager.race_state.get("grand_prix_points", {})
 	if int(points.get(3, -1)) != 3 or int(points.get(1, -1)) != 2 or int(points.get(2, -1)) != 1:
 		push_error("Grand Prix points should use all racers, got %s" % [points])
 		quit(1)
@@ -112,7 +112,7 @@ func _init() -> void:
 	}
 	nm.race_admission.active = true
 	nm.race_admission.scheduled = true
-	nm.start_race("sha256:test", [], {})
+	nm.start_race("sha256:test", [], nm.race_configuration.encode_wire(), {})
 	for id in [1, 2, 3]:
 		if nm.race_admission.stage_for(id) != nm.race_admission.START_SENT:
 			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission.admission_states])

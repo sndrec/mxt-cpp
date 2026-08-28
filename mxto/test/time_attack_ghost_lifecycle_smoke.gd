@@ -163,18 +163,14 @@ func _exercise_isolation_and_reconstruction(track_index: int, descriptor: Dictio
 func _exercise_practice_cpu_lifecycle(track_index: int, descriptor: Dictionary) -> bool:
 	game_manager.track_selector.select(track_index)
 	game_manager.singleplayer_cpu_count = 1
-	game_manager._on_practice_start_requested({
-		"game_mode": 0,
-		"vehicle_restore": true,
-		"bumpers": false,
-		"s_boost": false,
-		"cpu_count": 1,
-		"lap_count": 3,
-		"infinite_laps": false,
-		"session_kind": "practice",
-		"leaderboard_eligible": false,
-		"leaderboard_ineligible_reason": "practice_unranked",
-	}, {"ghost_descriptors": [descriptor]})
+	var configuration := MxtRaceConfiguration.new()
+	configuration.session_kind = MxtRaceConfiguration.SESSION_PRACTICE
+	configuration.vehicle_restore = true
+	configuration.s_boost = false
+	configuration.cpu_count = 1
+	configuration.lap_count = 3
+	configuration.leaderboard_ineligible_reason = "practice_unranked"
+	game_manager._on_practice_start_requested(configuration, {"ghost_descriptors": [descriptor]})
 	var controller := game_manager.time_attack_ghost_controller
 	if !game_manager.game_sim.sim_started or controller.runtime_slots.size() != 1:
 		_fail("practice race with CPU and ghost did not start")
@@ -240,7 +236,7 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 		if game_manager.time_attack_ghost_controller.runtime_slots.size() != ghost_count:
 			_fail("ranked Time Attack did not start %d selected ghosts" % ghost_count)
 			return false
-		game_manager.network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true)
+		game_manager.network_manager.load_race_metadata_dictionary((replay.get("race_options", {}) as Dictionary))
 		game_manager.singleplayer_mode = true
 		game_manager.replay_controller.start_recording(track_index, settings, racer_ids, [false], grid_slots)
 		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.duplicate(true)

@@ -54,18 +54,14 @@ func _run() -> void:
 	}
 	game_manager.track_selector.select(track_index)
 	game_manager.singleplayer_cpu_count = 0
-	game_manager._on_practice_start_requested({
-		"game_mode": 0,
-		"vehicle_restore": true,
-		"bumpers": false,
-		"s_boost": false,
-		"cpu_count": 0,
-		"lap_count": 3,
-		"infinite_laps": false,
-		"session_kind": "practice",
-		"leaderboard_eligible": false,
-		"leaderboard_ineligible_reason": "practice_unranked",
-	}, {"ghost_descriptors": [descriptor]})
+	var configuration := MxtRaceConfiguration.new()
+	configuration.session_kind = MxtRaceConfiguration.SESSION_PRACTICE
+	configuration.vehicle_restore = true
+	configuration.s_boost = false
+	configuration.cpu_count = 0
+	configuration.lap_count = 3
+	configuration.leaderboard_ineligible_reason = "practice_unranked"
+	game_manager._on_practice_start_requested(configuration, {"ghost_descriptors": [descriptor]})
 	var controller := game_manager.time_attack_ghost_controller
 	if controller.runtime_slots.size() != 1:
 		_fail("visual ghost runtime did not start")

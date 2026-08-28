@@ -5,13 +5,13 @@ const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 static func reject(reason: String) -> Dictionary:
 	return {"eligible": false, "reason": reason}
 
-static func evaluate_start(game_manager: GameManager, options: Dictionary, settings: PlayerSettings) -> Dictionary:
-	if !TimeAttackRulesClass.options_match(options):
+static func evaluate_start(game_manager: GameManager, configuration: MxtRaceConfiguration, race_state: Dictionary, settings: PlayerSettings) -> Dictionary:
+	if !TimeAttackRulesClass.configuration_matches(configuration):
 		return reject("modified_time_attack_rules")
 	if game_manager.debug_runtime_controller.auto_accelerate or game_manager.auto_bumpers_mode or game_manager.debug_runtime_controller.bumper_smoke_enabled or game_manager.debug_runtime_controller.rail_trace_enabled:
 		return reject("debug_or_automation_enabled")
-	var track_ids: Array = options.get("track_ids", [])
-	var track_digests: Array = options.get("track_gameplay_digests", [])
+	var track_ids: Array = race_state.get("track_ids", [])
+	var track_digests: Array = race_state.get("track_gameplay_digests", [])
 	if track_ids.size() != 1 or track_digests.size() != 1:
 		return reject("invalid_track_identity")
 	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(String(track_ids[0]))

@@ -144,20 +144,18 @@ func _advance(input_bytes: PackedByteArray) -> void:
 	game_manager.practice_controller.capture_completed_tick(game_manager._singleplayer_tick - 1)
 
 
-func _options(laps: int) -> Dictionary:
-	return {
-		"game_mode": 0,
-		"vehicle_restore": true,
-		"bumpers": false,
-		"s_boost": true,
-		"boost_unlocked_from_start": true,
-		"cpu_count": 0,
-		"lap_count": laps,
-		"infinite_laps": laps == 0,
-		"session_kind": "practice",
-		"leaderboard_eligible": false,
-		"leaderboard_ineligible_reason": "practice",
-	}
+func _options(laps: int) -> MxtRaceConfiguration:
+	var configuration := MxtRaceConfiguration.new()
+	configuration.session_kind = MxtRaceConfiguration.SESSION_PRACTICE
+	configuration.vehicle_restore = true
+	configuration.bumpers = false
+	configuration.s_boost = true
+	configuration.boost_unlocked_from_start = true
+	configuration.cpu_count = 0
+	configuration.lap_count = laps
+	configuration.leaderboard_eligible = false
+	configuration.leaderboard_ineligible_reason = "practice"
+	return configuration
 
 
 func _fail(message: String) -> void:

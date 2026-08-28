@@ -1,12 +1,10 @@
 class_name PracticeSetup
 extends Control
 
-signal start_requested(options: Dictionary, context: Dictionary)
+signal start_requested(configuration: MxtRaceConfiguration, context: Dictionary)
 signal back_requested
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
-const PRACTICE_SESSION_KIND := "practice"
-
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
 @onready var s_boost_toggle: CheckBox = $Center/Panel/Margin/Content/Options/SBoost
@@ -77,30 +75,23 @@ func _leaderboard_name_for_current_track() -> String:
 func _start() -> void:
 	if ghost_selection != null and !ghost_selection.all_ready():
 		return
-	var infinite := infinite_laps.button_pressed
-	var options := {
-		"game_mode": 0,
-		"vehicle_restore": restore_toggle.button_pressed,
-		"bumpers": bumpers_toggle.button_pressed,
-		"s_boost": s_boost_toggle.button_pressed,
-		"boost_unlocked_from_start": boost_from_start_toggle.button_pressed,
-		"cpu_count": roundi(cpu_count.value),
-		"cpu_vehicle_content_ids": cpu_vehicles.selected_content_ids(),
-		"lap_count": 0 if infinite else roundi(lap_count.value),
-		"infinite_laps": infinite,
-		"session_kind": PRACTICE_SESSION_KIND,
-		"leaderboard_eligible": false,
-		"leaderboard_ineligible_reason": "practice_unranked",
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {},
-		"grand_prix_ko_energy_bonuses": {},
-		"grand_prix_eliminated_ids": [],
-	}
+	var configuration := MxtRaceConfiguration.new()
+	configuration.session_kind = MxtRaceConfiguration.SESSION_PRACTICE
+	configuration.game_mode = 0
+	configuration.vehicle_restore = restore_toggle.button_pressed
+	configuration.bumpers = bumpers_toggle.button_pressed
+	configuration.s_boost = s_boost_toggle.button_pressed
+	configuration.boost_unlocked_from_start = boost_from_start_toggle.button_pressed
+	configuration.cpu_count = roundi(cpu_count.value)
+	configuration.cpu_vehicle_content_ids = PackedStringArray(cpu_vehicles.selected_content_ids())
+	configuration.lap_count = 0 if infinite_laps.button_pressed else roundi(lap_count.value)
+	configuration.leaderboard_eligible = false
+	configuration.leaderboard_ineligible_reason = "practice_unranked"
 	var context := {
 		"ghost_descriptors": ghost_selection.ready_descriptors() if ghost_selection != null else [],
 	}
 	hide()
-	start_requested.emit(options, context)
+	start_requested.emit(configuration, context)
 
 
 func _on_infinite_laps_toggled(enabled: bool) -> void:

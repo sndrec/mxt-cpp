@@ -325,15 +325,15 @@ func _capture_telemetry_sample() -> void:
 	var car_store_old_pos_ms := float(input_transport.prof_car_store_old_pos_us_interval) / 1000.0
 	var car_post_render_ms := float(input_transport.prof_car_post_render_us_interval) / 1000.0
 	input_transport.server_netcode_session.consume_authoritative_packet_stats()
-	var auth_packet_builds := input_transport.server_netcode_session.get_authoritative_stat_packets()
-	var auth_compression_candidates := input_transport.server_netcode_session.get_authoritative_stat_compression_candidates()
+	var auth_packet_builds: int = input_transport.server_netcode_session.get_authoritative_stat_packets()
+	var auth_compression_candidates: int = input_transport.server_netcode_session.get_authoritative_stat_compression_candidates()
 	var auth_build_ms := float(input_transport.server_netcode_session.get_authoritative_stat_build_usec()) / 1000.0
 	var auth_packets: int = input_transport.log_auth_packets_sent
-	var auth_frames := input_transport.server_netcode_session.get_authoritative_stat_frames()
-	var auth_encoded_inputs := input_transport.server_netcode_session.get_authoritative_stat_encoded_inputs()
-	var auth_unchanged_inputs := input_transport.server_netcode_session.get_authoritative_stat_unchanged_inputs()
-	var auth_raw_bytes := input_transport.server_netcode_session.get_authoritative_stat_raw_bytes()
-	var auth_payload_bytes := input_transport.server_netcode_session.get_authoritative_stat_payload_bytes()
+	var auth_frames: int = input_transport.server_netcode_session.get_authoritative_stat_frames()
+	var auth_encoded_inputs: int = input_transport.server_netcode_session.get_authoritative_stat_encoded_inputs()
+	var auth_unchanged_inputs: int = input_transport.server_netcode_session.get_authoritative_stat_unchanged_inputs()
+	var auth_raw_bytes: int = input_transport.server_netcode_session.get_authoritative_stat_raw_bytes()
+	var auth_payload_bytes: int = input_transport.server_netcode_session.get_authoritative_stat_payload_bytes()
 	var auth_payload_per_packet := 0.0
 	var auth_raw_per_packet := 0.0
 	var auth_compression_ratio := 1.0

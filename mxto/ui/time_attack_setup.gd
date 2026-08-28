@@ -64,12 +64,18 @@ func open_for_current_selection() -> void:
 	personal_global_rank = 0
 	personal_entry.clear()
 	watch_replay_button.disabled = true
-	var options := TimeAttackRulesClass.build_options()
+	var configuration := TimeAttackRulesClass.build_configuration()
+	var race_state := {
+		"grand_prix_current_track": 0,
+		"grand_prix_points": {},
+		"grand_prix_ko_energy_bonuses": {},
+		"grand_prix_eliminated_ids": [],
+	}
 	game_manager.track_content_controller.set_track_content_evidence(
-		options, [game_manager.track_selector.selected])
+		race_state, [game_manager.track_selector.selected])
 	var settings := game_manager.car_settings.get_player_settings()
 	game_manager.vehicle_content_controller.apply_evidence(settings)
-	eligibility = LeaderboardEligibilityClass.evaluate_start(game_manager, options, settings)
+	eligibility = LeaderboardEligibilityClass.evaluate_start(game_manager, configuration, race_state, settings)
 	var selected_track_index := game_manager.track_selector.selected
 	var selected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(selected_track_index) \
 		if selected_track_index >= 0 else ""

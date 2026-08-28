@@ -255,7 +255,7 @@ func _update_sticker_menu_icons(car: VisualCar) -> void:
 
 func _update_sticker_input(car: VisualCar) -> void:
 	if car.game_manager != null \
-			and String(car.game_manager.network_manager.race_options.get("session_kind", "")) == "practice":
+			and car.game_manager.network_manager.race_configuration.is_practice():
 		sticker_menu_open = false
 		if sticker_menu != null:
 			sticker_menu.visible = false
@@ -657,7 +657,7 @@ func _process( _delta:float ) -> void:
 		render_profile_world_stickers_max_us = maxi(render_profile_world_stickers_max_us, profile_phase_us)
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	var nm := car.game_manager.network_manager
-	var target_laps := int(nm.race_options.get("lap_count", 3))
+	var target_laps := nm.race_configuration.lap_count
 	lapcounter.text = "LAP %s/%s" % [str(car.lap), "∞" if target_laps == 0 else str(target_laps)]
 	var use_tick := nm.input_transport.get_race_tick()
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0

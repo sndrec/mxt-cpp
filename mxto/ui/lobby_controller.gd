@@ -1,7 +1,7 @@
 class_name LobbyController
 extends Node
 
-signal start_race_requested(options: Dictionary)
+signal start_race_requested(configuration: MxtRaceConfiguration, race_state: Dictionary)
 signal car_settings_requested
 signal controller_settings_requested
 signal spectator_toggled(enabled: bool)
@@ -31,7 +31,7 @@ var track_content_controller: TrackContentControllerClass
 var lobby_chibi_controller: LobbyChibiControllerClass
 var grand_prix_track_sequence: Array[int] = []
 var selected_track_index := -1
-var applying_race_options := false
+var applying_race_setup := false
 var player_list_signature := ""
 
 func initialize(
@@ -42,10 +42,10 @@ func initialize(
 	network_manager = in_network_manager
 	track_content_controller = in_track_content_controller
 	lobby_chibi_controller = in_lobby_chibi_controller
-	game_mode_choice.item_selected.connect(refresh_race_options.unbind(1))
-	vehicle_restore_toggle.toggled.connect(refresh_race_options.unbind(1))
-	bumpers_toggle.toggled.connect(refresh_race_options.unbind(1))
-	s_boost_toggle.toggled.connect(refresh_race_options.unbind(1))
+	game_mode_choice.item_selected.connect(refresh_race_setup.unbind(1))
+	vehicle_restore_toggle.toggled.connect(refresh_race_setup.unbind(1))
+	bumpers_toggle.toggled.connect(refresh_race_setup.unbind(1))
+	s_boost_toggle.toggled.connect(refresh_race_setup.unbind(1))
 	workshop_vehicles_toggle.toggled.connect(_on_workshop_vehicles_toggled)
 	spectator_toggle.toggled.connect(func(enabled: bool): spectator_toggled.emit(enabled))
 	add_cpu_button.pressed.connect(_on_add_cpu_pressed)
@@ -53,7 +53,7 @@ func initialize(
 	start_race_button.pressed.connect(request_start_race)
 	car_settings_button.pressed.connect(func(): car_settings_requested.emit())
 	controller_settings_button.pressed.connect(func(): controller_settings_requested.emit())
-	network_manager.race_options_changed.connect(apply_race_options)
+	network_manager.race_setup_changed.connect(apply_race_setup)
 	refresh_controls()
 
 func reload_tracks(command_line_track_index := -1) -> void:
@@ -63,22 +63,26 @@ func reload_tracks(command_line_track_index := -1) -> void:
 		selected_track_index = command_line_track_index if command_line_track_index >= 0 else 0
 		grand_prix_track_sequence.append(selected_track_index)
 	_populate_stage_buttons()
-	refresh_race_options()
+	refresh_race_setup()
 
-func build_race_options() -> Dictionary:
-	var options := {
-		"game_mode": game_mode_choice.selected,
-		"vehicle_restore": vehicle_restore_toggle.button_pressed,
-		"bumpers": bumpers_toggle.button_pressed,
-		"s_boost": s_boost_toggle.button_pressed,
-		"allow_workshop_vehicles": workshop_vehicles_toggle.button_pressed,
+func build_race_configuration() -> MxtRaceConfiguration:
+	var configuration := MxtRaceConfiguration.new()
+	configuration.game_mode = game_mode_choice.selected
+	configuration.vehicle_restore = vehicle_restore_toggle.button_pressed
+	configuration.bumpers = bumpers_toggle.button_pressed
+	configuration.s_boost = s_boost_toggle.button_pressed
+	configuration.allow_workshop_vehicles = workshop_vehicles_toggle.button_pressed
+	return configuration
+
+func build_race_state() -> Dictionary:
+	var race_state := {
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {},
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
-	track_content_controller.set_track_content_evidence(options, grand_prix_track_sequence)
-	return options
+	track_content_controller.set_track_content_evidence(race_state, grand_prix_track_sequence)
+	return race_state
 
 func process_lobby(delta: float) -> void:
 	var lobby_frame_start_usec := Time.get_ticks_usec()
@@ -125,37 +129,39 @@ func refresh_controls() -> void:
 		if button != null:
 			button.disabled = !can_edit
 
-func apply_race_options(options: Dictionary) -> void:
-	applying_race_options = true
-	var mode := int(options.get("game_mode", 0))
+func apply_race_setup(configuration: MxtRaceConfiguration, state: Dictionary) -> void:
+	applying_race_setup = true
+	var mode := configuration.game_mode
 	if mode >= 0 and mode < game_mode_choice.item_count:
 		game_mode_choice.select(mode)
-	vehicle_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
-	bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
-	s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
-	workshop_vehicles_toggle.set_pressed_no_signal(bool(options.get("allow_workshop_vehicles", true)))
+	vehicle_restore_toggle.set_pressed_no_signal(configuration.vehicle_restore)
+	bumpers_toggle.set_pressed_no_signal(configuration.bumpers)
+	s_boost_toggle.set_pressed_no_signal(configuration.s_boost)
+	workshop_vehicles_toggle.set_pressed_no_signal(configuration.allow_workshop_vehicles)
 	grand_prix_track_sequence.clear()
-	var track_ids: Array = options.get("track_ids", [])
+	var track_ids: Array = state.get("track_ids", [])
 	for track_id_value in track_ids:
 		var index := track_content_controller.track_index_for_id(String(track_id_value))
 		if index >= 0 and index < track_content_controller.tracks.size():
 			grand_prix_track_sequence.append(index)
 	if !grand_prix_track_sequence.is_empty():
 		selected_track_index = grand_prix_track_sequence[0]
-	applying_race_options = false
+	applying_race_setup = false
 	_refresh_stage_preview()
 	refresh_controls()
 
-func refresh_race_options() -> void:
-	if applying_race_options:
+func refresh_race_setup() -> void:
+	if applying_race_setup:
 		_refresh_stage_preview()
 		refresh_controls()
 		return
-	var options := build_race_options()
+	var configuration := build_race_configuration()
+	var state := build_race_state()
 	if network_manager.is_server:
-		network_manager.send_race_options(options)
+		network_manager.send_race_state(configuration, state)
 	else:
-		network_manager.race_options = options
+		network_manager.race_configuration = configuration
+		network_manager.race_state = state
 	_refresh_stage_preview()
 	refresh_controls()
 
@@ -174,18 +180,18 @@ func _on_stage_button_pressed(track_index: int) -> void:
 		return
 	selected_track_index = track_index
 	grand_prix_track_sequence.append(track_index)
-	refresh_race_options()
+	refresh_race_setup()
 
 func _on_stage_preview_pressed(sequence_index: int) -> void:
 	if !network_manager.is_server or sequence_index < 0 or sequence_index >= grand_prix_track_sequence.size():
 		return
 	grand_prix_track_sequence.remove_at(sequence_index)
-	refresh_race_options()
+	refresh_race_setup()
 
 func _refresh_stage_preview() -> void:
 	for child in stage_preview_container.get_children():
 		child.queue_free()
-	var track_ids: Array = network_manager.race_options.get("track_ids", [])
+	var track_ids: Array = network_manager.race_state.get("track_ids", [])
 	for i in range(track_ids.size()):
 		var track_index := track_content_controller.track_index_for_id(String(track_ids[i]))
 		var button := Button.new()
@@ -207,7 +213,7 @@ func _on_remove_cpu_pressed() -> void:
 		network_manager.lobby_settings.remove_cpu_driver()
 
 func _on_workshop_vehicles_toggled(enabled: bool) -> void:
-	refresh_race_options()
+	refresh_race_setup()
 	if network_manager.is_server and !enabled:
 		network_manager.lobby_settings.enforce_official_vehicles()
 
@@ -215,7 +221,7 @@ func request_start_race() -> void:
 	if network_manager.is_server and !grand_prix_track_sequence.is_empty():
 		if !workshop_vehicles_toggle.button_pressed:
 			network_manager.lobby_settings.enforce_official_vehicles()
-		start_race_requested.emit(build_race_options())
+		start_race_requested.emit(build_race_configuration(), build_race_state())
 
 func _update_player_list() -> void:
 	var roster := network_manager.player_ids.duplicate(true)

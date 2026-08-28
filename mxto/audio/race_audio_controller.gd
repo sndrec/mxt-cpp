@@ -254,14 +254,14 @@ func reconcile_practice_state_restore(next_tick: int, lap: int, finished: bool) 
 func _boost_unlocked_from_start() -> bool:
 	return game_manager != null \
 		and game_manager.network_manager != null \
-		and String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice" \
-		and bool(game_manager.network_manager.race_options.get("boost_unlocked_from_start", false))
+		and game_manager.network_manager.race_configuration.is_practice() \
+		and game_manager.network_manager.race_configuration.boost_unlocked_from_start
 
 
 func _configured_final_lap() -> int:
 	if game_manager == null or game_manager.network_manager == null:
 		return 3
-	return int(game_manager.network_manager.race_options.get("lap_count", 3))
+	return game_manager.network_manager.race_configuration.lap_count
 
 
 func _resolve_track_audio_path(track_dir: String, path_value) -> String:

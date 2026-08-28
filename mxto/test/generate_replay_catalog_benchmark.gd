@@ -64,18 +64,15 @@ func _existing_suite_samples(replay_controller) -> Dictionary:
 	return existing
 
 
-func _race_options(track_index: int, racer_count: int) -> Dictionary:
-	var options: Dictionary = game_manager._build_default_singleplayer_race_options()
-	options["session_kind"] = "replay_catalog_benchmark"
-	options["leaderboard_eligible"] = false
-	options["leaderboard_ineligible_reason"] = "benchmark"
-	options["cpu_count"] = racer_count
-	options["lap_count"] = 3
-	options["vehicle_restore"] = true
-	options["bumpers"] = false
-	options["s_boost"] = true
-	game_manager.track_content_controller.set_track_content_evidence(options, [track_index])
-	return options
+func _race_configuration(racer_count: int) -> MxtRaceConfiguration:
+	var configuration := game_manager._build_default_singleplayer_race_configuration()
+	configuration.leaderboard_ineligible_reason = "benchmark"
+	configuration.cpu_count = racer_count
+	configuration.lap_count = 3
+	configuration.vehicle_restore = true
+	configuration.bumpers = false
+	configuration.s_boost = true
+	return configuration
 
 
 func _start_cpu_race(track_index: int, racer_count: int, spawn_seed: int) -> bool:
@@ -87,11 +84,14 @@ func _start_cpu_race(track_index: int, racer_count: int, spawn_seed: int) -> boo
 	game_manager.network_manager.lobby_settings.set_cpu_driver_count(racer_count)
 	var cpu_ids: Array = game_manager.network_manager.lobby_settings.cpu_player_ids.duplicate(true)
 	game_manager.network_manager.lobby_settings.set_race_cpu_roster(cpu_ids)
-	var options := _race_options(track_index, racer_count)
+	var configuration := _race_configuration(racer_count)
+	var options := game_manager._build_default_singleplayer_race_state()
+	game_manager.track_content_controller.set_track_content_evidence(options, [track_index])
 	options["race_human_ids"] = []
 	options["race_cpu_ids"] = cpu_ids.duplicate(true)
 	options["race_spectator_ids"] = []
-	game_manager.network_manager.race_options = options
+	game_manager.network_manager.race_configuration = configuration
+	game_manager.network_manager.race_state = options
 	game_manager.network_manager.set_spawn_seed(spawn_seed)
 	var settings: Array = []
 	for player_id_value in cpu_ids:

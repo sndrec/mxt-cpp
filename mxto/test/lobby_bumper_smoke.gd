@@ -38,9 +38,9 @@ func _init() -> void:
 			break
 	main.lobby_controller.game_mode_choice.select(0)
 	main.lobby_controller.bumpers_toggle.button_pressed = true
-	main.lobby_controller.refresh_race_options()
+	main.lobby_controller.refresh_race_setup()
 	await process_frame
-	_log_line("MXT_LOBBY_BUMPER_SETUP options=%s" % main.network_manager.race_options)
+	_log_line("MXT_LOBBY_BUMPER_SETUP state=%s" % main.network_manager.race_state)
 
 	main.lobby_controller.request_start_race()
 	_log_line("MXT_LOBBY_BUMPER_SETUP start pressed race_active=%s" % main.network_manager.race_active)

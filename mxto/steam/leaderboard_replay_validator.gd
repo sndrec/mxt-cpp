@@ -77,9 +77,11 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 	if typeof(options_value) != TYPE_DICTIONARY:
 		return reject("missing_time_attack_rules")
 	var options: Dictionary = options_value
-	if !TimeAttackRulesClass.options_match(options):
+	var configuration := MxtRaceConfiguration.new()
+	configuration.load_metadata_dictionary(options)
+	if !TimeAttackRulesClass.configuration_matches(configuration):
 		return reject("modified_time_attack_rules")
-	if !bool(options.get("leaderboard_eligible", false)) or !String(options.get("leaderboard_ineligible_reason", "")).is_empty():
+	if !configuration.leaderboard_eligible or !configuration.leaderboard_ineligible_reason.is_empty():
 		return reject("capture_marked_ineligible")
 	if int(options.get("grand_prix_current_track", -1)) != 0 \
 		or !_is_empty_dictionary(options.get("grand_prix_points", {})) \

@@ -681,7 +681,7 @@ func _vehicle_definition_selectable(definition: CarDefinition) -> bool:
 		return true
 	return vehicle_content_controller.is_multiplayer_vehicle_content(
 		definition.content_id,
-		bool(game_manager.network_manager.race_options.get("allow_workshop_vehicles", true)))
+		game_manager.network_manager.race_configuration.allow_workshop_vehicles)
 
 func _restore_vehicle_selector_selection() -> void:
 	for index in range(car_defs.size()):

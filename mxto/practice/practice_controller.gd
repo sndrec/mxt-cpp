@@ -3,11 +3,10 @@ extends Node
 
 const InputEditorClass = preload("res://practice/practice_input_editor.gd")
 
-signal session_started(options: Dictionary)
+signal session_started(configuration: MxtRaceConfiguration)
 signal session_ended
 signal game_speed_changed(speed: float)
 
-const SESSION_KIND := "practice"
 const SPEED_STEP := 0.05
 const SPEED_STEP_COUNT := 40
 const DEFAULT_SPEED_INDEX := 20
@@ -67,7 +66,7 @@ enum TelemetryField {
 var game_manager: GameManager
 var session_active := false
 var session_serial := 0
-var session_options: Dictionary = {}
+var session_options: MxtRaceConfiguration
 var session_completed := false
 var game_speed_index := DEFAULT_SPEED_INDEX
 var pause_freeze_active := false
@@ -149,8 +148,8 @@ func initialize(
 	_reset_session_storage()
 
 
-func begin_session(options: Dictionary) -> bool:
-	if String(options.get("session_kind", "")) != SESSION_KIND:
+func begin_session(configuration: MxtRaceConfiguration) -> bool:
+	if configuration == null or !configuration.is_practice():
 		return false
 	if session_active:
 		end_session()
@@ -160,9 +159,9 @@ func begin_session(options: Dictionary) -> bool:
 		game_speed_index = DEFAULT_SPEED_INDEX
 	preserved_retry_speed_index = -1
 	session_serial += 1
-	session_options = options.duplicate(true)
-	local_player_id_override = int(options.get("practice_local_player_id", -1))
-	timeline_enabled = int(options.get("lap_count", 3)) > 0
+	session_options = configuration.copy()
+	local_player_id_override = configuration.practice_local_player_id
+	timeline_enabled = configuration.lap_count > 0
 	timeline = MxtReplayStream.new()
 	if timeline_enabled:
 		timeline.begin_recording(timeline_racer_ids, timeline_cpu_flags)
@@ -196,7 +195,7 @@ func begin_session(options: Dictionary) -> bool:
 	_update_game_speed_button()
 	_update_input_controls()
 	_update_hud()
-	session_started.emit(session_options.duplicate(true))
+	session_started.emit(session_options.copy())
 	return true
 
 
@@ -205,7 +204,7 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 		preserved_retry_speed_index = game_speed_index
 	elif !preserve_speed_for_retry:
 		preserved_retry_speed_index = -1
-	if !session_active and session_options.is_empty():
+	if !session_active and session_options == null:
 		local_player_id_override = -1
 		replay_resume_transition_usec = 0
 		_restore_default_clock()
@@ -213,7 +212,7 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 		return
 	session_active = false
 	session_completed = false
-	session_options.clear()
+	session_options = null
 	timeline_enabled = false
 	game_speed_index = DEFAULT_SPEED_INDEX
 	pause_freeze_active = false
@@ -246,11 +245,7 @@ func mark_completed() -> void:
 
 
 func is_infinite() -> bool:
-	return session_active and int(session_options.get("lap_count", 3)) == 0
-
-
-func retry_options() -> Dictionary:
-	return session_options.duplicate(true) if session_active else {}
+	return session_active and session_options != null and session_options.lap_count == 0
 
 
 func arm_local_player_override(player_id: int) -> void:
@@ -266,11 +261,11 @@ func configure_timeline_roster(racer_ids: Array, cpu_flags: Array) -> void:
 	timeline_cpu_flags = cpu_flags.duplicate(true)
 
 
-func begin_resumed_session(options: Dictionary, focused_player_id: int, source_stream: MxtReplayStream, canonical_prefix_count: int, transition_start_usec: int) -> bool:
-	var resumed_options := options.duplicate(true)
-	resumed_options["practice_local_player_id"] = focused_player_id
-	resumed_options["resumed_from_replay"] = true
-	if !begin_session(resumed_options):
+func begin_resumed_session(configuration: MxtRaceConfiguration, focused_player_id: int, source_stream: MxtReplayStream, canonical_prefix_count: int, transition_start_usec: int) -> bool:
+	var resumed_configuration := configuration.copy()
+	resumed_configuration.practice_local_player_id = focused_player_id
+	resumed_configuration.resumed_from_replay = true
+	if !begin_session(resumed_configuration):
 		return false
 	if timeline_enabled and (source_stream == null or !timeline.copy_prefix_from(source_stream, canonical_prefix_count)):
 		end_session()

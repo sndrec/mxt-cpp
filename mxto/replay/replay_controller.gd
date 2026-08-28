@@ -439,9 +439,9 @@ func save_practice_snapshot_locally() -> String:
 	return _write_replay_recording("practice_snapshot", _replay_dir())
 
 func stage_completed_time_attack_replay(for_submission: bool) -> String:
-	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
-	if session_kind not in ["time_attack", "practice"] \
-			or for_submission != (session_kind == "time_attack"):
+	var configuration := game_manager.network_manager.race_configuration
+	if (!configuration.is_time_attack() and !configuration.is_practice()) \
+		or for_submission != configuration.is_time_attack():
 		return ""
 	finish_recording()
 	replay_recording_staged_path = _write_replay_recording(
@@ -505,7 +505,7 @@ func _replay_schema_is_supported(data: Dictionary) -> bool:
 func _replay_mode_name() -> String:
 	if !game_manager.singleplayer_mode:
 		return "Multiplayer"
-	if String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice":
+	if game_manager.network_manager.race_configuration.is_practice():
 		return "Practice"
 	if game_manager.network_manager.lobby_settings.get_cpu_roster().is_empty():
 		return "Time Attack"
@@ -514,8 +514,8 @@ func _replay_mode_name() -> String:
 func _replay_should_record_current_race() -> bool:
 	if replay_playback_active:
 		return false
-	if String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice" \
-			and int(game_manager.network_manager.race_options.get("lap_count", 3)) == 0:
+	if game_manager.network_manager.race_configuration.is_practice() \
+		and game_manager.network_manager.race_configuration.lap_count == 0:
 		return false
 	if game_manager.singleplayer_mode:
 		return true
@@ -529,8 +529,8 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		return
 	replay_recording_active = true
 	replay_recording_saved = false
-	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
-	replay_recording_source = "practice" if session_kind == "practice" else ("singleplayer" if game_manager.singleplayer_mode else "server")
+	var practice_session := game_manager.network_manager.race_configuration.is_practice()
+	replay_recording_source = "practice" if practice_session else ("singleplayer" if game_manager.singleplayer_mode else "server")
 	replay_recording_racer_ids = racer_ids.duplicate(true)
 	replay_recording_cpu_flags = cpu_flags.duplicate(true)
 	replay_recording_stream = MxtReplayStream.new()
@@ -539,7 +539,7 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		push_error("Replay recording roster rejected: %s" % replay_recording_stream.get_last_error())
 		replay_recording_active = false
 		return
-	if session_kind == "practice":
+	if practice_session:
 		game_manager.practice_controller.configure_timeline_roster(replay_recording_racer_ids, replay_recording_cpu_flags)
 	var start_grid_slot_array := []
 	for slot in start_grid_slots:
@@ -590,7 +590,7 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"start_grid_slots": start_grid_slot_array,
 		"players": player_records,
 		"spawn_seed": game_manager.network_manager.spawn_seed,
-		"race_options": game_manager.network_manager.race_options.duplicate(true),
+		"race_options": game_manager.network_manager.race_metadata_dictionary(),
 		"runtime_flags": {
 			"auto_accelerate": debug_runtime_controller.auto_accelerate,
 			"auto_bumpers": game_manager.auto_bumpers_mode,
@@ -1656,7 +1656,8 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	game_manager._singleplayer_tick = 0
 	game_manager.network_manager.reset_race_state()
 	game_manager.network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
-	game_manager.network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {}
+	game_manager.network_manager.load_race_metadata_dictionary(
+		(replay.get("race_options", {}) as Dictionary) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {})
 	game_manager.network_manager.player_ids.clear()
 	game_manager.network_manager.lobby_settings.cpu_player_ids.clear()
 	for i in range(replay_playback_racer_ids.size()):

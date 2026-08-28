@@ -379,7 +379,7 @@ func enforce_official_vehicles() -> void:
 func _workshop_vehicles_allowed() -> bool:
 	if game_manager == null or game_manager.network_manager == null:
 		return true
-	return bool(game_manager.network_manager.race_options.get("allow_workshop_vehicles", true))
+	return game_manager.network_manager.race_configuration.allow_workshop_vehicles
 
 func _normalize_vehicle_for_lobby(settings: Dictionary) -> Dictionary:
 	if _vehicle_selection_allowed(settings):

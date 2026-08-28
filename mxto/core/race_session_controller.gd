@@ -141,7 +141,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	for definition: CarDefinition in chosen_definitions:
 		unique_vehicle_ids[definition.content_id] = true
 
-	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
+	var bumpers_enabled := network_manager.race_configuration.bumpers
 	var custom_stamp_render := vehicle_content_controller.prepare_custom_stamp_render_payload(racer_ids, racer_settings, "race")
 	var custom_stamp_atlas: Texture2D = custom_stamp_render.get("texture", null)
 	var bumper_definition: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
@@ -323,7 +323,7 @@ func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_prope
 	sim.set_car_render_manager(car_render_manager)
 	sim.set_spawn_seed(network_manager.spawn_seed)
 	sim.set_start_grid_slots(start_grid_slots)
-	sim.set_target_lap_count(int(network_manager.race_options.get("lap_count", 3)))
+	sim.set_target_lap_count(network_manager.race_configuration.lap_count)
 	sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	if sim.has_method("set_bumpers_enabled"):
 		sim.set_bumpers_enabled(bumpers_enabled and bumper_definition != null)
@@ -331,8 +331,8 @@ func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_prope
 		sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
 	if sim.has_method("set_boost_unlocked_from_start"):
 		sim.set_boost_unlocked_from_start(
-			String(network_manager.race_options.get("session_kind", "")) == "practice" \
-			and bool(network_manager.race_options.get("boost_unlocked_from_start", false)))
+			network_manager.race_configuration.is_practice() \
+			and network_manager.race_configuration.boost_unlocked_from_start)
 	if sim.has_method("set_multiplayer_intro_camera_enabled"):
 		sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_controller.replay_playback_use_multiplayer_startup)
 	sim.instantiate_gamesim(level_buffer.duplicate(), car_properties.duplicate(true), acceleration_settings)
@@ -354,9 +354,9 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 				next_slot += 1
 			slots[local_index] = racer_ids.size() - 1
 			return slots
-	if !network_manager.is_grand_prix_enabled() or int(network_manager.race_options.get("grand_prix_current_track", 0)) <= 0:
+	if !network_manager.is_grand_prix_enabled() or int(network_manager.race_state.get("grand_prix_current_track", 0)) <= 0:
 		return slots
-	var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
+	var points: Dictionary = network_manager.race_state.get("grand_prix_points", {})
 	var standings := []
 	for index in racer_ids.size():
 		var player_id := int(racer_ids[index])
@@ -369,7 +369,7 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 func _apply_grand_prix_ko_energy_bonuses(sim: GameSim, racer_ids: Array) -> void:
 	if sim == null or !network_manager.is_grand_prix_enabled() or !sim.has_method("set_player_ko_energy_bonus"):
 		return
-	var bonuses: Dictionary = network_manager.race_options.get("grand_prix_ko_energy_bonuses", {})
+	var bonuses: Dictionary = network_manager.race_state.get("grand_prix_ko_energy_bonuses", {})
 	for id_value in racer_ids:
 		var player_id := int(id_value)
 		var bonus := float(_lookup_id_value(bonuses, player_id, 0.0))

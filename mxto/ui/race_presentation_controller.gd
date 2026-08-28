@@ -190,7 +190,7 @@ func format_grand_prix_results_text() -> String:
 	if !network_manager.is_grand_prix_enabled():
 		return ""
 	var lines := ["Grand Prix Standings"]
-	var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
+	var points: Dictionary = network_manager.race_state.get("grand_prix_points", {})
 	var standings := []
 	for id_value in points.keys():
 		standings.append([int(_lookup_id_value(points, int(id_value), 0)), int(id_value)])
@@ -358,8 +358,8 @@ func _format_ordinal(value: int) -> String:
 func _next_grand_prix_track_id() -> String:
 	if !network_manager.is_grand_prix_enabled():
 		return ""
-	var track_ids: Array = network_manager.race_options.get("track_ids", [])
-	var next_index := int(network_manager.race_options.get("grand_prix_current_track", 0)) + 1
+	var track_ids: Array = network_manager.race_state.get("track_ids", [])
+	var next_index := int(network_manager.race_state.get("grand_prix_current_track", 0)) + 1
 	return String(track_ids[next_index]) if next_index >= 0 and next_index < track_ids.size() else ""
 
 func _results_countdown_seconds() -> int:

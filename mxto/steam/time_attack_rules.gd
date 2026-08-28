@@ -7,31 +7,28 @@ const TICKS_PER_SECOND := 60
 
 static var _manifest: Dictionary = {}
 
-static func build_options() -> Dictionary:
-	return {
-		"game_mode": 0,
-		"vehicle_restore": true,
-		"bumpers": false,
-		"s_boost": false,
-		"cpu_count": 0,
-		"lap_count": LAP_COUNT,
-		"session_kind": "time_attack",
-		"time_attack_ruleset_revision": RULESET_REVISION,
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {},
-		"grand_prix_ko_energy_bonuses": {},
-		"grand_prix_eliminated_ids": [],
-	}
+static func build_configuration() -> MxtRaceConfiguration:
+	var configuration := MxtRaceConfiguration.new()
+	configuration.session_kind = MxtRaceConfiguration.SESSION_TIME_ATTACK
+	configuration.game_mode = 0
+	configuration.vehicle_restore = true
+	configuration.bumpers = false
+	configuration.s_boost = false
+	configuration.cpu_count = 0
+	configuration.lap_count = LAP_COUNT
+	configuration.time_attack_ruleset_revision = RULESET_REVISION
+	return configuration
 
-static func options_match(options: Dictionary) -> bool:
-	return int(options.get("game_mode", -1)) == 0 \
-		and bool(options.get("vehicle_restore", false)) \
-		and !bool(options.get("bumpers", true)) \
-		and !bool(options.get("s_boost", true)) \
-		and int(options.get("cpu_count", -1)) == 0 \
-		and int(options.get("lap_count", -1)) == LAP_COUNT \
-		and String(options.get("session_kind", "")) == "time_attack" \
-		and int(options.get("time_attack_ruleset_revision", -1)) == RULESET_REVISION
+static func configuration_matches(configuration: MxtRaceConfiguration) -> bool:
+	return configuration != null \
+		and configuration.game_mode == 0 \
+		and configuration.vehicle_restore \
+		and !configuration.bumpers \
+		and !configuration.s_boost \
+		and configuration.cpu_count == 0 \
+		and configuration.lap_count == LAP_COUNT \
+		and configuration.is_time_attack() \
+		and configuration.time_attack_ruleset_revision == RULESET_REVISION
 
 static func finish_ticks_to_milliseconds(finish_tick: int, start_tick: int) -> int:
 	return int(round(float(maxi(0, finish_tick - start_tick)) * 1000.0 / float(TICKS_PER_SECOND)))
