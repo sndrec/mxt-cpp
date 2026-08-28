@@ -514,10 +514,10 @@ func _configure_follow_minimap(car: VisualCar) -> void:
 	var map_right := map_forward.cross(vehicle_up).normalized()
 	minimap_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 	minimap_cam.basis = Basis(map_right, map_forward, vehicle_up)
-	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 192.0
+	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 320.0
 	minimap_cam.fov = 45.0
-	minimap_cam.near = 144.0
-	minimap_cam.far = 288.0
+	minimap_cam.near = 240.0
+	minimap_cam.far = 480.0
 	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 
