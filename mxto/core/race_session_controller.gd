@@ -85,8 +85,10 @@ func initialize(
 	lobby_control = in_lobby_control
 	player_scene = in_player_scene
 
-func start_race(track_index: int, settings: Array, singleplayer_mode: bool, headless_mode: bool) -> bool:
+func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool, headless_mode: bool) -> bool:
 	if track_index < 0 or track_index >= track_content_controller.tracks.size():
+		return false
+	if roster == null or roster.count() == 0:
 		return false
 	var track_info: Dictionary = track_content_controller.tracks[track_index]
 	current_singleplayer_mode = singleplayer_mode
@@ -94,7 +96,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	lobby_control.visible = false
 	lobby_chibi_controller.clear()
 	last_race_track_index = track_index
-	last_race_settings = settings.duplicate(true)
+	last_race_settings.clear()
 	race_presentation_controller.reset()
 	spectator_controller.reset()
 	if !track_content_controller.prepare_race(track_index):
@@ -108,35 +110,14 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	var racer_settings: Array = []
 	var racer_ids: Array = []
 	var racer_cpu_flags: Array = []
-	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
-	var keyed_settings := {}
-	var ordered_settings := []
-	for raw_settings in settings:
-		if typeof(raw_settings) != TYPE_DICTIONARY:
-			continue
-		var settings_dictionary: Dictionary = raw_settings
-		if settings_dictionary.has("_race_player_id"):
-			keyed_settings[int(settings_dictionary["_race_player_id"])] = settings_dictionary
-		else:
-			ordered_settings.append(settings_dictionary)
-	if !keyed_settings.is_empty():
-		for id_value in roster:
-			var player_id := int(id_value)
-			if !keyed_settings.has(player_id):
-				continue
-			if _append_racer(keyed_settings[player_id], player_id, true, cpu_ids.has(player_id), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags) < 0:
-				return false
-	else:
-		var racer_roster_index := 0
-		for settings_dictionary in ordered_settings:
-			var has_roster_id := racer_roster_index < roster.size()
-			var player_id := int(roster[racer_roster_index]) if has_roster_id else 0
-			var append_result := _append_racer(settings_dictionary, player_id, has_roster_id, cpu_ids.has(player_id), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags)
-			if append_result < 0:
-				return false
-			if append_result > 0:
-				racer_roster_index += 1
+	for roster_index in roster.count():
+		var settings_dictionary: Dictionary = roster.get_settings_dictionary(roster_index)
+		var player_id: int = roster.get_player_id(roster_index)
+		var append_result := _append_racer(settings_dictionary, player_id, roster.is_cpu(roster_index), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags)
+		if append_result < 0:
+			return false
+		if append_result > 0:
+			last_race_settings.append(settings_dictionary)
 	var unique_vehicle_ids := {}
 	for definition: CarDefinition in chosen_definitions:
 		unique_vehicle_ids[definition.content_id] = true
@@ -206,7 +187,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	_configure_game_sim(game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
 	race_audio_controller.configure_vehicle_properties(chosen_definitions)
 	network_manager.input_transport.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
-	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
+	replay_controller.start_recording(track_index, last_race_settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	race_presentation_controller.configure_race(local_player_id, local_player_index, singleplayer_mode, nametag_names)
@@ -298,7 +279,7 @@ func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -
 	current_definitions.clear()
 	current_start_grid_slots = PackedInt32Array()
 
-func _append_racer(settings_dictionary: Dictionary, player_id: int, has_player_id: bool, is_cpu: bool, chosen_definitions: Array, racer_settings: Array, racer_ids: Array, racer_cpu_flags: Array) -> int:
+func _append_racer(settings_dictionary: Dictionary, player_id: int, is_cpu: bool, chosen_definitions: Array, racer_settings: Array, racer_ids: Array, racer_cpu_flags: Array) -> int:
 	var player_settings := PlayerSettings.new()
 	player_settings.from_dict(settings_dictionary)
 	if player_settings.spectator:
@@ -312,9 +293,8 @@ func _append_racer(settings_dictionary: Dictionary, player_id: int, has_player_i
 		return -1
 	chosen_definitions.append(definition)
 	racer_settings.append(player_settings)
-	if has_player_id:
-		racer_ids.append(player_id)
-		racer_cpu_flags.append(is_cpu)
+	racer_ids.append(player_id)
+	racer_cpu_flags.append(is_cpu)
 	return 1
 
 func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_properties: Array, acceleration_settings: Array, racer_ids: Array, racer_cpu_flags: Array, start_grid_slots: PackedInt32Array, bumpers_enabled: bool, bumper_definition: CarDefinition, singleplayer_mode: bool) -> void:

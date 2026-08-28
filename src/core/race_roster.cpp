@@ -174,8 +174,8 @@ void MxtRaceRoster::clear() {
 }
 
 bool MxtRaceRoster::parse_entry(int64_t player_id, int64_t network_peer_id, uint8_t flags, const Dictionary &settings, Entry &out) {
-	if (player_id <= 0) {
-		last_error = "Roster player ID must be positive.";
+	if (player_id < 0) {
+		last_error = "Roster player ID must be non-negative.";
 		return false;
 	}
 	out = Entry();
@@ -335,7 +335,7 @@ bool MxtRaceRoster::remove_player(int64_t player_id) {
 
 bool MxtRaceRoster::replace_player_id(int64_t old_player_id, int64_t new_player_id, int64_t network_peer_id) {
 	const int32_t old_index = find_player(old_player_id);
-	if (old_index < 0 || new_player_id <= 0 || (old_player_id != new_player_id && has_player(new_player_id))) return false;
+	if (old_index < 0 || new_player_id < 0 || (old_player_id != new_player_id && has_player(new_player_id))) return false;
 	Entry &entry = entries[static_cast<size_t>(old_index)];
 	entry.player_id = new_player_id;
 	entry.network_peer_id = network_peer_id > 0 ? network_peer_id : new_player_id;
@@ -508,7 +508,7 @@ bool MxtRaceRoster::decode_wire(const PackedByteArray &bytes) {
 	std::vector<Entry> decoded;
 	decoded.resize(entry_count);
 	for (Entry &entry : decoded) {
-		if (!reader.i64(entry.player_id) || entry.player_id <= 0 || !reader.i64(entry.network_peer_id) ||
+		if (!reader.i64(entry.player_id) || entry.player_id < 0 || !reader.i64(entry.network_peer_id) ||
 				!reader.u8(entry.flags) || (entry.flags & 0xe0u) != 0 ||
 				!reader.string(entry.username, MAX_USERNAME_BYTES) || !reader.string(entry.vehicle_content_id, MAX_FIELD_BYTES) ||
 				!reader.string(entry.vehicle_gameplay_digest, MAX_FIELD_BYTES) || !reader.string(entry.vehicle_package_digest, MAX_FIELD_BYTES) ||

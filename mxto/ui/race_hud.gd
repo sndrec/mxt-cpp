@@ -100,8 +100,6 @@ func _player_name_for_id(nm: NetworkManager, id: int) -> String:
 	if settings.has("username"):
 		name = str(settings["username"])
 	var is_cpu := nm.lobby_settings.cpu_player_ids.has(id)
-	if !is_cpu:
-		is_cpu = bool(settings.get("_race_is_cpu", false))
 	if is_cpu:
 		name = "[CPU] " + name
 	return name

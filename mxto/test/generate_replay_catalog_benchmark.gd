@@ -94,11 +94,8 @@ func _start_cpu_race(track_index: int, racer_count: int, spawn_seed: int) -> boo
 	game_manager.network_manager.race_track_evidence = track_evidence
 	game_manager.network_manager.race_state = options
 	game_manager.network_manager.set_spawn_seed(spawn_seed)
-	var settings: Array = []
-	for player_id_value in cpu_ids:
-		var player_id := int(player_id_value)
-		settings.append(game_manager.network_manager.lobby_settings.get_player_settings(player_id))
-	return game_manager.race_session_controller.start_race(track_index, settings, true, true)
+	var roster: MxtRaceRoster = game_manager.network_manager.lobby_settings.build_race_roster(cpu_ids)
+	return roster != null and game_manager.race_session_controller.start_race(track_index, roster, true, true)
 
 
 func _all_racers_finished(racer_count: int) -> bool:

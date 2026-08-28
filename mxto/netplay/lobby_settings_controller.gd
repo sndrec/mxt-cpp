@@ -235,6 +235,15 @@ func clear_player_settings() -> void:
 	race_roster.clear()
 	revision += 1
 
+func build_race_roster(player_id_order: Array) -> MxtRaceRoster:
+	return _build_settings_roster(player_id_order)
+
+func apply_race_roster(roster: MxtRaceRoster) -> void:
+	if roster == null:
+		return
+	for index in roster.count():
+		_store_player_settings(roster.get_player_id(index), roster.get_settings_dictionary(index), roster.is_cpu(index))
+
 func remove_player(player_id: int) -> void:
 	if race_roster.remove_player(player_id):
 		revision += 1
@@ -454,7 +463,7 @@ func _is_sha256_digest(value: String) -> bool:
 	return true
 
 func _store_player_settings(player_id: int, settings: Dictionary, cpu := false) -> bool:
-	if player_id <= 0:
+	if player_id < 0:
 		return false
 	if !race_roster.upsert_settings(player_id, player_id, cpu or cpu_player_ids.has(player_id), false, false, settings):
 		if !race_roster.get_last_error().is_empty():

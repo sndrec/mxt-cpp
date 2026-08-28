@@ -84,7 +84,7 @@ func _wait_for_client_connection(timeout_msec: int) -> bool:
 		await create_timer(0.05).timeout
 	return false
 
-func _on_lightweight_race_started(_track_id: String, _settings: Array) -> void:
+func _on_lightweight_race_started(_track_id: String, _roster: MxtRaceRoster) -> void:
 	var manager := game_manager.network_manager
 	manager.game_sim = game_manager.game_sim
 	manager.race_admission.report(manager.race_admission.LOADING, "load-test client loading")

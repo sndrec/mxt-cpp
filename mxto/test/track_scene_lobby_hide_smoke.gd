@@ -36,7 +36,8 @@ func _init() -> void:
 		push_error("GameManager should not retain race-session setup")
 		quit(1)
 		return
-	if !main.race_session_controller.start_race(track_index, [settings], false, false):
+	var roster: MxtRaceRoster = main.network_manager.lobby_settings.build_race_roster([player_id])
+	if roster == null or !main.race_session_controller.start_race(track_index, roster, false, false):
 		push_error("race-session owner rejected valid smoke setup")
 		quit(1)
 		return

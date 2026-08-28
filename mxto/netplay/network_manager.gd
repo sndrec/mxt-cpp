@@ -1,7 +1,7 @@
 class_name NetworkManager
 extends Node
 
-signal race_started(track_id, player_settings)
+signal race_started(track_id, roster)
 signal race_finished
 signal race_setup_changed(configuration, track_evidence, race_state)
 const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
@@ -67,7 +67,7 @@ var race_state := {
 }
 var race_netplay_phase := 0
 var pending_next_race_track_id := ""
-var pending_next_race_settings: Array = []
+var pending_next_race_roster: MxtRaceRoster
 var pending_next_race_configuration: MxtRaceConfiguration
 var pending_next_race_track_evidence: MxtTrackContentEvidence
 var pending_next_race_state: Dictionary = {}
@@ -171,7 +171,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	_disconnected_during_race.clear()
 	race_results.reset()
 	pending_next_race_track_id = ""
-	pending_next_race_settings.clear()
+	pending_next_race_roster = null
 	pending_next_race_configuration = null
 	pending_next_race_track_evidence = null
 	pending_next_race_state.clear()
@@ -528,8 +528,12 @@ func _update_player_ids(ids: Array, spectators: Array) -> void:
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 
 @rpc("authority", "call_remote", "reliable", 7)
-func start_race(track_id: String, settings: Array, configuration_bytes: PackedByteArray, track_evidence_bytes: PackedByteArray, state: Dictionary = {}) -> void:
+func start_race(track_id: String, roster_bytes: PackedByteArray, configuration_bytes: PackedByteArray, track_evidence_bytes: PackedByteArray, state: Dictionary = {}) -> void:
 	prepare_race_roster("start_race")
+	var roster := MxtRaceRoster.new()
+	if !roster.decode_wire(roster_bytes):
+		push_error("Rejected malformed race roster: %s" % roster.get_last_error())
+		return
 	var configuration := MxtRaceConfiguration.new()
 	if !configuration.decode_wire(configuration_bytes):
 		push_error("Rejected malformed race configuration: %s" % configuration.get_last_error())
@@ -542,6 +546,7 @@ func start_race(track_id: String, settings: Array, configuration_bytes: PackedBy
 	if !_accept_race_start_phase(incoming_phase):
 		return
 	race_admission.reset()
+	lobby_settings.apply_race_roster(roster)
 	race_configuration = configuration
 	race_track_evidence = track_evidence
 	race_state = state.duplicate(true)
@@ -568,14 +573,14 @@ func start_race(track_id: String, settings: Array, configuration_bytes: PackedBy
 	if is_server:
 		race_admission.initialize_states()
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
-	emit_signal("race_started", track_id, settings)
+	emit_signal("race_started", track_id, roster)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
 		for id in race_player_ids + spectator_ids:
 			input_transport.last_input_time[id] = now
 			input_transport.server_netcode_session.set_peer_last_received(id, -1, now)
 
-func send_start_race(track_id: String, settings: Array, configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, state: Dictionary = {}) -> void:
+func send_start_race(track_id: String, roster: MxtRaceRoster, configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, state: Dictionary = {}) -> void:
 	if !is_server:
 		return
 	if configuration == null:
@@ -583,6 +588,9 @@ func send_start_race(track_id: String, settings: Array, configuration: MxtRaceCo
 		return
 	if track_evidence == null:
 		push_error("Cannot start a race without track content evidence.")
+		return
+	if roster == null or roster.count() == 0:
+		push_error("Cannot start a race without a typed racer roster.")
 		return
 	if state.is_empty():
 		state = reserve_next_race_netplay_state(race_state)
@@ -597,15 +605,22 @@ func send_start_race(track_id: String, settings: Array, configuration: MxtRaceCo
 	race_state = state.duplicate(true)
 	var configuration_bytes := race_configuration.encode_wire()
 	var track_evidence_bytes := race_track_evidence.encode_wire()
-	start_race.rpc(track_id, settings, configuration_bytes, track_evidence_bytes, state)
-	start_race(track_id, settings, configuration_bytes, track_evidence_bytes, state)
+	var roster_bytes := roster.encode_wire()
+	start_race.rpc(track_id, roster_bytes, configuration_bytes, track_evidence_bytes, state)
+	start_race(track_id, roster_bytes, configuration_bytes, track_evidence_bytes, state)
 
 @rpc("authority", "call_remote", "reliable", 7)
-func end_race(phase: int, next_track_id: String = "", next_settings: Array = [], next_configuration_bytes: PackedByteArray = PackedByteArray(), next_track_evidence_bytes: PackedByteArray = PackedByteArray(), next_state: Dictionary = {}) -> void:
+func end_race(phase: int, next_track_id: String = "", next_roster_bytes: PackedByteArray = PackedByteArray(), next_configuration_bytes: PackedByteArray = PackedByteArray(), next_track_evidence_bytes: PackedByteArray = PackedByteArray(), next_state: Dictionary = {}) -> void:
 	if !_accept_race_packet_phase(phase):
 		return
 	pending_next_race_track_id = next_track_id
-	pending_next_race_settings = next_settings.duplicate(true)
+	pending_next_race_roster = null
+	if !next_roster_bytes.is_empty():
+		var decoded_roster := MxtRaceRoster.new()
+		if !decoded_roster.decode_wire(next_roster_bytes):
+			push_error("Rejected malformed next-race roster: %s" % decoded_roster.get_last_error())
+			return
+		pending_next_race_roster = decoded_roster
 	pending_next_race_configuration = null
 	pending_next_race_track_evidence = null
 	if !next_configuration_bytes.is_empty():
@@ -636,12 +651,13 @@ func end_race(phase: int, next_track_id: String = "", next_settings: Array = [],
 		proximity_voice_chat.reset()
 	emit_signal("race_finished")
 
-func send_end_race(next_track_id: String = "", next_settings: Array = [], next_configuration: MxtRaceConfiguration = null, next_track_evidence: MxtTrackContentEvidence = null, next_state: Dictionary = {}) -> void:
+func send_end_race(next_track_id: String = "", next_roster: MxtRaceRoster = null, next_configuration: MxtRaceConfiguration = null, next_track_evidence: MxtTrackContentEvidence = null, next_state: Dictionary = {}) -> void:
 	if is_server:
+		var roster_bytes := next_roster.encode_wire() if next_roster != null else PackedByteArray()
 		var configuration_bytes := next_configuration.encode_wire() if next_configuration != null else PackedByteArray()
 		var track_evidence_bytes := next_track_evidence.encode_wire() if next_track_evidence != null else PackedByteArray()
-		end_race.rpc(race_netplay_phase, next_track_id, next_settings, configuration_bytes, track_evidence_bytes, next_state)
-		end_race(race_netplay_phase, next_track_id, next_settings, configuration_bytes, track_evidence_bytes, next_state)
+		end_race.rpc(race_netplay_phase, next_track_id, roster_bytes, configuration_bytes, track_evidence_bytes, next_state)
+		end_race(race_netplay_phase, next_track_id, roster_bytes, configuration_bytes, track_evidence_bytes, next_state)
 
 @rpc("authority", "call_remote", "reliable", 7)
 func set_spawn_seed(seed: int) -> void:
@@ -672,7 +688,7 @@ func disconnect_from_server() -> void:
 	race_player_ids.clear()
 	lobby_settings.reset_all()
 	pending_next_race_track_id = ""
-	pending_next_race_settings.clear()
+	pending_next_race_roster = null
 	pending_next_race_configuration = null
 	pending_next_race_track_evidence = null
 	pending_next_race_state.clear()

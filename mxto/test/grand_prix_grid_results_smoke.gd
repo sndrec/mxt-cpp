@@ -112,8 +112,10 @@ func _init() -> void:
 	}
 	nm.race_admission.active = true
 	nm.race_admission.scheduled = true
+	var reset_roster := MxtRaceRoster.new()
+	reset_roster.append_settings(1, 1, false, false, false, {"username": "One"})
 	nm.start_race(
-		"sha256:test", [], nm.race_configuration.encode_wire(),
+		"sha256:test", reset_roster.encode_wire(), nm.race_configuration.encode_wire(),
 		nm.race_track_evidence.encode_wire(), {})
 	for id in [1, 2, 3]:
 		if nm.race_admission.stage_for(id) != nm.race_admission.START_SENT:

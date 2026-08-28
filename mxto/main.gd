@@ -656,18 +656,15 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 	network_manager.lobby_settings.set_cpu_driver_vehicle_pool(Array(configuration.cpu_vehicle_content_ids))
 	ps.spectator = as_spectator
 	network_manager.lobby_settings.set_player_settings(my_id, ps.to_dict())
-	# Invoke the normal race startup, but driven entirely by local state
-	var settings_array: Array = [ps.to_dict()]
 	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
-	for i in range(cpu_ids.size()):
-		var cpu_id = cpu_ids[i]
-		var cpu_settings: Dictionary = network_manager.lobby_settings.get_player_settings(cpu_id)
-		if cpu_settings.is_empty():
-			cpu_settings = build_cpu_player_settings(i)
-		settings_array.append(cpu_settings)
+	var racer_ids: Array = [my_id]
+	racer_ids.append_array(cpu_ids)
+	var local_roster: MxtRaceRoster = network_manager.lobby_settings.build_race_roster(racer_ids)
+	if local_roster == null:
+		return
 	_close_settings_menus_for_race_start()
 	race_dnf_low_speed_ticks.clear()
-	race_session_controller.start_race(track_selector.selected, settings_array, singleplayer_mode, headless_mode)
+	race_session_controller.start_race(track_selector.selected, local_roster, singleplayer_mode, headless_mode)
 	if uses_time_attack_ghosts:
 		var ghost_start := time_attack_ghost_controller.start_race(track_selector.selected)
 		if !bool(ghost_start.get("success", false)):
@@ -1000,7 +997,7 @@ func _build_default_singleplayer_race_state() -> Dictionary:
 		"grand_prix_eliminated_ids": [],
 	}
 
-func _race_content_readiness(track_id: String, settings: Array, track_evidence: MxtTrackContentEvidence) -> Dictionary:
+func _race_content_readiness(track_id: String, roster: MxtRaceRoster, track_evidence: MxtTrackContentEvidence) -> Dictionary:
 	var missing_workshop_ids: Array = []
 	var problems := PackedStringArray()
 	var irrecoverable_problems := PackedStringArray()
@@ -1021,12 +1018,8 @@ func _race_content_readiness(track_id: String, settings: Array, track_evidence: 
 				irrecoverable_problems.append(problem)
 			problems.append(problem)
 			_append_workshop_id(missing_workshop_ids, workshop_id)
-	for settings_value in settings:
-		if typeof(settings_value) != TYPE_DICTIONARY:
-			var problem := "race vehicle settings are malformed"
-			problems.append(problem)
-			irrecoverable_problems.append(problem)
-			continue
+	for roster_index in roster.count():
+		var settings_value: Dictionary = roster.get_settings_dictionary(roster_index)
 		var player_settings := PlayerSettings.new()
 		player_settings.from_dict(settings_value)
 		if player_settings.spectator or vehicle_content_controller.evidence_matches(player_settings):
@@ -1053,8 +1046,8 @@ func _append_workshop_id(ids: Array, value: String) -> void:
 		if !ids.has(published_file_id):
 			ids.append(published_file_id)
 
-func _acquire_race_workshop_content(track_id: String, settings: Array, track_evidence: MxtTrackContentEvidence) -> Dictionary:
-	var readiness := _race_content_readiness(track_id, settings, track_evidence)
+func _acquire_race_workshop_content(track_id: String, roster: MxtRaceRoster, track_evidence: MxtTrackContentEvidence) -> Dictionary:
+	var readiness := _race_content_readiness(track_id, roster, track_evidence)
 	if bool(readiness.get("ready", false)):
 		return readiness
 	var workshop_ids: Array = readiness.get("workshop_ids", [])
@@ -1065,7 +1058,7 @@ func _acquire_race_workshop_content(track_id: String, settings: Array, track_evi
 		tracked_any = steam_service.track_workshop_item(int(published_file_id_value)) or tracked_any
 	if tracked_any:
 		steam_service.refresh_workshop_items()
-		readiness = _race_content_readiness(track_id, settings, track_evidence)
+		readiness = _race_content_readiness(track_id, roster, track_evidence)
 		if bool(readiness.get("ready", false)):
 			return readiness
 	var workshop_id_strings := PackedStringArray()
@@ -1089,7 +1082,7 @@ func _acquire_race_workshop_content(track_id: String, settings: Array, track_evi
 	var next_refresh_msec := Time.get_ticks_msec() + 1000
 	while network_manager.race_active and Time.get_ticks_msec() < deadline:
 		await get_tree().create_timer(0.1).timeout
-		readiness = _race_content_readiness(track_id, settings, track_evidence)
+		readiness = _race_content_readiness(track_id, roster, track_evidence)
 		if bool(readiness.get("ready", false)):
 			return readiness
 		var now := Time.get_ticks_msec()
@@ -1323,10 +1316,7 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 			var vehicle_content_id: String = vehicle_content_controller.definitions[0].content_id if vehicle_content_controller.definitions.size() > 0 else ""
 			settings = {"vehicle_content_id": vehicle_content_id, "accel_setting": 1.0, "username": str(id)}
 			settings.merge(vehicle_content_controller.get_evidence(vehicle_content_id), true)
-	var out := settings.duplicate(true)
-	out["_race_player_id"] = id
-	out["_race_is_cpu"] = network_manager.lobby_settings.cpu_player_ids.has(id)
-	return out
+	return settings.duplicate(true)
 
 func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: Array, spectator_ids: Array = []) -> Dictionary:
 	var out := options.duplicate(true)
@@ -1509,7 +1499,6 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_e
 		return
 	_close_settings_menus_for_race_start()
 	network_manager.prepare_race_roster("start_button")
-	var settings_array: Array = []
 	var human_ids := network_manager.player_ids.duplicate(true)
 	var cpu_ids := network_manager.lobby_settings.cpu_player_ids.duplicate(true)
 	configuration.cpu_count = cpu_ids.size()
@@ -1517,16 +1506,20 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_e
 	roster.append_array(cpu_ids)
 	for id_value in roster:
 		var id := int(id_value)
-		settings_array.append(_settings_dict_for_race_id(id, cpu_ids.find(id)))
+		if !network_manager.lobby_settings.has_player_settings(id):
+			network_manager.lobby_settings.set_player_settings(id, _settings_dict_for_race_id(id, cpu_ids.find(id)), cpu_ids.has(id))
+	var race_roster: MxtRaceRoster = network_manager.lobby_settings.build_race_roster(roster)
+	if race_roster == null:
+		return
 	var race_state := _initialize_grand_prix_options(configuration, requested_options, roster)
 	race_state = _apply_race_roster_options(race_state, human_ids, cpu_ids, network_manager.spectator_ids)
 	if track_evidence.count() == 0:
 		return
-	network_manager.send_start_race(track_evidence.get_content_id(0), settings_array, configuration, track_evidence, race_state)
+	network_manager.send_start_race(track_evidence.get_content_id(0), race_roster, configuration, track_evidence, race_state)
 
-func _on_network_race_started(track_id: String, settings: Array) -> void:
+func _on_network_race_started(track_id: String, roster: MxtRaceRoster) -> void:
 	var admission_phase := network_manager.race_netplay_phase
-	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, settings, network_manager.race_track_evidence)
+	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, roster, network_manager.race_track_evidence)
 	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
 		return
 	if !bool(readiness.get("ready", false)):
@@ -1557,7 +1550,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		start_sync_drop_root.visible = false
 	communication_controller.close_race_chat()
 	_close_settings_menus_for_race_start()
-	if !race_session_controller.start_race(track_index, settings, singleplayer_mode, headless_mode):
+	if !race_session_controller.start_race(track_index, roster, singleplayer_mode, headless_mode):
 		network_manager.race_admission.report(network_manager.race_admission.FAILED, "race initialization failed")
 		return
 	game_sim.set_sim_started(false)
@@ -1874,7 +1867,7 @@ func _teardown_race_world_for_transition() -> void:
 
 func _transition_to_next_grand_prix_race() -> void:
 	var next_track_id := network_manager.pending_next_race_track_id
-	var next_settings := network_manager.pending_next_race_settings.duplicate(true)
+	var next_roster: MxtRaceRoster = network_manager.pending_next_race_roster.copy() if network_manager.pending_next_race_roster != null else null
 	var next_configuration := network_manager.pending_next_race_configuration.copy() if network_manager.pending_next_race_configuration != null else network_manager.race_configuration.copy()
 	var next_track_evidence := network_manager.pending_next_race_track_evidence.copy() if network_manager.pending_next_race_track_evidence != null else network_manager.race_track_evidence.copy()
 	var next_options := network_manager.pending_next_race_state.duplicate(true)
@@ -1886,7 +1879,8 @@ func _transition_to_next_grand_prix_race() -> void:
 	network_manager.race_track_evidence = next_track_evidence
 	network_manager.race_state = next_options
 	_apply_grand_prix_eliminations(next_options)
-	network_manager.start_race(next_track_id, next_settings, next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_options)
+	if next_roster != null:
+		network_manager.start_race(next_track_id, next_roster.encode_wire(), next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_options)
 
 func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2011,17 +2005,14 @@ func _build_final_race_finish_tick_map(place_by_id: Dictionary) -> Dictionary:
 			finish_tick_by_id[id] = finish_tick
 	return finish_tick_by_id
 
-func _build_next_grand_prix_settings(options: Dictionary) -> Array:
+func _build_next_grand_prix_roster(options: Dictionary) -> MxtRaceRoster:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	var settings := []
 	var active_ids := network_manager.player_ids.duplicate(true)
 	active_ids.append_array(network_manager.lobby_settings.cpu_player_ids)
-	for id_value in active_ids:
-		var id := int(id_value)
-		if eliminated_ids.has(id):
-			continue
-		settings.append(_settings_dict_for_race_id(id, network_manager.lobby_settings.cpu_player_ids.find(id)))
-	return settings
+	for index in range(active_ids.size() - 1, -1, -1):
+		if eliminated_ids.has(int(active_ids[index])):
+			active_ids.remove_at(index)
+	return network_manager.lobby_settings.build_race_roster(active_ids)
 
 func _build_next_grand_prix_rosters(options: Dictionary) -> Dictionary:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2066,7 +2057,10 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 		return
 	options["grand_prix_current_track"] = next_index
 	var next_track_id := network_manager.race_track_evidence.get_content_id(next_index)
-	var next_settings := _build_next_grand_prix_settings(options)
+	var next_roster: MxtRaceRoster = _build_next_grand_prix_roster(options)
+	if next_roster == null:
+		network_manager.send_end_race()
+		return
 	var next_rosters := _build_next_grand_prix_rosters(options)
 	options = _apply_race_roster_options(
 		options,
@@ -2076,7 +2070,7 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options = network_manager.reserve_next_race_netplay_state(options)
 	var seed := randi()
 	options["spawn_seed"] = seed
-	network_manager.send_end_race(next_track_id, next_settings, network_manager.race_configuration, network_manager.race_track_evidence, options)
+	network_manager.send_end_race(next_track_id, next_roster, network_manager.race_configuration, network_manager.race_track_evidence, options)
 
 func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:

@@ -620,6 +620,22 @@ func _settings_array_with_vehicle_content_evidence(settings: Array) -> Array:
 			output.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
 	return output
 
+func _race_roster_from_settings(settings: Array, racer_ids: Array, cpu_flags: Array) -> MxtRaceRoster:
+	if settings.size() != racer_ids.size():
+		push_error("Replay roster settings do not match the recorded racer IDs.")
+		return null
+	var roster := MxtRaceRoster.new()
+	for index in settings.size():
+		if typeof(settings[index]) != TYPE_DICTIONARY:
+			push_error("Replay roster contains malformed player settings.")
+			return null
+		var player_id := int(racer_ids[index])
+		var is_cpu := index < cpu_flags.size() and bool(cpu_flags[index])
+		if !roster.append_settings(player_id, player_id, is_cpu, false, false, settings[index]):
+			push_error("Replay roster conversion failed: %s" % roster.get_last_error())
+			return null
+	return roster
+
 func stop_recording(save_multiplayer_host_replay := false) -> void:
 	if save_multiplayer_host_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
 		var saved_path := _write_replay_recording("auto", _replay_dir())
@@ -1673,7 +1689,10 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	var profile_race_start_us := Time.get_ticks_usec()
 	game_manager._close_settings_menus_for_race_start()
 	game_manager.race_dnf_low_speed_ticks.clear()
-	race_session_controller.start_race(track_index, settings as Array, game_manager.singleplayer_mode, game_manager.headless_mode)
+	var race_roster: MxtRaceRoster = _race_roster_from_settings(settings as Array, replay_playback_racer_ids, replay_playback_cpu_flags)
+	if race_roster == null:
+		return
+	race_session_controller.start_race(track_index, race_roster, game_manager.singleplayer_mode, game_manager.headless_mode)
 	game_manager.game_sim.set_sim_started(true)
 	profile_race_start_us = Time.get_ticks_usec() - profile_race_start_us
 	game_manager.get_node("Control").visible = false
@@ -2617,7 +2636,16 @@ func _load_and_start_debug_replay(path: String) -> void:
 
 	game_manager._close_settings_menus_for_race_start()
 	game_manager.race_dnf_low_speed_ticks.clear()
-	race_session_controller.start_race(track_index, settings, game_manager.singleplayer_mode, game_manager.headless_mode)
+	var debug_racer_ids: Array = [local_id]
+	debug_racer_ids.append_array(cpu_ids)
+	var debug_cpu_flags: Array = [false]
+	for _cpu_id in cpu_ids:
+		debug_cpu_flags.append(true)
+	var race_roster: MxtRaceRoster = _race_roster_from_settings(settings, debug_racer_ids, debug_cpu_flags)
+	if race_roster == null:
+		game_manager._return_to_menu()
+		return
+	race_session_controller.start_race(track_index, race_roster, game_manager.singleplayer_mode, game_manager.headless_mode)
 	if !game_manager.game_sim.load_state_data(snapshot_tick, snapshot_state):
 		game_manager._return_to_menu()
 		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: native snapshot could not be applied.")
