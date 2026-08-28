@@ -6,7 +6,7 @@ signal categories_received(board_name: String, result: Dictionary)
 signal player_bests_received(board_name: String, result: MxtLeaderboardQueryResult)
 signal submission_completed(result: Dictionary)
 
-const CONFIG_PATH := "res://steam/leaderboard_service.json"
+const CONFIG_PATH := "res://leaderboards/leaderboard_service.json"
 const QUEUE_PATH := "user://leaderboard_submissions.json"
 const LEGACY_QUEUE_PATH := "user://steam_leaderboard_submissions.json"
 const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"

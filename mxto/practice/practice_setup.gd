@@ -4,7 +4,7 @@ extends Control
 signal start_requested(configuration: MxtRaceConfiguration, context: Dictionary)
 signal back_requested
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
 @onready var s_boost_toggle: CheckBox = $Center/Panel/Margin/Content/Options/SBoost

@@ -4,7 +4,7 @@ class_name LegacyLeaderboardReplayReader extends RefCounted
 # pending pre-0.3.2 submissions and recovered Steam attachments verifiable while
 # new recordings and every ordinary local replay path remain binary.
 
-const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
+const ReplayValidatorClass = preload("res://leaderboards/leaderboard_replay_validator.gd")
 const CURRENT_BINARY_SCHEMA := 5
 
 

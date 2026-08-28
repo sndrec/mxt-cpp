@@ -1,6 +1,6 @@
 extends SceneTree
 
-const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
+const ReplayValidatorClass = preload("res://leaderboards/leaderboard_replay_validator.gd")
 
 
 func _init() -> void:

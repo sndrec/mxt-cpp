@@ -44,7 +44,7 @@ func _initialize() -> void:
 	if digest_hex.length() != 64:
 		_fail("validated package returned an invalid gameplay digest")
 		return
-	var manifest_value = JSON.parse_string(FileAccess.get_file_as_string("res://steam/leaderboards.json"))
+	var manifest_value = JSON.parse_string(FileAccess.get_file_as_string("res://leaderboards/leaderboards.json"))
 	if typeof(manifest_value) != TYPE_DICTIONARY:
 		_fail("checked-in leaderboard manifest could not be parsed")
 		return

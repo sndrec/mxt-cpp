@@ -2,8 +2,8 @@ class_name LeaderboardReplayCache extends Node
 
 signal request_completed(token: int, result: Dictionary)
 
-const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
-const LegacyLeaderboardReplayReaderClass = preload("res://steam/legacy_leaderboard_replay_reader.gd")
+const ReplayValidatorClass = preload("res://leaderboards/leaderboard_replay_validator.gd")
+const LegacyLeaderboardReplayReaderClass = preload("res://leaderboards/legacy_leaderboard_replay_reader.gd")
 const CACHE_ROOT := "user://leaderboard_replays"
 const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 

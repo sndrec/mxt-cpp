@@ -1,6 +1,6 @@
 class_name SteamLeaderboardSnapshot extends Node
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 
 const FLAG := "--export-steam-leaderboard-snapshot"
 const OUTPUT_FLAG := "--steam-leaderboard-snapshot-output"

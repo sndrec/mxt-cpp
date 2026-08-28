@@ -1,6 +1,6 @@
 class_name LeaderboardEligibility extends RefCounted
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 
 static func reject(reason: String) -> Dictionary:
 	return {"eligible": false, "reason": reason}

@@ -1,6 +1,6 @@
 class_name TimeAttackRules extends RefCounted
 
-const MANIFEST_PATH := "res://steam/leaderboards.json"
+const MANIFEST_PATH := "res://leaderboards/leaderboards.json"
 const RULESET_REVISION := 2
 const LAP_COUNT := 3
 const TICKS_PER_SECOND := 60

@@ -84,12 +84,12 @@ const CpuVehiclePoolButtonClass = preload("res://ui/cpu_vehicle_pool_button.gd")
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
-const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
-const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
-const LeaderboardReplayCacheClass = preload("res://steam/leaderboard_replay_cache.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
+const LeaderboardEligibilityClass = preload("res://leaderboards/leaderboard_eligibility.gd")
+const LeaderboardClientClass = preload("res://leaderboards/leaderboard_client.gd")
+const LeaderboardReplayCacheClass = preload("res://leaderboards/leaderboard_replay_cache.gd")
 const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_ghost_controller.gd")
-const SteamLeaderboardSnapshotClass = preload("res://steam/steam_leaderboard_snapshot.gd")
+const SteamLeaderboardSnapshotClass = preload("res://backend/leaderboard_migration/steam_leaderboard_snapshot.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000

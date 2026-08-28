@@ -2,8 +2,8 @@ class_name LeaderboardBrowser extends VBoxContainer
 
 signal watch_replay_requested(board_name: String, entry: MxtLeaderboardEntry)
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
-const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
+const LeaderboardEntryPresenterClass = preload("res://leaderboards/leaderboard_entry_presenter.gd")
 
 @onready var status_label: Label = $Status
 @onready var summary_label: Label = $Summary

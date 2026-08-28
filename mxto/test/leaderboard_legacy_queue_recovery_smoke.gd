@@ -1,6 +1,6 @@
 extends SceneTree
 
-const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
+const LeaderboardClientClass = preload("res://leaderboards/leaderboard_client.gd")
 
 
 func _init() -> void:

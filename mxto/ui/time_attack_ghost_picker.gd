@@ -2,7 +2,7 @@ class_name TimeAttackGhostPicker extends Control
 
 signal closed
 
-const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
+const LeaderboardEntryPresenterClass = preload("res://leaderboards/leaderboard_entry_presenter.gd")
 const LocalReplayCatalogClass = preload("res://replay/local_time_attack_replay_catalog.gd")
 const SLOT_COLORS: Array[Color] = [
 	Color(0.30, 0.90, 1.0),

@@ -3,7 +3,7 @@ extends Node
 
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 const TrackContentControllerClass = preload("res://track/track_content_controller.gd")
 const CarSettingsClass = preload("res://ui/car_settings.gd")
 const FinishMedalClass = preload("res://ui/finish_medal.gd")

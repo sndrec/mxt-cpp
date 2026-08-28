@@ -7,9 +7,9 @@ signal official_vehicle_requested
 signal leaderboard_requested(board_name: String)
 signal watch_replay_requested(board_name: String, entry: MxtLeaderboardEntry)
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
-const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
-const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
+const LeaderboardEligibilityClass = preload("res://leaderboards/leaderboard_eligibility.gd")
+const LeaderboardEntryPresenterClass = preload("res://leaderboards/leaderboard_entry_presenter.gd")
 const GhostSelectionClass = preload("res://time_attack/time_attack_ghost_selection.gd")
 
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track

@@ -1,7 +1,7 @@
 extends SceneTree
 
 const CACHE_ROOT := "res://.time_attack_ghost_cache_smoke"
-const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
+const ReplayValidatorClass = preload("res://leaderboards/leaderboard_replay_validator.gd")
 
 
 class SelectionCache extends LeaderboardReplayCache:

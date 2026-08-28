@@ -1,6 +1,6 @@
 class_name LeaderboardReplayValidator extends RefCounted
 
-const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 const MAX_REPLAY_TICKS := 60 * 60 * 60
 
 static func reject(reason: String) -> Dictionary:

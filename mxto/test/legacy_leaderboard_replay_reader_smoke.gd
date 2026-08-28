@@ -1,6 +1,6 @@
 extends SceneTree
 
-const LegacyReaderClass = preload("res://steam/legacy_leaderboard_replay_reader.gd")
+const LegacyReaderClass = preload("res://leaderboards/legacy_leaderboard_replay_reader.gd")
 
 
 func _init() -> void:
