@@ -1,7 +1,7 @@
 class_name LobbyController
 extends Node
 
-signal start_race_requested(configuration: MxtRaceConfiguration, race_state: Dictionary)
+signal start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, race_state: Dictionary)
 signal car_settings_requested
 signal controller_settings_requested
 signal spectator_toggled(enabled: bool)
@@ -75,14 +75,15 @@ func build_race_configuration() -> MxtRaceConfiguration:
 	return configuration
 
 func build_race_state() -> Dictionary:
-	var race_state := {
+	return {
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {},
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
-	track_content_controller.set_track_content_evidence(race_state, grand_prix_track_sequence)
-	return race_state
+
+func build_track_evidence() -> MxtTrackContentEvidence:
+	return track_content_controller.build_track_content_evidence(grand_prix_track_sequence)
 
 func process_lobby(delta: float) -> void:
 	var lobby_frame_start_usec := Time.get_ticks_usec()
@@ -129,7 +130,7 @@ func refresh_controls() -> void:
 		if button != null:
 			button.disabled = !can_edit
 
-func apply_race_setup(configuration: MxtRaceConfiguration, state: Dictionary) -> void:
+func apply_race_setup(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, _state: Dictionary) -> void:
 	applying_race_setup = true
 	var mode := configuration.game_mode
 	if mode >= 0 and mode < game_mode_choice.item_count:
@@ -139,9 +140,8 @@ func apply_race_setup(configuration: MxtRaceConfiguration, state: Dictionary) ->
 	s_boost_toggle.set_pressed_no_signal(configuration.s_boost)
 	workshop_vehicles_toggle.set_pressed_no_signal(configuration.allow_workshop_vehicles)
 	grand_prix_track_sequence.clear()
-	var track_ids: Array = state.get("track_ids", [])
-	for track_id_value in track_ids:
-		var index := track_content_controller.track_index_for_id(String(track_id_value))
+	for track_evidence_index in range(track_evidence.count()):
+		var index := track_content_controller.track_index_for_id(track_evidence.get_content_id(track_evidence_index))
 		if index >= 0 and index < track_content_controller.tracks.size():
 			grand_prix_track_sequence.append(index)
 	if !grand_prix_track_sequence.is_empty():
@@ -156,11 +156,13 @@ func refresh_race_setup() -> void:
 		refresh_controls()
 		return
 	var configuration := build_race_configuration()
+	var track_evidence := build_track_evidence()
 	var state := build_race_state()
 	if network_manager.is_server:
-		network_manager.send_race_state(configuration, state)
+		network_manager.send_race_state(configuration, track_evidence, state)
 	else:
 		network_manager.race_configuration = configuration
+		network_manager.race_track_evidence = track_evidence
 		network_manager.race_state = state
 	_refresh_stage_preview()
 	refresh_controls()
@@ -191,9 +193,9 @@ func _on_stage_preview_pressed(sequence_index: int) -> void:
 func _refresh_stage_preview() -> void:
 	for child in stage_preview_container.get_children():
 		child.queue_free()
-	var track_ids: Array = network_manager.race_state.get("track_ids", [])
-	for i in range(track_ids.size()):
-		var track_index := track_content_controller.track_index_for_id(String(track_ids[i]))
+	for i in range(network_manager.race_track_evidence.count()):
+		var track_index := track_content_controller.track_index_for_id(
+			network_manager.race_track_evidence.get_content_id(i))
 		var button := Button.new()
 		button.disabled = !network_manager.is_server
 		button.text = "%d. %s" % [
@@ -221,7 +223,7 @@ func request_start_race() -> void:
 	if network_manager.is_server and !grand_prix_track_sequence.is_empty():
 		if !workshop_vehicles_toggle.button_pressed:
 			network_manager.lobby_settings.enforce_official_vehicles()
-		start_race_requested.emit(build_race_configuration(), build_race_state())
+		start_race_requested.emit(build_race_configuration(), build_track_evidence(), build_race_state())
 
 func _update_player_list() -> void:
 	var roster := network_manager.player_ids.duplicate(true)

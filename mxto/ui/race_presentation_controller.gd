@@ -358,9 +358,9 @@ func _format_ordinal(value: int) -> String:
 func _next_grand_prix_track_id() -> String:
 	if !network_manager.is_grand_prix_enabled():
 		return ""
-	var track_ids: Array = network_manager.race_state.get("track_ids", [])
 	var next_index := int(network_manager.race_state.get("grand_prix_current_track", 0)) + 1
-	return String(track_ids[next_index]) if next_index >= 0 and next_index < track_ids.size() else ""
+	return network_manager.race_track_evidence.get_content_id(next_index) \
+		if next_index >= 0 and next_index < network_manager.race_track_evidence.count() else ""
 
 func _results_countdown_seconds() -> int:
 	if network_manager.race_results.net_race_finish_time < 0:

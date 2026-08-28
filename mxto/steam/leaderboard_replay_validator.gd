@@ -79,6 +79,9 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 	var options: Dictionary = options_value
 	var configuration := MxtRaceConfiguration.new()
 	configuration.load_metadata_dictionary(options)
+	var track_evidence := MxtTrackContentEvidence.new()
+	if !track_evidence.load_metadata_dictionary(options):
+		return reject("track_identity_mismatch")
 	if !TimeAttackRulesClass.configuration_matches(configuration):
 		return reject("modified_time_attack_rules")
 	if !configuration.leaderboard_eligible or !configuration.leaderboard_ineligible_reason.is_empty():
@@ -113,14 +116,9 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 
 	var track_id := String(replay.get("track_content_id", ""))
 	var track_digest := String(replay.get("track_gameplay_digest", ""))
-	var track_ids_value = options.get("track_ids", [])
-	var track_digests_value = options.get("track_gameplay_digests", [])
-	if typeof(track_ids_value) != TYPE_ARRAY or typeof(track_digests_value) != TYPE_ARRAY:
-		return reject("track_identity_mismatch")
-	var track_ids: Array = track_ids_value
-	var track_digests: Array = track_digests_value
-	if track_ids.size() != 1 or track_digests.size() != 1 \
-		or String(track_ids[0]) != track_id or String(track_digests[0]) != track_digest:
+	if track_evidence.count() != 1 \
+			or track_evidence.get_content_id(0) != track_id \
+			or track_evidence.get_gameplay_digest(0) != track_digest:
 		return reject("track_identity_mismatch")
 	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_id)
 	var board := TimeAttackRulesClass.board_for_track_digest(track_digest)
@@ -131,9 +129,7 @@ static func validate(game_manager: GameManager, replay: Dictionary, replay_strea
 	var expected_workshop_id := String(board.get("published_file_id", ""))
 	if String(replay.get("track_workshop_id", "")) != expected_workshop_id:
 		return reject("track_workshop_identity_mismatch")
-	var option_workshop_ids_value = options.get("track_workshop_ids", [])
-	if typeof(option_workshop_ids_value) != TYPE_ARRAY or (option_workshop_ids_value as Array).size() != 1 \
-		or String((option_workshop_ids_value as Array)[0]) != expected_workshop_id:
+	if track_evidence.get_workshop_id(0) != expected_workshop_id:
 		return reject("track_workshop_identity_mismatch")
 
 	var player_settings: Dictionary = settings[0]

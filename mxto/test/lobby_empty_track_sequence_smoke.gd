@@ -16,8 +16,7 @@ func _init() -> void:
 	await process_frame
 	main.call("_physics_process", 1.0 / 60.0)
 
-	var track_ids: Array = main.network_manager.race_state.get("track_ids", [])
-	if !track_ids.is_empty():
+	if main.network_manager.race_track_evidence.count() != 0:
 		push_error("empty lobby sequence should not fall back to selected track")
 		quit(1)
 		return

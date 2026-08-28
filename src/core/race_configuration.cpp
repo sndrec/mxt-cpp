@@ -1,10 +1,10 @@
 #include "core/race_configuration.h"
+#include "core/bounded_wire.h"
 
 #include <godot_cpp/core/class_db.hpp>
 
 #include <algorithm>
 #include <cstring>
-#include <vector>
 
 using namespace godot;
 
@@ -25,73 +25,6 @@ enum WireFlags : uint16_t {
 	FLAG_LEADERBOARD_ELIGIBLE = 1u << 5,
 	FLAG_RESUMED_FROM_REPLAY = 1u << 6,
 	FLAG_CUSTOM_CONTENT = 1u << 7,
-};
-
-struct Writer {
-	std::vector<uint8_t> bytes;
-
-	void u8(uint8_t value) { bytes.push_back(value); }
-	void u16(uint16_t value) {
-		bytes.push_back(static_cast<uint8_t>(value));
-		bytes.push_back(static_cast<uint8_t>(value >> 8));
-	}
-	void u32(uint32_t value) {
-		for (uint32_t shift = 0; shift < 32; shift += 8) bytes.push_back(static_cast<uint8_t>(value >> shift));
-	}
-	void i64(int64_t value) {
-		const uint64_t bits = static_cast<uint64_t>(value);
-		u32(static_cast<uint32_t>(bits));
-		u32(static_cast<uint32_t>(bits >> 32));
-	}
-	void string(const String &value) {
-		const CharString utf8 = value.utf8();
-		const uint32_t size = static_cast<uint32_t>(utf8.length());
-		u32(size);
-		bytes.insert(bytes.end(), reinterpret_cast<const uint8_t *>(utf8.get_data()), reinterpret_cast<const uint8_t *>(utf8.get_data()) + size);
-	}
-};
-
-struct Reader {
-	const uint8_t *data = nullptr;
-	size_t size = 0;
-	size_t cursor = 0;
-
-	bool raw(void *out, size_t count) {
-		if (cursor + count > size) return false;
-		std::memcpy(out, data + cursor, count);
-		cursor += count;
-		return true;
-	}
-	bool u8(uint8_t &out) { return raw(&out, sizeof(out)); }
-	bool u16(uint16_t &out) {
-		uint8_t bytes[2];
-		if (!raw(bytes, sizeof(bytes))) return false;
-		out = static_cast<uint16_t>(bytes[0]) | (static_cast<uint16_t>(bytes[1]) << 8);
-		return true;
-	}
-	bool u32(uint32_t &out) {
-		uint8_t bytes[4];
-		if (!raw(bytes, sizeof(bytes))) return false;
-		out = static_cast<uint32_t>(bytes[0]) |
-			(static_cast<uint32_t>(bytes[1]) << 8) |
-			(static_cast<uint32_t>(bytes[2]) << 16) |
-			(static_cast<uint32_t>(bytes[3]) << 24);
-		return true;
-	}
-	bool i64(int64_t &out) {
-		uint32_t low = 0;
-		uint32_t high = 0;
-		if (!u32(low) || !u32(high)) return false;
-		out = static_cast<int64_t>(static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32));
-		return true;
-	}
-	bool string(String &out, uint32_t maximum) {
-		uint32_t count = 0;
-		if (!u32(count) || count > maximum || cursor + count > size) return false;
-		out = String::utf8(reinterpret_cast<const char *>(data + cursor), count);
-		cursor += count;
-		return true;
-	}
 };
 
 static int32_t clamped_u16(int32_t value) {
@@ -201,8 +134,8 @@ void MxtRaceConfiguration::set_time_attack_ruleset_revision(int32_t value) {
 }
 
 PackedByteArray MxtRaceConfiguration::encode_wire() const {
-	Writer writer;
-	writer.bytes.insert(writer.bytes.end(), WIRE_MAGIC, WIRE_MAGIC + sizeof(WIRE_MAGIC));
+	mxt_wire::Writer writer;
+	writer.raw(WIRE_MAGIC, sizeof(WIRE_MAGIC));
 	writer.u8(WIRE_VERSION);
 	writer.u8(static_cast<uint8_t>(session_kind));
 	writer.u8(game_mode);
@@ -223,15 +156,12 @@ PackedByteArray MxtRaceConfiguration::encode_wire() const {
 	writer.string(leaderboard_ineligible_reason);
 	writer.u16(static_cast<uint16_t>(std::min<int64_t>(cpu_vehicle_content_ids.size(), MAX_CPU_VEHICLE_IDS)));
 	for (int64_t i = 0; i < cpu_vehicle_content_ids.size() && i < MAX_CPU_VEHICLE_IDS; ++i) writer.string(cpu_vehicle_content_ids[i]);
-	PackedByteArray out;
-	out.resize(static_cast<int64_t>(writer.bytes.size()));
-	if (!writer.bytes.empty()) std::memcpy(out.ptrw(), writer.bytes.data(), writer.bytes.size());
-	return out;
+	return writer.packed();
 }
 
 bool MxtRaceConfiguration::decode_wire(const PackedByteArray &bytes) {
 	last_error = String();
-	Reader reader{bytes.ptr(), static_cast<size_t>(bytes.size()), 0};
+	mxt_wire::Reader reader(bytes);
 	uint8_t magic[sizeof(WIRE_MAGIC)];
 	uint8_t version = 0;
 	uint8_t kind = 0;
@@ -261,7 +191,7 @@ bool MxtRaceConfiguration::decode_wire(const PackedByteArray &bytes) {
 		}
 		content_ids.set(i, id);
 	}
-	if (reader.cursor != reader.size) {
+	if (!reader.finished()) {
 		last_error = "Race configuration packet has trailing data.";
 		return false;
 	}

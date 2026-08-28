@@ -40,5 +40,17 @@ func _init() -> void:
 		push_error("MXT_RACE_CONFIGURATION_WIRE_SMOKE_FAIL")
 		quit(1)
 		return
-	print("MXT_RACE_CONFIGURATION_WIRE_SMOKE_OK bytes=", source.encode_wire().size())
+	var track_source := MxtTrackContentEvidence.new()
+	track_source.append("official:track-a", "sha256:gameplay", "sha256:package", "")
+	track_source.append("workshop:track-b", "sha256:gameplay-b", "sha256:package-b", "123456")
+	var track_decoded := MxtTrackContentEvidence.new()
+	if !track_decoded.decode_wire(track_source.encode_wire()) \
+			or track_decoded.count() != 2 \
+			or track_decoded.get_content_id(0) != "official:track-a" \
+			or track_decoded.get_workshop_id(1) != "123456":
+		push_error("MXT_TRACK_CONTENT_EVIDENCE_WIRE_SMOKE_FAIL")
+		quit(1)
+		return
+	print("MXT_RACE_CONFIGURATION_WIRE_SMOKE_OK config_bytes=", source.encode_wire().size(),
+		" track_bytes=", track_source.encode_wire().size())
 	quit(0)

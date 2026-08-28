@@ -4,6 +4,7 @@
 #include "content/content_package_io.h"
 #include "content/content_catalog.h"
 #include "core/race_configuration.h"
+#include "core/track_content_evidence.h"
 #include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
 #include "car/car_draft_store.h"
@@ -45,6 +46,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtContentPackageIO);
 	GDREGISTER_CLASS(MxtContentCatalog);
 	GDREGISTER_CLASS(MxtRaceConfiguration);
+	GDREGISTER_CLASS(MxtTrackContentEvidence);
 	GDREGISTER_CLASS(MxtTrackPackageBuilder);
 	GDREGISTER_CLASS(MxtCarAuthoringSession);
 	GDREGISTER_CLASS(MxtCarDraftStore);

@@ -601,11 +601,12 @@ func _on_spectator_race_button_pressed() -> void:
 func _on_track_editor_button_pressed() -> void:
 	get_tree().change_scene_to_file("res://track_editing_scene.tscn")
 
-func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRaceConfiguration = null, requested_race_state: Dictionary = {}) -> void:
+func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRaceConfiguration = null, requested_race_state: Dictionary = {}, requested_track_evidence: MxtTrackContentEvidence = null) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
 	# Prepare a minimal settings array using the current local player settings.
 	var configuration := requested_configuration.copy() if requested_configuration != null else _build_default_singleplayer_race_configuration()
 	var race_state := requested_race_state.duplicate(true) if !requested_race_state.is_empty() else _build_default_singleplayer_race_state()
+	var track_evidence := requested_track_evidence.copy() if requested_track_evidence != null else track_content_controller.build_track_content_evidence([track_selector.selected])
 	var is_practice := configuration.is_practice()
 	var uses_time_attack_ghosts := configuration.is_time_attack() or is_practice
 	if uses_time_attack_ghosts:
@@ -624,7 +625,6 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 	singleplayer_mode = true
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
-	track_content_controller.set_track_content_evidence(race_state, [track_selector.selected])
 	if auto_bumpers_mode:
 		configuration.bumpers = true
 	var my_id := _local_player_id()
@@ -642,7 +642,7 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 	vehicle_content_controller.apply_evidence(ps)
 	time_attack_last_replay_path = ""
 	if configuration.is_time_attack():
-		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, configuration, race_state, ps)
+		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, configuration, track_evidence, ps)
 		time_attack_finalized = false
 		configuration.leaderboard_eligible = bool(time_attack_eligibility.get("eligible", false))
 		configuration.leaderboard_ineligible_reason = String(time_attack_eligibility.get("reason", ""))
@@ -650,6 +650,7 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 		time_attack_eligibility.clear()
 		time_attack_finalized = false
 	network_manager.race_configuration = configuration
+	network_manager.race_track_evidence = track_evidence
 	network_manager.race_state = race_state
 	network_manager.lobby_settings.set_cpu_driver_count(race_cpu_count)
 	network_manager.lobby_settings.set_cpu_driver_vehicle_pool(Array(configuration.cpu_vehicle_content_ids))
@@ -732,6 +733,8 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	var metadata_options: Dictionary = (metadata.get("race_options", {}) as Dictionary).duplicate(true) if typeof(metadata.get("race_options", {})) == TYPE_DICTIONARY else {}
 	var configuration := MxtRaceConfiguration.new()
 	configuration.load_metadata_dictionary(metadata_options)
+	var track_evidence := MxtTrackContentEvidence.new()
+	track_evidence.load_metadata_dictionary(metadata_options)
 	configuration.session_kind = MxtRaceConfiguration.SESSION_PRACTICE
 	configuration.leaderboard_eligible = false
 	configuration.leaderboard_ineligible_reason = "practice"
@@ -740,6 +743,8 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	configuration.resumed_from_replay = true
 	var race_state := metadata_options.duplicate(true)
 	for key in network_manager.RACE_CONFIGURATION_METADATA_KEYS:
+		race_state.erase(key)
+	for key in network_manager.TRACK_EVIDENCE_METADATA_KEYS:
 		race_state.erase(key)
 	race_state["race_human_ids"] = [focused_player_id]
 	race_state["race_cpu_ids"] = cpu_ids.duplicate(true)
@@ -772,6 +777,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	singleplayer_mode = true
 	network_manager.set_spawn_seed(int(metadata.get("spawn_seed", 0)))
 	network_manager.race_configuration = configuration
+	network_manager.race_track_evidence = track_evidence
 	network_manager.race_state = race_state
 	network_manager.player_ids = [focused_player_id]
 	network_manager.spectator_ids = []
@@ -988,36 +994,31 @@ func _build_default_singleplayer_race_configuration() -> MxtRaceConfiguration:
 	return configuration
 
 func _build_default_singleplayer_race_state() -> Dictionary:
-	var race_state := {
+	return {
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {},
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
-	track_content_controller.set_track_content_evidence(race_state, [track_selector.selected])
-	return race_state
 
-func _race_content_readiness(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
+func _race_content_readiness(track_id: String, settings: Array, track_evidence: MxtTrackContentEvidence) -> Dictionary:
 	var missing_workshop_ids: Array = []
 	var problems := PackedStringArray()
 	var irrecoverable_problems := PackedStringArray()
-	var content_ids: Array = options.get("track_ids", [])
-	var gameplay_digests: Array = options.get("track_gameplay_digests", [])
-	var package_digests: Array = options.get("track_package_digests", [])
-	var workshop_ids: Array = options.get("track_workshop_ids", [])
-	if content_ids.is_empty() or !content_ids.has(track_id) or gameplay_digests.size() != content_ids.size() or package_digests.size() != content_ids.size() or workshop_ids.size() != content_ids.size():
+	if track_evidence == null or track_evidence.count() == 0 or track_evidence.find_content_id(track_id) < 0:
 		var problem := "race track content records are malformed"
 		problems.append(problem)
 		irrecoverable_problems.append(problem)
 	else:
-		for i in range(content_ids.size()):
+		for i in range(track_evidence.count()):
 			if track_content_controller.track_content_evidence_matches(
-					String(content_ids[i]), String(gameplay_digests[i]), String(package_digests[i]), String(workshop_ids[i])):
+					track_evidence.get_content_id(i), track_evidence.get_gameplay_digest(i),
+					track_evidence.get_package_digest(i), track_evidence.get_workshop_id(i)):
 				continue
-			var workshop_id := String(workshop_ids[i])
-			var problem := "missing exact track %s" % String(content_ids[i])
+			var workshop_id := track_evidence.get_workshop_id(i)
+			var problem := "missing exact track %s" % track_evidence.get_content_id(i)
 			if !_valid_workshop_id(workshop_id):
-				problem = "non-Workshop track %s does not match the host build" % String(content_ids[i])
+				problem = "non-Workshop track %s does not match the host build" % track_evidence.get_content_id(i)
 				irrecoverable_problems.append(problem)
 			problems.append(problem)
 			_append_workshop_id(missing_workshop_ids, workshop_id)
@@ -1053,8 +1054,8 @@ func _append_workshop_id(ids: Array, value: String) -> void:
 		if !ids.has(published_file_id):
 			ids.append(published_file_id)
 
-func _acquire_race_workshop_content(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
-	var readiness := _race_content_readiness(track_id, settings, options)
+func _acquire_race_workshop_content(track_id: String, settings: Array, track_evidence: MxtTrackContentEvidence) -> Dictionary:
+	var readiness := _race_content_readiness(track_id, settings, track_evidence)
 	if bool(readiness.get("ready", false)):
 		return readiness
 	var workshop_ids: Array = readiness.get("workshop_ids", [])
@@ -1065,7 +1066,7 @@ func _acquire_race_workshop_content(track_id: String, settings: Array, options: 
 		tracked_any = steam_service.track_workshop_item(int(published_file_id_value)) or tracked_any
 	if tracked_any:
 		steam_service.refresh_workshop_items()
-		readiness = _race_content_readiness(track_id, settings, options)
+		readiness = _race_content_readiness(track_id, settings, track_evidence)
 		if bool(readiness.get("ready", false)):
 			return readiness
 	var workshop_id_strings := PackedStringArray()
@@ -1089,7 +1090,7 @@ func _acquire_race_workshop_content(track_id: String, settings: Array, options: 
 	var next_refresh_msec := Time.get_ticks_msec() + 1000
 	while network_manager.race_active and Time.get_ticks_msec() < deadline:
 		await get_tree().create_timer(0.1).timeout
-		readiness = _race_content_readiness(track_id, settings, options)
+		readiness = _race_content_readiness(track_id, settings, track_evidence)
 		if bool(readiness.get("ready", false)):
 			return readiness
 		var now := Time.get_ticks_msec()
@@ -1193,9 +1194,10 @@ func _on_pause_retry_pressed() -> void:
 	if !singleplayer_mode or (!configuration.is_time_attack() and !configuration.is_practice()):
 		return
 	var race_state := network_manager.race_state.duplicate(true)
+	var track_evidence := network_manager.race_track_evidence.copy()
 	_close_race_pause_menu()
 	_return_to_menu(configuration.is_practice())
-	call_deferred("_start_singleplayer_race", false, configuration, race_state)
+	call_deferred("_start_singleplayer_race", false, configuration, race_state, track_evidence)
 
 func _on_pause_disconnect_pressed() -> void:
 	_close_race_pause_menu()
@@ -1509,7 +1511,7 @@ func _generate_random_input() -> PlayerInput:
 @onready var directional_light_3d: DirectionalLight3D = $GameWorld/DirectionalLight3D
 @onready var default_world_environment_resource: Environment = world_environment.environment
 
-func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, requested_options: Dictionary) -> void:
+func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_evidence: MxtTrackContentEvidence, requested_options: Dictionary) -> void:
 	if !network_manager.is_server:
 		return
 	_close_settings_menus_for_race_start()
@@ -1525,14 +1527,13 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, request
 		settings_array.append(_settings_dict_for_race_id(id, cpu_ids.find(id)))
 	var race_state := _initialize_grand_prix_options(configuration, requested_options, roster)
 	race_state = _apply_race_roster_options(race_state, human_ids, cpu_ids, network_manager.spectator_ids)
-	var track_ids: Array = race_state.get("track_ids", [])
-	if track_ids.is_empty():
+	if track_evidence.count() == 0:
 		return
-	network_manager.send_start_race(String(track_ids[0]), settings_array, configuration, race_state)
+	network_manager.send_start_race(track_evidence.get_content_id(0), settings_array, configuration, track_evidence, race_state)
 
 func _on_network_race_started(track_id: String, settings: Array) -> void:
 	var admission_phase := network_manager.race_netplay_phase
-	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, settings, network_manager.race_state)
+	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, settings, network_manager.race_track_evidence)
 	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
 		return
 	if !bool(readiness.get("ready", false)):
@@ -1882,15 +1883,17 @@ func _transition_to_next_grand_prix_race() -> void:
 	var next_track_id := network_manager.pending_next_race_track_id
 	var next_settings := network_manager.pending_next_race_settings.duplicate(true)
 	var next_configuration := network_manager.pending_next_race_configuration.copy() if network_manager.pending_next_race_configuration != null else network_manager.race_configuration.copy()
+	var next_track_evidence := network_manager.pending_next_race_track_evidence.copy() if network_manager.pending_next_race_track_evidence != null else network_manager.race_track_evidence.copy()
 	var next_options := network_manager.pending_next_race_state.duplicate(true)
 	_teardown_race_world_for_transition()
 	if network_manager.is_server:
 		network_manager.flush_waiting_peers(true)
 	network_manager.reset_race_state(true)
 	network_manager.race_configuration = next_configuration
+	network_manager.race_track_evidence = next_track_evidence
 	network_manager.race_state = next_options
 	_apply_grand_prix_eliminations(next_options)
-	network_manager.start_race(next_track_id, next_settings, next_configuration.encode_wire(), next_options)
+	network_manager.start_race(next_track_id, next_settings, next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_options)
 
 func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -1955,7 +1958,8 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	options["grand_prix_ko_energy_bonuses"] = _capture_grand_prix_ko_energy_bonuses(sim)
 	options["grand_prix_recorded_track"] = current_track_index
 	network_manager.race_state = options
-	network_manager.send_race_state(network_manager.race_configuration, options)
+	network_manager.send_race_state(
+		network_manager.race_configuration, network_manager.race_track_evidence, options)
 
 func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
 	var place_by_id := {}
@@ -2063,14 +2067,13 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 		network_manager.send_end_race()
 		return
 	var options := network_manager.race_state.duplicate(true)
-	var track_ids: Array = options.get("track_ids", [])
 	var current_index := int(options.get("grand_prix_current_track", 0))
 	var next_index := current_index + 1
-	if next_index >= track_ids.size() or !_has_active_human_grand_prix_racer(options):
+	if next_index >= network_manager.race_track_evidence.count() or !_has_active_human_grand_prix_racer(options):
 		network_manager.send_end_race()
 		return
 	options["grand_prix_current_track"] = next_index
-	var next_track_id := String(track_ids[next_index])
+	var next_track_id := network_manager.race_track_evidence.get_content_id(next_index)
 	var next_settings := _build_next_grand_prix_settings(options)
 	var next_rosters := _build_next_grand_prix_rosters(options)
 	options = _apply_race_roster_options(
@@ -2081,7 +2084,7 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options = network_manager.reserve_next_race_netplay_state(options)
 	var seed := randi()
 	options["spawn_seed"] = seed
-	network_manager.send_end_race(next_track_id, next_settings, network_manager.race_configuration, options)
+	network_manager.send_end_race(next_track_id, next_settings, network_manager.race_configuration, network_manager.race_track_evidence, options)
 
 func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:
@@ -2273,9 +2276,9 @@ func _finalize_practice() -> void:
 	time_attack_last_replay_path = practice_replay_path
 	var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
 	var practice_board := {}
-	var digests: Array = network_manager.race_state.get("track_gameplay_digests", [])
-	if digests.size() == 1:
-		practice_board = TimeAttackRulesClass.board_for_track_digest(String(digests[0]))
+	if network_manager.race_track_evidence.count() == 1:
+		practice_board = TimeAttackRulesClass.board_for_track_digest(
+			network_manager.race_track_evidence.get_gameplay_digest(0))
 	var practice_result := {
 		"eligible": false,
 		"reason": "practice_unranked",
@@ -2336,8 +2339,9 @@ func _on_time_attack_race_again_requested() -> void:
 	var practice := network_manager.race_configuration.is_practice()
 	var configuration := network_manager.race_configuration.copy() if practice else TimeAttackRulesClass.build_configuration()
 	var race_state := network_manager.race_state.duplicate(true) if practice else {}
+	var track_evidence := network_manager.race_track_evidence.copy() if practice else null
 	_return_to_menu()
-	call_deferred("_start_singleplayer_race", false, configuration, race_state)
+	call_deferred("_start_singleplayer_race", false, configuration, race_state, track_evidence)
 
 
 func _on_time_attack_save_replay_requested() -> void:

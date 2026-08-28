@@ -112,7 +112,9 @@ func _init() -> void:
 	}
 	nm.race_admission.active = true
 	nm.race_admission.scheduled = true
-	nm.start_race("sha256:test", [], nm.race_configuration.encode_wire(), {})
+	nm.start_race(
+		"sha256:test", [], nm.race_configuration.encode_wire(),
+		nm.race_track_evidence.encode_wire(), {})
 	for id in [1, 2, 3]:
 		if nm.race_admission.stage_for(id) != nm.race_admission.START_SENT:
 			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission.admission_states])

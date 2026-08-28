@@ -86,11 +86,12 @@ func _start_cpu_race(track_index: int, racer_count: int, spawn_seed: int) -> boo
 	game_manager.network_manager.lobby_settings.set_race_cpu_roster(cpu_ids)
 	var configuration := _race_configuration(racer_count)
 	var options := game_manager._build_default_singleplayer_race_state()
-	game_manager.track_content_controller.set_track_content_evidence(options, [track_index])
+	var track_evidence := game_manager.track_content_controller.build_track_content_evidence([track_index])
 	options["race_human_ids"] = []
 	options["race_cpu_ids"] = cpu_ids.duplicate(true)
 	options["race_spectator_ids"] = []
 	game_manager.network_manager.race_configuration = configuration
+	game_manager.network_manager.race_track_evidence = track_evidence
 	game_manager.network_manager.race_state = options
 	game_manager.network_manager.set_spawn_seed(spawn_seed)
 	var settings: Array = []

@@ -54,33 +54,21 @@ func track_gameplay_digest_for_index(track_index: int) -> String:
 		return String(tracks[track_index].get("gameplay_digest", ""))
 	return ""
 
-func track_content_evidence_for_index(track_index: int) -> Dictionary:
-	var content_id := track_id_for_index(track_index)
-	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	return {
-		"content_id": content_id,
-		"gameplay_digest": String(record.get("gameplay_digest", "")),
-		"package_digest": String(record.get("package_digest", "")),
-		"workshop_id": String(record.get("published_file_id", "")),
-	}
-
-func set_track_content_evidence(options: Dictionary, track_indices: Array) -> void:
-	var content_ids: Array = []
-	var gameplay_digests: Array = []
-	var package_digests: Array = []
-	var workshop_ids: Array = []
+func build_track_content_evidence(track_indices: Array) -> MxtTrackContentEvidence:
+	var result := MxtTrackContentEvidence.new()
 	for index_value in track_indices:
-		var evidence := track_content_evidence_for_index(int(index_value))
-		if String(evidence.get("content_id", "")).is_empty():
+		var content_id := track_id_for_index(int(index_value))
+		if content_id.is_empty():
 			continue
-		content_ids.append(String(evidence.get("content_id", "")))
-		gameplay_digests.append(String(evidence.get("gameplay_digest", "")))
-		package_digests.append(String(evidence.get("package_digest", "")))
-		workshop_ids.append(String(evidence.get("workshop_id", "")))
-	options["track_ids"] = content_ids
-	options["track_gameplay_digests"] = gameplay_digests
-	options["track_package_digests"] = package_digests
-	options["track_workshop_ids"] = workshop_ids
+		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
+		if !result.append(
+				content_id,
+				String(record.get("gameplay_digest", "")),
+				String(record.get("package_digest", "")),
+				String(record.get("published_file_id", ""))):
+			push_error(result.get_last_error())
+			break
+	return result
 
 func track_content_evidence_matches(
 		content_id: String,
