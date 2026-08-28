@@ -302,15 +302,11 @@ func take_clean_4k_screenshot() -> void:
 		return
 	screenshot_in_progress = true
 	var viewport := get_viewport()
-	var window := get_window()
-	if window == null:
+	var active_camera := viewport.get_camera_3d()
+	if active_camera == null:
+		push_error("Failed to capture a 4K screenshot; no active 3D camera was found.")
 		screenshot_in_progress = false
 		return
-	var original_window_mode := window.mode
-	var original_window_size := window.size
-	var original_window_position := window.position
-	var original_window_screen := window.current_screen
-	var original_canvas_cull_mask := viewport.get_canvas_cull_mask()
 	var race_hud := race_presentation_controller.local_race_hud() as RaceHud
 	var race_hud_process_mode := Node.PROCESS_MODE_INHERIT
 	var world_sticker_nodes: Array[Node3D] = []
@@ -324,22 +320,47 @@ func take_clean_4k_screenshot() -> void:
 			world_sticker_nodes.append(sticker_node)
 			world_sticker_visibility.append(sticker_node.visible)
 			sticker_node.visible = false
-	viewport.set_canvas_cull_mask(0)
-	if window.mode != Window.MODE_WINDOWED:
-		window.mode = Window.MODE_WINDOWED
-		await get_tree().process_frame
-	window.current_screen = original_window_screen
-	window.size = SCREENSHOT_SIZE
+	var capture_viewport := SubViewport.new()
+	capture_viewport.name = "Clean4KScreenshotViewport"
+	capture_viewport.size = SCREENSHOT_SIZE
+	capture_viewport.world_3d = viewport.find_world_3d()
+	capture_viewport.transparent_bg = false
+	capture_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	capture_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	capture_viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	capture_viewport.scaling_3d_scale = 1.0
+	capture_viewport.msaa_3d = viewport.msaa_3d
+	capture_viewport.screen_space_aa = viewport.screen_space_aa
+	capture_viewport.use_taa = viewport.use_taa
+	capture_viewport.use_debanding = viewport.use_debanding
+	capture_viewport.use_occlusion_culling = false
+	capture_viewport.positional_shadow_atlas_size = viewport.positional_shadow_atlas_size
+	add_child(capture_viewport)
+	var capture_camera := Camera3D.new()
+	capture_camera.name = "Clean4KScreenshotCamera"
+	capture_camera.keep_aspect = active_camera.keep_aspect
+	capture_camera.cull_mask = active_camera.cull_mask
+	capture_camera.environment = active_camera.environment
+	capture_camera.attributes = active_camera.attributes
+	capture_camera.compositor = active_camera.compositor
+	capture_camera.h_offset = active_camera.h_offset
+	capture_camera.v_offset = active_camera.v_offset
+	capture_camera.projection = active_camera.projection
+	capture_camera.fov = active_camera.fov
+	capture_camera.size = active_camera.size
+	capture_camera.frustum_offset = active_camera.frustum_offset
+	capture_camera.near = active_camera.near
+	capture_camera.far = active_camera.far
+	capture_viewport.add_child(capture_camera)
+	capture_camera.global_transform = active_camera.global_transform
+	capture_camera.current = true
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
-	var image := viewport.get_texture().get_image()
-	window.current_screen = original_window_screen
-	window.size = original_window_size
-	window.position = original_window_position
-	window.mode = original_window_mode
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
-	viewport.set_canvas_cull_mask(original_canvas_cull_mask)
+	var image := capture_viewport.get_texture().get_image()
+	capture_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	capture_viewport.queue_free()
 	if is_instance_valid(race_hud):
 		race_hud.process_mode = race_hud_process_mode
 	for i in range(world_sticker_nodes.size()):
