@@ -14,6 +14,7 @@ func _init() -> void:
 		return
 	car_settings.call("open_settings")
 	await process_frame
+	var livery_editor: LiveryEditor = car_settings.livery_editor
 	var vehicle_selector: ItemList = car_settings.vehicle_selector
 	if vehicle_selector.item_count <= 0:
 		push_error("car settings smoke has no selectable cars")
@@ -31,29 +32,29 @@ func _init() -> void:
 			quit(1)
 			return
 
-	var camera_controller = car_settings.preview_camera_controller
+	var camera_controller = livery_editor.preview_camera_controller
 	var start_yaw: float = camera_controller.yaw
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
 	press.position = Vector2(100.0, 100.0)
-	car_settings.call("_handle_preview_mouse_button", press)
+	livery_editor.call("_handle_preview_mouse_button", press)
 	var motion := InputEventMouseMotion.new()
 	motion.position = Vector2(150.0, 110.0)
-	car_settings.call("_handle_preview_mouse_motion", motion)
+	livery_editor.call("_handle_preview_mouse_motion", motion)
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	release.position = Vector2(150.0, 110.0)
-	car_settings.call("_handle_preview_mouse_button", release)
+	livery_editor.call("_handle_preview_mouse_button", release)
 	if is_equal_approx(start_yaw, camera_controller.yaw):
 		push_error("car settings preview drag did not rotate the camera orbit")
 		quit(1)
 		return
 	camera_controller.yaw = deg_to_rad(90.0)
 	camera_controller.pitch = deg_to_rad(20.0)
-	car_settings.call("_apply_preview_camera")
-	var transform: Transform3D = car_settings.call("_preview_vehicle_transform")
+	livery_editor.call("_apply_preview_camera")
+	var transform: Transform3D = livery_editor.call("_preview_vehicle_transform")
 	if transform.basis.x.distance_to(Vector3.RIGHT) > 0.001 or transform.basis.y.distance_to(Vector3.UP) > 0.001 or transform.basis.z.distance_to(Vector3.BACK) > 0.001:
 		push_error("car settings preview orbit is rotating the car instead of the camera")
 		quit(1)
@@ -62,7 +63,7 @@ func _init() -> void:
 	var pitch_basis := Basis(yaw_basis.x.normalized(), camera_controller.pitch)
 	var camera_offset: Vector3 = pitch_basis * (yaw_basis * Vector3(0.0, 0.0, camera_controller.distance))
 	var expected_camera_pos: Vector3 = camera_controller.pan_target(camera_offset) + camera_offset
-	if car_settings.preview_camera.position.distance_to(expected_camera_pos) > 0.001:
+	if livery_editor.preview_camera.position.distance_to(expected_camera_pos) > 0.001:
 		push_error("car settings preview pitch is not moving the camera orbit")
 		quit(1)
 		return
@@ -72,20 +73,20 @@ func _init() -> void:
 	press.button_index = MOUSE_BUTTON_RIGHT
 	press.pressed = true
 	press.position = Vector2(100.0, 100.0)
-	car_settings.call("_handle_preview_mouse_button", press)
+	livery_editor.call("_handle_preview_mouse_button", press)
 	motion = InputEventMouseMotion.new()
 	motion.position = Vector2(130.0, 140.0)
-	car_settings.call("_handle_preview_mouse_motion", motion)
+	livery_editor.call("_handle_preview_mouse_motion", motion)
 	release = InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_RIGHT
 	release.pressed = false
 	release.position = Vector2(130.0, 140.0)
-	car_settings.call("_handle_preview_mouse_button", release)
+	livery_editor.call("_handle_preview_mouse_button", release)
 	if start_pan.is_equal_approx(camera_controller.pan):
 		push_error("car settings preview drag did not pan the car")
 		quit(1)
 		return
-	var panned_transform: Transform3D = car_settings.call("_preview_vehicle_transform")
+	var panned_transform: Transform3D = livery_editor.call("_preview_vehicle_transform")
 	if panned_transform.origin.length() > 0.001:
 		push_error("car settings preview pan moved the car instead of only the camera target")
 		quit(1)
@@ -96,18 +97,18 @@ func _init() -> void:
 	var pitch_basis_after_pan := Basis(yaw_basis_after_pan.x.normalized(), pitch_after_pan)
 	var panned_camera_offset: Vector3 = pitch_basis_after_pan * (yaw_basis_after_pan * Vector3(0.0, 0.0, camera_controller.distance))
 	var expected_panned_camera: Vector3 = camera_controller.pan_target(panned_camera_offset) + panned_camera_offset
-	if car_settings.preview_camera.position.distance_to(expected_panned_camera) > 0.001:
+	if livery_editor.preview_camera.position.distance_to(expected_panned_camera) > 0.001:
 		push_error("car settings preview pan did not move the camera orbit target")
 		quit(1)
 		return
-	var panned_target: Vector3 = car_settings.preview_camera.position - panned_camera_offset
+	var panned_target: Vector3 = livery_editor.preview_camera.position - panned_camera_offset
 	var view_back := panned_camera_offset.normalized()
 	if absf((panned_target - Vector3(0.0, 0.5, 0.0)).dot(view_back)) > 0.001:
 		push_error("car settings preview pan target is not on the camera-facing plane through the vehicle target")
 		quit(1)
 		return
 	camera_controller.pan = Vector3(99.0, -99.0, 12.0)
-	car_settings.call("_apply_preview_camera")
+	livery_editor.call("_apply_preview_camera")
 	if camera_controller.pan.x > 4.001 or camera_controller.pan.y < -4.001 or absf(camera_controller.pan.z) > 0.001:
 		push_error("car settings preview pan was not clamped to the camera plane limits")
 		quit(1)
@@ -115,11 +116,11 @@ func _init() -> void:
 	camera_controller.pan = Vector3(2.0, -1.5, 0.0)
 	camera_controller.yaw += 1.2
 	camera_controller.pitch = deg_to_rad(-18.0)
-	car_settings.call("_apply_preview_camera")
+	livery_editor.call("_apply_preview_camera")
 	camera_controller.pan = Vector3.ZERO
-	car_settings.call("_apply_preview_camera")
-	var camera_back: Vector3 = car_settings.preview_camera.global_transform.basis.z.normalized()
-	var expected_back: Vector3 = (car_settings.preview_camera.global_position - Vector3(0.0, 0.5, 0.0)).normalized()
+	livery_editor.call("_apply_preview_camera")
+	var camera_back: Vector3 = livery_editor.preview_camera.global_transform.basis.z.normalized()
+	var expected_back: Vector3 = (livery_editor.preview_camera.global_position - Vector3(0.0, 0.5, 0.0)).normalized()
 	if camera_back.distance_to(expected_back) > 0.001:
 		push_error("zeroing preview pan did not recenter the camera on the vehicle target")
 		quit(1)
@@ -127,8 +128,8 @@ func _init() -> void:
 	camera_controller.pan = Vector3.ZERO
 	camera_controller.yaw = deg_to_rad(25.0)
 	camera_controller.pitch = 0.0
-	car_settings.call("_apply_preview_camera")
-	var render_manager: CarRenderManager = car_settings.preview_render_manager
+	livery_editor.call("_apply_preview_camera")
+	var render_manager: CarRenderManager = livery_editor.preview_render_manager
 	if render_manager == null or render_manager.archetypes.is_empty():
 		push_error("car settings preview did not build render manager")
 		quit(1)
@@ -143,7 +144,7 @@ func _init() -> void:
 		push_error("car settings preview body instance colour should match in-game default overlay")
 		quit(1)
 		return
-	if car_settings.settings_tab_container == null or car_settings.garage_panel == null:
+	if car_settings.settings_tab_container == null or livery_editor.garage_panel == null:
 		push_error("car settings did not build separate driver/garage tabs")
 		quit(1)
 		return
@@ -151,27 +152,27 @@ func _init() -> void:
 		push_error("track Workshop authoring tab should be hidden")
 		quit(1)
 		return
-	if car_settings.stamp_layer_buttons.size() != 16:
+	if livery_editor.stamp_layer_buttons.size() != 16:
 		push_error("car settings did not build the 16 stamp layer buttons")
 		quit(1)
 		return
 	var empty_layer := -1
 	for layer in range(16):
-		if car_settings.call("_stamp_for_layer", layer) == null:
+		if livery_editor.call("_stamp_for_layer", layer) == null:
 			empty_layer = layer
 			break
 	if empty_layer >= 0:
-		car_settings.call("_on_stamp_layer_pressed", empty_layer)
+		livery_editor.call("_on_stamp_layer_pressed", empty_layer)
 		await process_frame
-		if car_settings.stamp_ui_mode != 1:
+		if livery_editor.stamp_ui_mode != 1:
 			push_error("empty stamp layer did not open the stamp chooser")
 			quit(1)
 			return
-		car_settings.call("_on_stamp_choice_pressed", "circle")
+		livery_editor.call("_on_stamp_choice_pressed", "circle")
 		await process_frame
 		await process_frame
-		var edit_stamp: CarLiveryStamp = car_settings.call("_stamp_for_layer", empty_layer)
-		if car_settings.stamp_ui_mode != 2 or edit_stamp == null:
+		var edit_stamp: CarLiveryStamp = livery_editor.call("_stamp_for_layer", empty_layer)
+		if livery_editor.stamp_ui_mode != 2 or edit_stamp == null:
 			push_error("choosing a stamp did not enter edit mode")
 			quit(1)
 			return
@@ -179,28 +180,28 @@ func _init() -> void:
 			push_error("edit mode did not project a non-zero stamp size")
 			quit(1)
 			return
-		car_settings.stamp_edit_rect_size = Vector2(2.0, 3.0)
-		car_settings.call("_layout_stamp_edit_overlay")
-		if car_settings.stamp_edit_square.size.x > 2.01 or car_settings.stamp_edit_square.size.y > 3.01:
+		livery_editor.stamp_edit_rect_size = Vector2(2.0, 3.0)
+		livery_editor.call("_layout_stamp_edit_overlay")
+		if livery_editor.stamp_edit_square.size.x > 2.01 or livery_editor.stamp_edit_square.size.y > 3.01:
 			push_error("stamp edit box has an unwanted minimum size")
 			quit(1)
 			return
-		car_settings.stamp_edit_roll = 0.35
-		car_settings.call("_layout_stamp_edit_overlay")
-		var edit_projection_hit: Dictionary = car_settings.call(
-			"_raycast_preview_body", car_settings.car_preview_space.size * 0.5)
+		livery_editor.stamp_edit_roll = 0.35
+		livery_editor.call("_layout_stamp_edit_overlay")
+		var edit_projection_hit: Dictionary = livery_editor.call(
+			"_raycast_preview_body", livery_editor.car_preview_space.size * 0.5)
 		if edit_projection_hit.is_empty():
 			push_error("stamp edit projection could not hit the selected preview vehicle")
 			quit(1)
 			return
-		car_settings.call("_apply_edit_stamp_from_camera")
+		livery_editor.call("_apply_edit_stamp_from_camera")
 		if absf(edit_stamp.rotation + 0.35) > 0.001:
 			push_error("stamp projection rotation does not match the edit box direction: got %.3f expected -0.350" % edit_stamp.rotation)
 			quit(1)
 			return
-		car_settings.preview_has_camera_override = true
-		car_settings.call("_focus_preview_on_stamp", edit_stamp)
-		if car_settings.preview_has_camera_override:
+		livery_editor.preview_has_camera_override = true
+		livery_editor.call("_focus_preview_on_stamp", edit_stamp)
+		if livery_editor.preview_has_camera_override:
 			push_error("editing an existing stamp left the preview camera in temporary override mode")
 			quit(1)
 			return
@@ -209,30 +210,30 @@ func _init() -> void:
 		press.button_index = MOUSE_BUTTON_LEFT
 		press.pressed = true
 		press.position = Vector2(10.0, 10.0)
-		car_settings.call("_on_stamp_edit_overlay_gui_input", press)
+		livery_editor.call("_on_stamp_edit_overlay_gui_input", press)
 		motion = InputEventMouseMotion.new()
 		motion.position = Vector2(50.0, 16.0)
-		car_settings.call("_on_stamp_edit_overlay_gui_input", motion)
+		livery_editor.call("_on_stamp_edit_overlay_gui_input", motion)
 		release = InputEventMouseButton.new()
 		release.button_index = MOUSE_BUTTON_LEFT
 		release.pressed = false
-		release.position = car_settings.stamp_edit_square.position + car_settings.stamp_edit_square.size * 0.5
-		car_settings.call("_on_stamp_edit_overlay_gui_input", release)
-		if car_settings.stamp_ui_mode != 2 or is_equal_approx(edit_yaw, camera_controller.yaw):
+		release.position = livery_editor.stamp_edit_square.position + livery_editor.stamp_edit_square.size * 0.5
+		livery_editor.call("_on_stamp_edit_overlay_gui_input", release)
+		if livery_editor.stamp_ui_mode != 2 or is_equal_approx(edit_yaw, camera_controller.yaw):
 			push_error("stamp edit overlay did not allow camera orbit outside the edit square")
 			quit(1)
 			return
 		var released_yaw: float = camera_controller.yaw
 		motion = InputEventMouseMotion.new()
 		motion.position = Vector2(80.0, 22.0)
-		car_settings.call("_on_stamp_edit_overlay_gui_input", motion)
+		livery_editor.call("_on_stamp_edit_overlay_gui_input", motion)
 		if !is_equal_approx(released_yaw, camera_controller.yaw):
 			push_error("stamp edit overlay did not stop camera orbit when released over the edit square")
 			quit(1)
 			return
-		car_settings.call("_on_stamp_edit_cancel_pressed")
+		livery_editor.call("_on_stamp_edit_cancel_pressed")
 		await process_frame
-		if car_settings.call("_stamp_for_layer", empty_layer) != null:
+		if livery_editor.call("_stamp_for_layer", empty_layer) != null:
 			push_error("cancelling a newly added stamp did not clear the layer")
 			quit(1)
 			return

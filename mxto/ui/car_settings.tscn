@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://d3fgxyahmbbxa"]
+[gd_scene load_steps=10 format=3 uid="uid://d3fgxyahmbbxa"]
 
 [ext_resource type="Script" uid="uid://cow6mqit4ansg" path="res://ui/car_settings.gd" id="1_c1ygr"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_editor.tscn" id="2_vehicle_editor"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://ui/track_package_editor.tscn" id="4_track_packages"]
 [ext_resource type="PackedScene" path="res://ui/leaderboard_browser.tscn" id="5_leaderboards"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_grade_panel.tscn" id="6_grade_panel"]
+[ext_resource type="PackedScene" path="res://ui/livery_editor.tscn" id="7_livery_editor"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_car_name"]
 font_size = 32
@@ -32,6 +33,8 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_c1ygr")
+
+[node name="LiveryEditor" parent="." instance=ExtResource("7_livery_editor")]
 
 [node name="Container" type="ColorRect" parent="." unique_id=1954056367]
 layout_mode = 1
