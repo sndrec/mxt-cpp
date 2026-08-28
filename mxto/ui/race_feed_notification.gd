@@ -1,16 +1,33 @@
 @tool
 extends Control
 
-@onready var killer := $Panel/HBoxContainer/killer
-@onready var victim := $Panel/HBoxContainer/victim
+enum Kind {
+	FINISH,
+	KNOCKOUT,
+}
+
+@onready var leading_label: Label = $Panel/HBoxContainer/Leading
+@onready var knockout_icon: TextureRect = $Panel/HBoxContainer/KnockoutIcon
+@onready var trailing_label: Label = $Panel/HBoxContainer/Trailing
+
+var kind := Kind.FINISH
 var feed_index := 0
 var feed_y := 72.0
 var feed_tween: Tween
 var dismissing := false
 
-func set_names(in_killer: String, in_victim: String) -> void:
-	killer.text = in_killer
-	victim.text = in_victim
+func configure_finish(player_name: String, race_time: String) -> void:
+	kind = Kind.FINISH
+	leading_label.text = player_name + " finished the race at " + race_time
+	knockout_icon.visible = false
+	trailing_label.visible = false
+
+func configure_knockout(attacker_name: String, victim_name: String) -> void:
+	kind = Kind.KNOCKOUT
+	leading_label.text = attacker_name
+	knockout_icon.visible = true
+	trailing_label.visible = true
+	trailing_label.text = victim_name
 
 func set_feed_index(index: int) -> void:
 	feed_index = index
@@ -41,7 +58,10 @@ func dismiss() -> void:
 	tween.tween_callback(queue_free)
 
 func _process(_delta: float) -> void:
-	size.x = killer.size.x + victim.size.x + 64
+	if kind == Kind.FINISH:
+		size.x = leading_label.size.x + 32.0
+	else:
+		size.x = leading_label.size.x + trailing_label.size.x + 64.0
 	pivot_offset = size * 0.5
 	var viewport_size := get_viewport_rect().size
 	position.x = viewport_size.x * 0.5 - size.x * 0.5

@@ -1,13 +1,11 @@
 class_name RacePresentationController
 extends Node
 
-const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
-const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
+const RaceFeedNotificationScene: PackedScene = preload("res://ui/race_feed_notification.tscn")
 const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
 const TrackContentControllerClass = preload("res://track/track_content_controller.gd")
 const CarSettingsClass = preload("res://ui/car_settings.gd")
-const FinishMedalClass = preload("res://ui/finish_medal.gd")
-const KoMedalClass = preload("res://ui/ko_medal.gd")
+const RaceFeedNotificationClass = preload("res://ui/race_feed_notification.gd")
 const TOP_PLACE_BADGE_TEXTURES: Array[Texture2D] = [
 	preload("res://ui/placements/mxt-1.png"),
 	preload("res://ui/placements/mxt-2.png"),
@@ -173,17 +171,17 @@ func format_race_results_text() -> String:
 		var tick_value := int(_lookup_id_value(network_manager.race_results.player_finish_times, player_id, -1))
 		if tick_value >= 0:
 			time_text = "  " + format_race_time(tick_value)
-		lines.append("%s  %s%s" % [_format_ordinal(place), player_display_name(player_id), time_text])
+		lines.append("%s  %s%s" % [_format_ordinal(place), network_manager.lobby_settings.player_display_name(player_id), time_text])
 	if !network_manager.race_results.player_eliminations.is_empty():
 		lines.append("")
 		lines.append("Eliminated")
 		for id_value in network_manager.race_results.player_eliminations.keys():
-			lines.append(player_display_name(int(id_value)))
+			lines.append(network_manager.lobby_settings.player_display_name(int(id_value)))
 	if !network_manager.race_results.player_dnfs.is_empty():
 		lines.append("")
 		lines.append("DNF")
 		for id_value in network_manager.race_results.player_dnfs.keys():
-			lines.append(player_display_name(int(id_value)))
+			lines.append(network_manager.lobby_settings.player_display_name(int(id_value)))
 	return "\n".join(lines)
 
 func format_grand_prix_results_text() -> String:
@@ -198,29 +196,18 @@ func format_grand_prix_results_text() -> String:
 			return int(a[0]) > int(b[0])
 		return int(a[1]) < int(b[1]))
 	for i in range(standings.size()):
-		lines.append("%s  %s  %d" % [_format_ordinal(i + 1), player_display_name(int(standings[i][1])), int(standings[i][0])])
+		lines.append("%s  %s  %d" % [_format_ordinal(i + 1), network_manager.lobby_settings.player_display_name(int(standings[i][1])), int(standings[i][0])])
 	return "\n".join(lines)
 
-func player_display_name(player_id: int) -> String:
-	if player_id < 0:
-		return "Bumper"
-	var player_name := str(player_id)
-	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		player_name = str(settings["username"])
-	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
-		player_name = "[CPU] " + player_name
-	return player_name
-
 func show_finish_medal(actor_id: int, tick_value: int) -> void:
-	var medal := FinishMedalScene.instantiate() as FinishMedalClass
+	var medal := RaceFeedNotificationScene.instantiate() as RaceFeedNotificationClass
 	_add_medal(medal)
-	medal.set_finisher_name(player_display_name(actor_id), format_race_time(tick_value))
+	medal.configure_finish(network_manager.lobby_settings.player_display_name(actor_id), format_race_time(tick_value))
 
 func show_ko_medal(actor_id: int, target_id: int) -> void:
-	var medal := KoMedalScene.instantiate() as KoMedalClass
+	var medal := RaceFeedNotificationScene.instantiate() as RaceFeedNotificationClass
 	_add_medal(medal)
-	medal.set_names(player_display_name(actor_id), "Obstacle" if target_id < 0 else player_display_name(target_id))
+	medal.configure_knockout(network_manager.lobby_settings.player_display_name(actor_id), "Obstacle" if target_id < 0 else network_manager.lobby_settings.player_display_name(target_id))
 
 func show_sticker(actor_id: int, sticker_index: int) -> void:
 	var now := Time.get_ticks_msec()
@@ -404,25 +391,19 @@ func _set_results_hud_hidden(hidden: bool) -> void:
 func local_race_hud() -> Control:
 	return car_node_container.local_visual_car.race_hud as Control if car_node_container != null and car_node_container.local_visual_car != null else null
 
-func _add_medal(medal: Control) -> void:
+func _add_medal(medal: RaceFeedNotificationClass) -> void:
 	add_child(medal)
 	medal.tree_exited.connect(_refresh_medal_feed)
 	medals.insert(0, medal)
 	while medals.size() > 3:
-		var oldest := medals.pop_back() as Control
-		if oldest is FinishMedalClass:
-			(oldest as FinishMedalClass).dismiss()
-		elif oldest is KoMedalClass:
-			(oldest as KoMedalClass).dismiss()
+		var oldest := medals.pop_back() as RaceFeedNotificationClass
+		oldest.dismiss()
 	_refresh_medal_feed()
 
 func _refresh_medal_feed() -> void:
 	medals = medals.filter(func(existing): return is_instance_valid(existing) and existing.is_inside_tree())
 	for i in range(medals.size()):
-		if medals[i] is FinishMedalClass:
-			(medals[i] as FinishMedalClass).set_feed_index(i)
-		elif medals[i] is KoMedalClass:
-			(medals[i] as KoMedalClass).set_feed_index(i)
+		(medals[i] as RaceFeedNotificationClass).set_feed_index(i)
 
 func _configure_nametag_pool() -> void:
 	_reset_nametag_pool()

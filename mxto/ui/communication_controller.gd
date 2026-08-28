@@ -146,7 +146,7 @@ func sanitize_message(text: String) -> String:
 	return clean.substr(0, MAX_MESSAGE_CHARACTERS) if clean.length() > MAX_MESSAGE_CHARACTERS else clean
 
 func append_message(sender_id: int, text: String) -> void:
-	var name: String = _player_display_name(sender_id)
+	var name: String = network_manager.lobby_settings.player_display_name(sender_id)
 	var removed_oldest := lobby_history.size() >= MAX_LOBBY_HISTORY
 	if removed_oldest:
 		lobby_history.remove_at(0)
@@ -238,23 +238,12 @@ func update_race_overlay() -> void:
 	var status: Dictionary = voice_chat.get_voice_debug_status()
 	var player_names := {}
 	var local_id := int(status.get("local_id", game_manager._local_player_id()))
-	player_names[local_id] = _player_display_name(local_id)
+	player_names[local_id] = network_manager.lobby_settings.player_display_name(local_id)
 	var remote_peers: Array = status.get("remote_voice_peers", [])
 	for peer_data in remote_peers:
 		if typeof(peer_data) != TYPE_DICTIONARY:
 			continue
 		var peer_id := int(peer_data.get("id", -1))
 		if peer_id >= 0:
-			player_names[peer_id] = _player_display_name(peer_id)
+			player_names[peer_id] = network_manager.lobby_settings.player_display_name(peer_id)
 	race_overlay.set_voice_status(status, player_names)
-
-func _player_display_name(player_id: int) -> String:
-	if player_id < 0:
-		return "Bumper"
-	var player_name := str(player_id)
-	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		player_name = str(settings["username"])
-	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
-		player_name = "[CPU] " + player_name
-	return player_name

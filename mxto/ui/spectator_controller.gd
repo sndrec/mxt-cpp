@@ -101,7 +101,7 @@ func change_focus(delta: int) -> void:
 	elif delta < 0:
 		next_index = targets.size() - 1
 	_apply_live_focus(int(targets[next_index]))
-	notification_requested.emit("Spectating: %s" % _player_display_name(int(targets[next_index])), 1200)
+	notification_requested.emit("Spectating: %s" % network_manager.lobby_settings.player_display_name(int(targets[next_index])), 1200)
 
 func focus_player(focus_id: int) -> bool:
 	if !can_live_spectate() or !network_manager.get_simulation_roster().has(focus_id):
@@ -109,7 +109,7 @@ func focus_player(focus_id: int) -> bool:
 	if network_manager._disconnected_during_race.has(focus_id):
 		return false
 	_apply_live_focus(focus_id)
-	notification_requested.emit("Spectating: %s" % _player_display_name(focus_id), 1200)
+	notification_requested.emit("Spectating: %s" % network_manager.lobby_settings.player_display_name(focus_id), 1200)
 	return true
 
 func toggle_camera() -> void:
@@ -124,7 +124,7 @@ func toggle_camera() -> void:
 		if !targets.has(focus_id):
 			focus_id = int(targets[0])
 		_apply_live_focus(focus_id)
-		notification_requested.emit("Gameplay Camera: %s" % _player_display_name(focus_id), 1200)
+		notification_requested.emit("Gameplay Camera: %s" % network_manager.lobby_settings.player_display_name(focus_id), 1200)
 		return
 	if current_camera != null:
 		spectator.global_transform = current_camera.global_transform
@@ -226,17 +226,8 @@ func _apply_live_focus(focus_id: int) -> void:
 		if player_settings != null:
 			car.player_settings = player_settings
 	if is_instance_valid(car.name_label):
-		car.name_label.text = _player_display_name(focus_id)
+		car.name_label.text = network_manager.lobby_settings.player_display_name(focus_id)
 	game_sim.set_gameplay_camera(car.car_camera, focus_id)
 	disable_free_camera()
 	car.car_camera.make_current()
 	car.make_vehicle_audio_listener_current()
-
-func _player_display_name(player_id: int) -> String:
-	var player_name := str(player_id)
-	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		player_name = str(settings["username"])
-	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
-		player_name = "[CPU] " + player_name
-	return player_name

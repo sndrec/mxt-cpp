@@ -140,6 +140,16 @@ func username_for_player(player_id: int) -> String:
 		return str(settings["username"])
 	return str(player_id)
 
+func player_display_name(player_id: int) -> String:
+	if player_id < 0:
+		return "Bumper"
+	var player_name := username_for_player(player_id)
+	if get_cpu_roster().has(player_id):
+		return "[CPU] " + player_name
+	if spectator_ids.has(player_id):
+		return "[Spectator] " + player_name
+	return player_name
+
 func process_latency(waiting_peer_ids: Array) -> void:
 	if race_active or !_has_network_peer():
 		return

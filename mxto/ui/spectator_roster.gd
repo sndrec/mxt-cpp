@@ -81,7 +81,7 @@ func _add_player_row(player_id: int) -> void:
 	row.add_child(place_label)
 
 	var name_button := Button.new()
-	name_button.text = _player_display_name(player_id)
+	name_button.text = network_manager.lobby_settings.username_for_player(player_id)
 	name_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	name_button.flat = true
 	name_button.focus_mode = Control.FOCUS_NONE
@@ -142,9 +142,3 @@ func _update_rows() -> void:
 func _on_player_pressed(player_id: int) -> void:
 	if spectator_controller.focus_player(player_id):
 		_update_rows()
-
-func _player_display_name(player_id: int) -> String:
-	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		return str(settings["username"])
-	return str(player_id)

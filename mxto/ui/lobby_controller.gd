@@ -231,7 +231,7 @@ func _update_player_list() -> void:
 			roster.append(cpu_id)
 	var signature_parts := []
 	for id in roster:
-		signature_parts.append("%d:%s:%s:%s:%s" % [int(id), _player_display_name(int(id)), str(cpu_ids.has(id)), str(network_manager.spectator_ids.has(id)), str(network_manager.is_server)])
+		signature_parts.append("%d:%s:%s:%s:%s" % [int(id), network_manager.lobby_settings.player_display_name(int(id)), str(cpu_ids.has(id)), str(network_manager.spectator_ids.has(id)), str(network_manager.is_server)])
 	var signature := "|".join(signature_parts)
 	if signature == player_list_signature:
 		return
@@ -245,7 +245,7 @@ func _update_player_list() -> void:
 		row.add_theme_constant_override("separation", 6)
 		player_list_container.add_child(row)
 		var name_label := Label.new()
-		name_label.text = _player_display_name(player_id)
+		name_label.text = network_manager.lobby_settings.player_display_name(player_id)
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name_label)
 		if network_manager.is_server and !cpu_ids.has(id) and player_id != multiplayer.get_unique_id():
@@ -258,14 +258,3 @@ func _on_kick_player_pressed(player_id: int) -> void:
 	network_manager.kick_human_player(player_id)
 	player_list_signature = ""
 	_update_player_list()
-
-func _player_display_name(player_id: int) -> String:
-	var player_name := str(player_id)
-	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		player_name = str(settings["username"])
-	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
-		player_name = "[CPU] " + player_name
-	elif network_manager.spectator_ids.has(player_id):
-		player_name = "[Spectator] " + player_name
-	return player_name

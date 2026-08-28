@@ -188,7 +188,7 @@ func apply_focus_to_local_visual() -> void:
 		if player_settings != null:
 			car.player_settings = player_settings
 	if is_instance_valid(car.name_label):
-		car.name_label.text = race_presentation_controller.player_display_name(focus_id)
+		car.name_label.text = game_manager.network_manager.lobby_settings.player_display_name(focus_id)
 	timeline.apply_hud_visibility()
 	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.disable_hud_process_only:
 		car.race_hud.process_mode = Node.PROCESS_MODE_INHERIT
@@ -253,7 +253,7 @@ func change_focus(delta: int) -> void:
 	timeline.refresh_input_display()
 	timeline.replay_timeline_markers_dirty = true
 	race_presentation_controller.show_notification(
-		"Replay Focus: %s" % race_presentation_controller.player_display_name(
+		"Replay Focus: %s" % game_manager.network_manager.lobby_settings.player_display_name(
 			focused_player_id()), 1200)
 
 

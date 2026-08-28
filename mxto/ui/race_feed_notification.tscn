@@ -1,15 +1,16 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
-[ext_resource type="Script" path="res://ui/finish_medal.gd" id="1_bqpjf"]
+[ext_resource type="Script" path="res://ui/race_feed_notification.gd" id="1_notification"]
+[ext_resource type="Texture2D" path="res://ui/KO.png" id="2_ko"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_2meod"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0, 0, 0, 0.6)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 
-[sub_resource type="Animation" id="Animation_3m1kp"]
+[sub_resource type="Animation" id="Animation_popup"]
 resource_name = "popup"
 length = 4.0
 tracks/0/type = "value"
@@ -51,18 +52,24 @@ tracks/2/keys = {
 }]
 }
 
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_vfjwf"]
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_default"]
 _data = {
-&"popup": SubResource("Animation_3m1kp")
+&"popup": SubResource("Animation_popup")
 }
 
-[sub_resource type="LabelSettings" id="LabelSettings_qww17"]
+[sub_resource type="LabelSettings" id="LabelSettings_leading"]
 font_size = 12
 outline_color = Color(0, 0, 0, 1)
 shadow_color = Color(0, 0, 0, 0.313726)
 shadow_offset = Vector2(3, 3)
 
-[node name="KoMedal" type="Control"]
+[sub_resource type="LabelSettings" id="LabelSettings_trailing"]
+font_size = 12
+outline_color = Color(0, 0, 0, 1)
+shadow_color = Color(0, 0, 0, 0.313726)
+shadow_offset = Vector2(3, 3)
+
+[node name="RaceFeedNotification" type="Control"]
 layout_mode = 3
 offset_left = -156.5
 offset_top = -23.84
@@ -71,11 +78,11 @@ offset_bottom = 2.16
 grow_horizontal = 2
 grow_vertical = 2
 pivot_offset = Vector2(156.5, 13)
-script = ExtResource("1_bqpjf")
+script = ExtResource("1_notification")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 libraries = {
-"": SubResource("AnimationLibrary_vfjwf")
+"": SubResource("AnimationLibrary_default")
 }
 autoplay = "popup"
 
@@ -86,7 +93,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_2meod")
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="Panel"]
 layout_mode = 1
@@ -100,7 +107,22 @@ grow_horizontal = 2
 grow_vertical = 2
 alignment = 1
 
-[node name="finisher" type="Label" parent="Panel/HBoxContainer"]
+[node name="Leading" type="Label" parent="Panel/HBoxContainer"]
 layout_mode = 2
 text = "Twilight finished the race at 4:03.493!"
-label_settings = SubResource("LabelSettings_qww17")
+label_settings = SubResource("LabelSettings_leading")
+
+[node name="KnockoutIcon" type="TextureRect" parent="Panel/HBoxContainer"]
+visible = false
+texture_filter = 6
+texture_repeat = 1
+layout_mode = 2
+texture = ExtResource("2_ko")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Trailing" type="Label" parent="Panel/HBoxContainer"]
+visible = false
+layout_mode = 2
+text = "Opponent"
+label_settings = SubResource("LabelSettings_trailing")
