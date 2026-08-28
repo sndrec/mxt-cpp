@@ -6,6 +6,7 @@ signal test_drive_requested(snapshot: MxtContentLoadResult)
 const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const VehicleRuntimeAssetFactoryClass = preload("res://vehicle/vehicle_runtime_asset_factory.gd")
 const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
@@ -2125,7 +2126,7 @@ func _refresh_preview() -> void:
 			"thrusters": session.get_thrusters(),
 		},
 	}
-	preview_definition = vehicle_content_controller.create_runtime_definition_from_draft(record)
+	preview_definition = VehicleRuntimeAssetFactoryClass.create_from_draft_record(record)
 	if preview_definition != null:
 		preview_render_manager.configure_manual([preview_definition], [{"car_livery": preview_livery.to_dict()}])
 		preview_render_manager.begin_manual_submit()
