@@ -1,4 +1,5 @@
 #include "car/car_draft_store.h"
+#include "core/native_file_utils.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
@@ -11,12 +12,7 @@
 
 #include <climits>
 #include <cmath>
-#include <cstdio>
 #include <vector>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 using namespace godot;
 
@@ -120,20 +116,6 @@ static bool write_text(const String &path, const String &text) {
 	const bool succeeded = file->get_error() == OK;
 	file->close();
 	return succeeded;
-}
-
-static bool replace_file(const String &temporary, const String &destination) {
-#ifdef _WIN32
-	const Char16String temporary_utf16 = temporary.utf16();
-	const Char16String destination_utf16 = destination.utf16();
-	return MoveFileExW(reinterpret_cast<const wchar_t *>(temporary_utf16.get_data()),
-					   reinterpret_cast<const wchar_t *>(destination_utf16.get_data()),
-					   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-	const CharString temporary_utf8 = temporary.utf8();
-	const CharString destination_utf8 = destination.utf8();
-	return std::rename(temporary_utf8.get_data(), destination_utf8.get_data()) == 0;
-#endif
 }
 
 static bool read_dictionary(const String &path, Dictionary &out) {
@@ -427,7 +409,7 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 			const String temporary_model = root.path_join("source/model.glb.tmp");
 			DirAccess::remove_absolute(temporary_model);
 			if (DirAccess::copy_absolute(current_model_path, temporary_model) != OK ||
-				!replace_file(temporary_model, canonical_model)) {
+				!mxt_file::replace_atomically(temporary_model, canonical_model)) {
 				DirAccess::remove_absolute(temporary_model);
 				return result_dictionary(false, "could not atomically store the draft model");
 			}
@@ -476,7 +458,7 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 	const String manifest_path = root.path_join("draft.json");
 	DirAccess::remove_absolute(temporary_manifest);
 	if (!write_text(temporary_manifest, JSON::stringify(manifest, "  ", true, true)) ||
-		!replace_file(temporary_manifest, manifest_path)) {
+		!mxt_file::replace_atomically(temporary_manifest, manifest_path)) {
 		DirAccess::remove_absolute(temporary_manifest);
 		DirAccess::remove_absolute(properties_path);
 		return result_dictionary(false, "could not atomically commit the draft snapshot");

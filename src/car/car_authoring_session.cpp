@@ -5,6 +5,7 @@
 #include "content/content_manifest.h"
 #include "content/content_validator.h"
 #include "content/glb_validator.h"
+#include "core/native_file_utils.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
@@ -19,14 +20,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <vector>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 using namespace godot;
 
@@ -124,22 +120,6 @@ static PackedStringArray single_error(const String &message)
 	PackedStringArray errors;
 	errors.push_back(message);
 	return errors;
-}
-
-static bool replace_file(const String &temporary, const String &destination)
-{
-#ifdef _WIN32
-	const Char16String temporary_utf16 = temporary.utf16();
-	const Char16String destination_utf16 = destination.utf16();
-	return MoveFileExW(
-			reinterpret_cast<const wchar_t *>(temporary_utf16.get_data()),
-			reinterpret_cast<const wchar_t *>(destination_utf16.get_data()),
-			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-	const CharString temporary_utf8 = temporary.utf8();
-	const CharString destination_utf8 = destination.utf8();
-	return std::rename(temporary_utf8.get_data(), destination_utf8.get_data()) == 0;
-#endif
 }
 
 static Dictionary result_dictionary(bool valid, const PackedStringArray &errors, const PackedStringArray &warnings)
@@ -1437,7 +1417,7 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 			return result_dictionary(false, errors, {});
 		}
 	}
-	if (!replace_file(temporary, destination)) {
+	if (!mxt_file::replace_atomically(temporary, destination)) {
 		DirAccess::remove_absolute(temporary);
 		return result_dictionary(false, single_error("could not install normalized vehicle GLB into the draft"), {});
 	}
@@ -1564,7 +1544,7 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	DirAccess::remove_absolute(temporary_model_path);
 	if (use_model_path != packaged_model_path) {
 		if (DirAccess::copy_absolute(use_model_path, temporary_model_path) != OK ||
-				!replace_file(temporary_model_path, packaged_model_path)) {
+				!mxt_file::replace_atomically(temporary_model_path, packaged_model_path)) {
 			DirAccess::remove_absolute(temporary_model_path);
 			return result_dictionary(false, single_error("could not copy the draft model into the package"), {});
 		}
