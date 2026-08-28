@@ -503,8 +503,17 @@ func _configure_whole_course_minimap() -> void:
 
 func _configure_follow_minimap(car: VisualCar) -> void:
 	var car_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(focus_player_id)
+	var vehicle_up := car_transform.basis.y.normalized()
+	var map_forward := -car_transform.basis.z.normalized()
+	var active_camera := get_viewport().get_camera_3d()
+	if active_camera != null:
+		var camera_forward := -active_camera.global_basis.z.normalized()
+		var planar_camera_forward := camera_forward - vehicle_up * camera_forward.dot(vehicle_up)
+		if planar_camera_forward.length_squared() > 0.000001:
+			map_forward = planar_camera_forward.normalized()
+	var map_right := map_forward.cross(vehicle_up).normalized()
 	minimap_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
-	minimap_cam.basis = car_transform.basis.rotated(car_transform.basis.x, -PI * 0.5)
+	minimap_cam.basis = Basis(map_right, map_forward, vehicle_up)
 	minimap_cam.position = car_transform.origin + minimap_cam.basis.z * 192.0
 	minimap_cam.fov = 45.0
 	minimap_cam.near = 144.0
