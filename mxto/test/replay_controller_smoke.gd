@@ -85,13 +85,14 @@ func _run() -> void:
 		_fail("authoritative frame was not recorded")
 		return
 	recorder.active = false
-	replay.debug_replay_inputs.clear()
-	replay.debug_replay_recording = true
-	replay.record_debug_input(frame_input)
-	if replay.debug_replay_inputs.size() != 1:
+	var debug_replay := game_manager.debug_replay_controller as DebugReplayController
+	debug_replay.recorded_inputs.clear()
+	debug_replay.recording = true
+	debug_replay.record_input(frame_input)
+	if debug_replay.recorded_inputs.size() != 1:
 		_fail("debug frame was not recorded")
 		return
-	replay.debug_replay_recording = false
+	debug_replay.recording = false
 	print("MXT_REPLAY_CONTROLLER_SMOKE_OK frames=", total_ticks,
 		" seek_tick=", seek_tick,
 		" catalog_entries=", catalog.entries.size())

@@ -39,6 +39,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var grand_prix_session_controller: GrandPrixSessionController = $GrandPrixSessionController
 @onready var replay_catalog_controller: ReplayCatalogController = $ReplayCatalogController
 @onready var replay_recorder: ReplayRecorder = $ReplayRecorder
+@onready var debug_replay_controller: DebugReplayController = $DebugReplayController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -367,6 +368,8 @@ func _ready() -> void:
 		bool(options_menu.call("get_render_all_vehicles")))
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
+	replay_launch_requested = debug_replay_controller.configure_command_line(args, user_args) \
+		or replay_launch_requested
 	replay_launch_requested = replay_catalog_controller.configure_command_line(args, user_args) \
 		or replay_launch_requested
 	if !steam_snapshot_requested and !replay_launch_requested and auto_track_editor_mode:
@@ -1439,7 +1442,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		replay_controller.simulate_playback()
 		network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
 		return
-	input_bytes = replay_controller.consume_debug_playback_input(input_bytes)
+	input_bytes = debug_replay_controller.consume_playback_input(input_bytes)
 	if !game_sim.sim_started:
 		return
 	if input_bytes.is_empty():
@@ -1454,7 +1457,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		input_bytes = local_pi.serialize()
 		if spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
-	replay_controller.record_debug_input(input_bytes)
+	debug_replay_controller.record_input(input_bytes)
 	_dump_offline_state_sample()
 	var tick_to_record := _singleplayer_tick
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
@@ -1566,6 +1569,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if replay_controller.handle_unhandled_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	if debug_replay_controller.handle_unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if game_sim.sim_started and spectator_controller.handle_unhandled_input(event):

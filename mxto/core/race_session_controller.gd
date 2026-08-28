@@ -256,6 +256,7 @@ func reconfigure_practice_control(focused_player_id: int, cpu_flags: Array) -> b
 func begin_transition(singleplayer_mode: bool, audio_fade_seconds := 0.0) -> void:
 	race_audio_controller.leave_race(audio_fade_seconds)
 	game_root.replay_recorder.reset(network_manager.is_server and !singleplayer_mode)
+	game_root.debug_replay_controller.reset_for_transition()
 	replay_controller.reset_playback_for_transition()
 
 func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -> void:

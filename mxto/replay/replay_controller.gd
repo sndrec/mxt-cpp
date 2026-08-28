@@ -13,7 +13,6 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
 @onready var race_session_controller: RaceSessionControllerClass = get_node("../RaceSessionController") as RaceSessionControllerClass
 
-const DEBUG_REPLAY_VERSION := 2
 const REPLAY_SCHEMA_VERSION := 5
 const REPLAY_FILE_SUFFIX := ".mxt_replay"
 const REPLAY_COMPATIBILITY_WARNING := "This replay was recorded on an older version of the game, and may desync."
@@ -45,15 +44,6 @@ const REPLAY_DEATH_EXPLOSION_TEXTURE: Texture2D = preload("res://asset/tex/ui/re
 const REPLAY_DEATH_ICON_SIZE := Vector2(24.0, 24.0)
 const REPLAY_DEATH_FALLOUT := 2
 
-var debug_replay_recording: bool = false
-var debug_replay_playback: bool = false
-var debug_replay_inputs: Array = []
-var debug_replay_snapshot_tick: int = -1
-var debug_replay_snapshot_state: PackedByteArray = PackedByteArray()
-var debug_replay_playback_inputs: Array = []
-var debug_replay_playback_index: int = 0
-var debug_replay_autoload_path: String = ""
-var debug_replay_loaded_path: String = ""
 var replay_autoload_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
@@ -152,13 +142,6 @@ func _ensure_replay_interface_layer() -> CanvasLayer:
 	return replay_interface_layer
 
 func configure_command_line(args: Array, user_args: Array) -> bool:
-	var replay_idx := args.find("--debug-replay")
-	var replay_args := args
-	if replay_idx == -1:
-		replay_idx = user_args.find("--debug-replay")
-		replay_args = user_args
-	if replay_idx != -1 and replay_idx + 1 < replay_args.size():
-		debug_replay_autoload_path = String(replay_args[replay_idx + 1])
 	var real_replay_idx := args.find("--replay")
 	var real_replay_args := args
 	if real_replay_idx == -1:
@@ -172,9 +155,6 @@ func configure_command_line(args: Array, user_args: Array) -> bool:
 	replay_load_profile_requested = args.has("--profile-replay-load") or user_args.has("--profile-replay-load")
 	if replay_autoload_path != "":
 		call_deferred("_request_replay_playback_from_path", replay_autoload_path)
-		return true
-	if debug_replay_autoload_path != "":
-		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
 		return true
 	return false
 
@@ -213,17 +193,6 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func handle_unhandled_input(event: InputEvent) -> bool:
-	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F5:
-		if debug_replay_recording:
-			_stop_and_save_debug_replay_recording()
-		else:
-			_start_debug_replay_recording()
-		return true
-	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F8:
-		var replay_path := DisplayServer.clipboard_get().strip_edges()
-		if replay_path != "":
-			_load_and_start_debug_replay(replay_path)
-		return true
 	if replay_playback_active and event is InputEventMouseButton:
 		var replay_mouse_button := event as InputEventMouseButton
 		if replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT and replay_mouse_button.pressed and _replay_camera_mode_uses_mouse_capture():
@@ -240,28 +209,7 @@ func handle_unhandled_input(event: InputEvent) -> bool:
 		return true
 	return false
 
-func consume_debug_playback_input(input_bytes: PackedByteArray) -> PackedByteArray:
-	if !debug_replay_playback:
-		return input_bytes
-	if debug_replay_playback_index >= debug_replay_playback_inputs.size():
-		debug_replay_playback = false
-		game_manager.game_sim.set_sim_started(false)
-		print("MXT_DEBUG_REPLAY playback complete ", debug_replay_loaded_path, " end_tick=", game_manager._singleplayer_tick)
-		if game_manager.headless_mode:
-			get_tree().quit()
-		return PackedByteArray()
-	var replay_input := (debug_replay_playback_inputs[debug_replay_playback_index] as PackedByteArray).duplicate()
-	debug_replay_playback_index += 1
-	return replay_input
-
-func record_debug_input(input_bytes: PackedByteArray) -> void:
-	if debug_replay_recording:
-		debug_replay_inputs.append(input_bytes.duplicate())
-
 func reset_playback_for_transition() -> void:
-	if debug_replay_recording:
-		_stop_and_save_debug_replay_recording()
-	debug_replay_playback = false
 	replay_playback_active = false
 	_apply_replay_hud_visibility()
 	replay_playback_use_multiplayer_startup = false
@@ -279,9 +227,6 @@ func reset_playback_for_transition() -> void:
 	_refresh_replay_input_display()
 	replay_start_grid_slots = PackedInt32Array()
 	_clear_playback_payload()
-	debug_replay_inputs.clear()
-	debug_replay_playback_inputs.clear()
-	debug_replay_snapshot_state = PackedByteArray()
 	if replay_timeline_root != null:
 		replay_timeline_root.visible = false
 	_apply_replay_playback_clock()
@@ -336,9 +281,8 @@ func get_memory_usage_stats() -> Dictionary:
 		"playback_source_bytes": replay_playback_source_bytes,
 		"seek_checkpoint_count": replay_seek_checkpoints.size(),
 		"seek_checkpoint_bytes": replay_seek_checkpoint_bytes,
-		"debug_recording_frames": debug_replay_inputs.size(),
-		"debug_playback_frames": debug_replay_playback_inputs.size(),
 	})
+	stats.merge(game_manager.debug_replay_controller.memory_usage_stats())
 	return stats
 
 func update(delta: float) -> void:
@@ -453,6 +397,49 @@ func _load_replay_metadata_file(path: String, profile: Dictionary = {}) -> Dicti
 	if !loaded:
 		return {}
 	return stream.get_metadata()
+
+
+func _find_replay_track_index(data: Dictionary) -> int:
+	var content_id := String(data.get("track_content_id", ""))
+	var gameplay_digest := String(data.get("track_gameplay_digest", ""))
+	if content_id.is_empty() or gameplay_digest.is_empty():
+		return -1
+	var track_index := game_manager.track_content_controller.track_index_for_id(content_id)
+	if track_index < 0 or game_manager.track_content_controller.track_gameplay_digest_for_index(
+			track_index) != gameplay_digest:
+		return -1
+	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+	if record == null:
+		return -1
+	if !record.package_digest.is_empty() and String(data.get(
+			"track_package_digest", "")) != record.package_digest:
+		return -1
+	var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
+	if !workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != workshop_id:
+		return -1
+	return track_index
+
+
+func _replay_vehicle_content_available(settings: Array) -> bool:
+	for value in settings:
+		if typeof(value) != TYPE_DICTIONARY:
+			return false
+		var player_settings: Dictionary = value
+		var content_id := String(player_settings.get("vehicle_content_id", ""))
+		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
+		if content_id.is_empty() or gameplay_digest.is_empty():
+			return false
+		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
+		if record == null or record.gameplay_digest != gameplay_digest:
+			return false
+		if !record.package_digest.is_empty() and String(player_settings.get(
+				"vehicle_package_digest", "")) != record.package_digest:
+			return false
+		var workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
+		if !workshop_id.is_empty() and String(player_settings.get(
+				"vehicle_workshop_id", "")) != workshop_id:
+			return false
+	return true
 
 
 func _decoded_replay_frame_at(frame_index: int) -> Dictionary:
@@ -1257,7 +1244,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 			replay_leaderboard_validation["replay_schema_version"] = int(replay.get("legacy_leaderboard_schema_version", -1))
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
-	var track_index := _find_track_index(replay)
+	var track_index := _find_replay_track_index(replay)
 	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
 		push_warning("Replay load failed: track not found for %s" % str(replay.get("track_name", "")))
 		if game_manager.headless_mode:
@@ -1849,226 +1836,3 @@ func _update_replay_relative_camera(delta: float) -> void:
 	replay_relative_velocity = replay_relative_velocity.lerp(desired_velocity, velocity_lerp)
 	replay_relative_offset += replay_relative_velocity * delta
 	_apply_replay_relative_camera_transform(car_transform)
-
-func _debug_replay_dir() -> String:
-	return ProjectSettings.globalize_path("user://debug_replays")
-
-func _current_track_name() -> String:
-	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return String(game_manager.track_content_controller.tracks[race_session_controller.last_race_track_index].get("name", "track"))
-	return "track"
-
-func _current_track_id() -> String:
-	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return game_manager.track_content_controller.track_id_for_index(race_session_controller.last_race_track_index)
-	return ""
-
-func _current_track_gameplay_digest() -> String:
-	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return game_manager.track_content_controller.track_gameplay_digest_for_index(race_session_controller.last_race_track_index)
-	return ""
-
-func _find_track_index(data: Dictionary) -> int:
-	var replay_track_id := String(data.get("track_content_id", ""))
-	var replay_gameplay_digest := String(data.get("track_gameplay_digest", ""))
-	if replay_track_id.is_empty() or replay_gameplay_digest.is_empty():
-		return -1
-	var track_index := game_manager.track_content_controller.track_index_for_id(replay_track_id)
-	if track_index < 0:
-		return -1
-	if game_manager.track_content_controller.track_gameplay_digest_for_index(track_index) != replay_gameplay_digest:
-		return -1
-	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(replay_track_id)
-	if record == null:
-		return -1
-	var record_package_digest := record.package_digest
-	if !record_package_digest.is_empty() and String(data.get("track_package_digest", "")) != record_package_digest:
-		return -1
-	var record_workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-	if !record_workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != record_workshop_id:
-		return -1
-	return track_index
-
-func _replay_vehicle_content_available(settings: Array) -> bool:
-	for settings_value in settings:
-		if typeof(settings_value) != TYPE_DICTIONARY:
-			return false
-		var player_settings: Dictionary = settings_value
-		var content_id := String(player_settings.get("vehicle_content_id", ""))
-		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
-		if content_id.is_empty() or gameplay_digest.is_empty():
-			return false
-		var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-		if record == null or record.gameplay_digest != gameplay_digest:
-			return false
-		var record_package_digest := record.package_digest
-		if !record_package_digest.is_empty() and String(player_settings.get("vehicle_package_digest", "")) != record_package_digest:
-			return false
-		var record_workshop_id := str(record.published_file_id) if record.published_file_id > 0 else ""
-		if !record_workshop_id.is_empty() and String(player_settings.get("vehicle_workshop_id", "")) != record_workshop_id:
-			return false
-	return true
-
-func _start_debug_replay_recording() -> void:
-	if !game_manager.singleplayer_mode or !game_manager.game_sim.sim_started:
-		print("MXT_DEBUG_REPLAY record ignored: start a singleplayer race first.")
-		return
-	if game_manager._singleplayer_tick <= 0:
-		print("MXT_DEBUG_REPLAY record ignored: wait one physics tick, then press F5 again.")
-		return
-	debug_replay_snapshot_tick = game_manager._singleplayer_tick - 1
-	debug_replay_snapshot_state = game_manager.game_sim.get_state_data(debug_replay_snapshot_tick)
-	if debug_replay_snapshot_state.is_empty():
-		print("MXT_DEBUG_REPLAY record failed: native state snapshot was empty.")
-		return
-	debug_replay_inputs.clear()
-	debug_replay_recording = true
-	print("MXT_DEBUG_REPLAY recording from completed_tick=", debug_replay_snapshot_tick)
-
-func _stop_and_save_debug_replay_recording() -> void:
-	if !debug_replay_recording:
-		return
-	debug_replay_recording = false
-	var replay_dir := _debug_replay_dir()
-	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
-	if err != OK:
-		print("MXT_DEBUG_REPLAY save failed: could not create ", replay_dir, " err=", err)
-		return
-	var input_b64: Array = []
-	for input_bytes: PackedByteArray in debug_replay_inputs:
-		input_b64.append(Marshalls.raw_to_base64(input_bytes))
-	var track_record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(_current_track_id())
-	var replay := {
-		"version": DEBUG_REPLAY_VERSION,
-		"created_unix": Time.get_unix_time_from_system(),
-		"track_content_id": _current_track_id(),
-		"track_gameplay_digest": _current_track_gameplay_digest(),
-		"track_package_digest": track_record.package_digest if track_record != null else "",
-		"track_workshop_id": str(track_record.published_file_id) if track_record != null and track_record.published_file_id > 0 else "",
-		"track_name": _current_track_name(),
-		"settings": game_manager.replay_recorder.settings_array_with_vehicle_content_evidence(
-			race_session_controller.last_race_settings),
-		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,
-		"spawn_seed": game_manager.network_manager.spawn_seed,
-		"snapshot_tick": debug_replay_snapshot_tick,
-		"snapshot_state_b64": Marshalls.raw_to_base64(debug_replay_snapshot_state),
-		"inputs_b64": input_b64,
-	}
-	var safe_track := _current_track_name().replace("/", "_").replace("\\", "_").replace(" ", "_")
-	var timestamp := Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
-	var path := replay_dir.path_join("mxt_%s_%s.json" % [safe_track, timestamp])
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		print("MXT_DEBUG_REPLAY save failed: ", FileAccess.get_open_error())
-		return
-	file.store_string(JSON.stringify(replay, "\t"))
-	file.close()
-	print("MXT_DEBUG_REPLAY saved ", path, " frames=", debug_replay_inputs.size())
-
-func _load_debug_replay_file(path: String) -> Dictionary:
-	var resolved_path := path
-	if resolved_path.begins_with("user://") or resolved_path.begins_with("res://"):
-		resolved_path = ProjectSettings.globalize_path(resolved_path)
-	elif !resolved_path.is_absolute_path():
-		var project_dir := ProjectSettings.globalize_path("res://")
-		var project_candidate := project_dir.path_join(resolved_path)
-		var repo_candidate := project_dir.path_join("..").simplify_path().path_join(resolved_path)
-		if FileAccess.file_exists(project_candidate):
-			resolved_path = project_candidate
-		elif FileAccess.file_exists(repo_candidate):
-			resolved_path = repo_candidate
-	if !FileAccess.file_exists(resolved_path):
-		print("MXT_DEBUG_REPLAY load failed: file not found: ", resolved_path)
-		return {}
-	var text := FileAccess.get_file_as_string(resolved_path)
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		print("MXT_DEBUG_REPLAY load failed: JSON root is not a dictionary.")
-		return {}
-	if int(parsed.get("version", 0)) != DEBUG_REPLAY_VERSION:
-		print("MXT_DEBUG_REPLAY load failed: unsupported version ", parsed.get("version", null))
-		return {}
-	return parsed
-
-func _debug_replay_load_failed(message: String) -> void:
-	print(message)
-	if game_manager.headless_mode:
-		get_tree().quit(1)
-
-func _load_and_start_debug_replay(path: String) -> void:
-	var replay := _load_debug_replay_file(path)
-	if replay.is_empty():
-		if game_manager.headless_mode:
-			get_tree().quit(1)
-		return
-	if debug_replay_recording:
-		_stop_and_save_debug_replay_recording()
-	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
-		game_manager._return_to_menu()
-	var track_index := _find_track_index(replay)
-	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: track not found for %s" % replay.get("track_name", ""))
-		return
-	var settings = replay.get("settings", [])
-	if typeof(settings) != TYPE_ARRAY or settings.is_empty():
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
-		return
-	if !_replay_vehicle_content_available(settings as Array):
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: exact vehicle gameplay content is unavailable.")
-		return
-	var snapshot_tick := int(replay.get("snapshot_tick", -1))
-	var snapshot_state := Marshalls.base64_to_raw(String(replay.get("snapshot_state_b64", "")))
-	if snapshot_tick < 0 or snapshot_state.is_empty():
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: missing native snapshot.")
-		return
-	debug_replay_playback_inputs.clear()
-	var inputs = replay.get("inputs_b64", [])
-	if typeof(inputs) != TYPE_ARRAY:
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: inputs_b64 is not an array.")
-		return
-	for input_b64 in inputs:
-		debug_replay_playback_inputs.append(Marshalls.base64_to_raw(String(input_b64)))
-	if debug_replay_playback_inputs.is_empty():
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: replay has no input frames.")
-		return
-
-	game_manager.singleplayer_mode = true
-	game_manager._singleplayer_tick = 0
-	game_manager.network_manager.reset_race_state()
-	game_manager.network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
-	var local_id := game_manager._local_player_id()
-	game_manager.network_manager.player_ids = [local_id]
-	game_manager.network_manager.spectator_ids = []
-	game_manager.singleplayer_cpu_count = maxi(0, settings.size() - 1)
-	game_manager.network_manager.lobby_settings.set_cpu_driver_count(game_manager.singleplayer_cpu_count)
-	game_manager.network_manager.lobby_settings.set_player_settings(local_id, settings[0])
-	var cpu_ids := game_manager.network_manager.lobby_settings.get_cpu_roster()
-	for i in range(cpu_ids.size()):
-		if i + 1 < settings.size():
-			game_manager.network_manager.lobby_settings.set_player_settings(cpu_ids[i], settings[i + 1], true)
-
-	game_manager._close_settings_menus_for_race_start()
-	game_manager.race_dnf_low_speed_ticks.clear()
-	var debug_racer_ids: Array = [local_id]
-	debug_racer_ids.append_array(cpu_ids)
-	var debug_cpu_flags: Array = [false]
-	for _cpu_id in cpu_ids:
-		debug_cpu_flags.append(true)
-	var race_roster: MxtRaceRoster = game_manager.replay_recorder.race_roster_from_settings(
-		settings, debug_racer_ids, debug_cpu_flags)
-	if race_roster == null:
-		game_manager._return_to_menu()
-		return
-	race_session_controller.start_race(track_index, race_roster, game_manager.singleplayer_mode, game_manager.headless_mode)
-	if !game_manager.game_sim.load_state_data(snapshot_tick, snapshot_state):
-		game_manager._return_to_menu()
-		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: native snapshot could not be applied.")
-		return
-	game_manager._singleplayer_tick = snapshot_tick + 1
-	game_manager.network_manager.input_transport.clients_server_tick = game_manager._singleplayer_tick
-	debug_replay_playback_index = 0
-	debug_replay_playback = true
-	debug_replay_loaded_path = path
-	game_manager.get_node("Control").visible = false
-	game_manager.lobby_control.visible = false
-	print("MXT_DEBUG_REPLAY playback started ", path, " start_tick=", game_manager._singleplayer_tick, " frames=", debug_replay_playback_inputs.size())
