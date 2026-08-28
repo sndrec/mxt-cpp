@@ -14,7 +14,7 @@ const TOP_PLACE_BADGE_TEXTURES: Array[Texture2D] = [
 	preload("res://ui/placements/mxt-3.png"),
 ]
 const RESULTS_SCREEN_MSEC := 15000
-const NAMETAG_VISIBLE_BUDGET := 30
+const NAMETAG_VISIBLE_BUDGET := 4
 const NAMETAG_MAX_DISTANCE_SQ := 12000.0
 
 @onready var notification_label: Label = $"../RaceFinishLabel"
@@ -249,6 +249,7 @@ func send_local_sticker(sticker_index: int) -> void:
 
 func update_nametags(active_camera: Camera3D, delta: float, hud_disabled: bool) -> void:
 	if hud_disabled or active_camera == null or nametag_pool.is_empty():
+		_hide_nametag_overlays()
 		return
 	var camera_position := active_camera.global_position
 	var camera_right := active_camera.global_basis.x
@@ -332,6 +333,14 @@ func update_nametags(active_camera: Camera3D, delta: float, hud_disabled: bool) 
 		var label := nametag_pool[slot]
 		label.visible = true
 		label.position = active_camera.unproject_position(world_pos + camera_right * 1.5 + camera_up * 1.5) + Vector2(72, -90)
+
+func _hide_nametag_overlays() -> void:
+	for label in nametag_pool:
+		if is_instance_valid(label):
+			label.visible = false
+	for badge in placement_badge_pool:
+		if is_instance_valid(badge):
+			badge.visible = false
 
 func _results_sim() -> GameSim:
 	return server_game_sim if network_manager.is_server and server_game_sim != null else game_sim
