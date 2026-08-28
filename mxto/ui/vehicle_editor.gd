@@ -1,7 +1,7 @@
 class_name VehicleEditor extends VBoxContainer
 
 signal content_changed
-signal test_drive_requested(snapshot: Dictionary)
+signal test_drive_requested(snapshot: MxtContentLoadResult)
 
 const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
@@ -1498,17 +1498,12 @@ func _test_drive() -> void:
 	var built := _build_package("", false)
 	if !bool(built.get("valid", false)):
 		return
-	var snapshot: Dictionary = vehicle_content_controller.create_test_drive_snapshot(
+	var snapshot: MxtContentLoadResult = vehicle_content_controller.create_test_drive_snapshot(
 		String(built.get("package_path", "")))
-	_show_diagnostics(snapshot)
-	if !bool(snapshot.get("valid", false)):
+	_show_content_diagnostics(snapshot)
+	if !snapshot.is_valid():
 		return
-	test_drive_requested.emit({
-		"draft_id": draft_id,
-		"record": snapshot.get("record"),
-		"package_path": String(snapshot.get("package_path", "")),
-		"package_digest": String(snapshot.get("package_digest", "")),
-	})
+	test_drive_requested.emit(snapshot)
 
 
 func _refresh_all() -> void:
@@ -2334,6 +2329,15 @@ func _show_diagnostics(result: Dictionary) -> void:
 			for message in grouped[category]:
 				lines.append(String(message))
 	if lines.is_empty() and bool(result.get("valid", false)):
+		lines.append("[color=#73e2a7]Ready[/color]")
+	diagnostics.text = "\n".join(lines)
+
+
+func _show_content_diagnostics(result: MxtContentLoadResult) -> void:
+	var lines: Array[String] = []
+	for error in result.errors:
+		lines.append("[color=#ff6961]ERROR: %s[/color]" % error)
+	if lines.is_empty() and result.is_valid():
 		lines.append("[color=#73e2a7]Ready[/color]")
 	diagnostics.text = "\n".join(lines)
 

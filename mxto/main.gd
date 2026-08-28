@@ -525,10 +525,10 @@ func _on_time_attack_leaderboard_requested(board_name: String) -> void:
 	$Control.visible = true
 	car_settings.open_leaderboards(board_name)
 
-func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
+func begin_vehicle_test_drive(snapshot: MxtContentLoadResult) -> void:
 	if vehicle_test_drive_active:
 		return
-	var record := snapshot.get("record") as MxtContentRecord
+	var record := snapshot.record
 	var content_id := record.content_id if record != null else ""
 	if content_id.is_empty():
 		push_error("Vehicle test-drive snapshot has no registered content record")

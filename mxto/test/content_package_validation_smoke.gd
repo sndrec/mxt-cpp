@@ -57,14 +57,14 @@ func _initialize() -> void:
 	var snapshot_library := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_snapshot_library")
 	_remove_tree(snapshot_library)
 	var snapshot_catalog := MxtContentCatalog.new()
-	var snapshot: Dictionary = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
-	_expect(bool(snapshot.get("valid", false)), "vehicle package should become a registered test-drive snapshot: %s" % [snapshot.get("errors", [])])
-	if bool(snapshot.get("valid", false)):
-		var snapshot_record := snapshot.get("record") as MxtContentRecord
+	var snapshot: MxtContentLoadResult = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
+	_expect(snapshot.is_valid(), "vehicle package should become a registered test-drive snapshot: %s" % [snapshot.errors])
+	if snapshot.is_valid():
+		var snapshot_record := snapshot.record
 		_expect(snapshot_record != null and snapshot_record.source == MxtContentRecord.SOURCE_LOCAL_DRAFT, "test-drive snapshot should register as local draft content")
-		_expect(snapshot_record != null and snapshot_record.root_path == snapshot.get("package_path", ""), "test-drive record should point at the immutable snapshot")
-		var repeated_snapshot: Dictionary = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
-		_expect(bool(repeated_snapshot.get("valid", false)) and bool(repeated_snapshot.get("reused_existing", false)), "same-session test-drive snapshot should reuse its validated catalog record")
+		_expect(snapshot_record != null and snapshot_record.root_path == snapshot.package_path, "test-drive record should point at the immutable snapshot")
+		var repeated_snapshot: MxtContentLoadResult = snapshot_catalog.snapshot_draft_package(vehicle_root, snapshot_library)
+		_expect(repeated_snapshot.is_valid() and repeated_snapshot.reused_existing, "same-session test-drive snapshot should reuse its validated catalog record")
 
 	var package_io := MxtContentPackageIO.new()
 	var archive_path := ProjectSettings.globalize_path("user://" + ROOT_NAME + ".mxtpkg")
@@ -82,15 +82,15 @@ func _initialize() -> void:
 		var repeated_import: Dictionary = package_io.import_mxtpkg(archive_path, library_root)
 		_expect(bool(repeated_import.get("valid", false)) and bool(repeated_import.get("reused_existing", false)), "reimport should reuse the content-addressed installation")
 		var catalog := MxtContentCatalog.new()
-		var scan_result: Dictionary = catalog.scan_local_library(library_root)
-		_expect(bool(scan_result.get("valid", false)), "content-addressed local library should scan without diagnostics")
+		var scan_result: MxtContentLoadResult = catalog.scan_local_library(library_root)
+		_expect(scan_result.is_valid(), "content-addressed local library should scan without diagnostics")
 		var local_id := "mxt:track:package:" + String(import_result["package_digest"]).trim_prefix("sha256:")
 		var local_record: MxtContentRecord = catalog.resolve_content(local_id)
 		_expect(local_record != null, "local package must resolve by stable content ID")
 		_expect(local_record != null and local_record.gameplay_digest == import_result.get("gameplay_digest", ""), "catalog record must preserve gameplay identity")
 		_expect(catalog.find_gameplay("track", import_result["gameplay_digest"]).size() >= 1, "catalog must resolve exact gameplay digests")
-		var workshop_add: Dictionary = catalog.add_workshop_package(import_result["package_path"], 123456)
-		_expect(bool(workshop_add.get("valid", false)), "validated package should register as a Workshop record")
+		var workshop_add: MxtContentLoadResult = catalog.add_workshop_package(import_result["package_path"], 123456)
+		_expect(workshop_add.is_valid(), "validated package should register as a Workshop record")
 		var workshop_record: MxtContentRecord = catalog.resolve_content("mxt:track:workshop:123456")
 		_expect(workshop_record != null and workshop_record.package_digest == import_result.get("package_digest", ""), "Workshop stable ID must retain its exact package digest")
 

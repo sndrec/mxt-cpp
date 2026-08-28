@@ -417,7 +417,7 @@ func _on_vehicle_editor_content_changed() -> void:
 	_load_car_defs()
 	_update_controls()
 
-func _on_vehicle_editor_test_drive_requested(snapshot: Dictionary) -> void:
+func _on_vehicle_editor_test_drive_requested(snapshot: MxtContentLoadResult) -> void:
 	if game_manager != null:
 		game_manager.begin_vehicle_test_drive(snapshot)
 

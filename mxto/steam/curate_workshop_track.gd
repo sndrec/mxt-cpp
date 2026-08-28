@@ -30,11 +30,11 @@ func _initialize() -> void:
 		_fail("Workshop ID must be a positive integer")
 		return
 	var catalog := MxtContentCatalog.new()
-	var package_result: Dictionary = catalog.add_workshop_package(package_path, workshop_id)
-	if !bool(package_result.get("valid", false)):
-		_fail("package validation failed: %s" % str(package_result.get("errors", [])))
+	var package_result: MxtContentLoadResult = catalog.add_workshop_package(package_path, workshop_id)
+	if !package_result.is_valid():
+		_fail("package validation failed: %s" % str(package_result.errors))
 		return
-	var record := package_result.get("record") as MxtContentRecord
+	var record := package_result.record
 	if record == null or record.content_type != MxtContentRecord.CONTENT_TRACK \
 			or record.source != MxtContentRecord.SOURCE_WORKSHOP:
 		_fail("validated package is not a Workshop track")

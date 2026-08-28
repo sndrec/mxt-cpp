@@ -2,6 +2,7 @@
 #define MXT_CONTENT_CATALOG_H
 
 #include "content/content_record.h"
+#include "content/content_load_result.h"
 #include "content/content_validator.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -37,7 +38,7 @@ private:
 	std::vector<WorkshopPackageState> workshop_packages;
 	uint64_t generation = 0;
 
-	Dictionary add_package_internal(
+	Ref<MxtContentLoadResult> add_package_internal(
 			const String &package_root,
 			mxt::content::ContentSource source,
 			uint64_t published_file_id);
@@ -48,30 +49,30 @@ protected:
 	static void _bind_methods();
 
 public:
-	Dictionary add_official_vehicle(
+	Ref<MxtContentLoadResult> add_official_vehicle(
 			const String &slug,
 			const String &title,
 			const String &properties_path,
 			const String &definition_path);
-	Dictionary add_official_track(
+	Ref<MxtContentLoadResult> add_official_track(
 			const String &slug,
 			const String &title,
 			const String &track_path,
 			const String &visual_path,
 			const String &metadata_path,
 			const String &expected_gameplay_digest);
-	Dictionary add_loose_track(
+	Ref<MxtContentLoadResult> add_loose_track(
 			const String &title,
 			const String &track_path,
 			const String &visual_path,
 			const String &metadata_path);
 	void clear_loose_tracks();
-	Dictionary add_local_package(const String &package_root);
-	Dictionary add_draft_package(const String &package_root);
-	Dictionary snapshot_draft_package(const String &package_root, const String &library_root);
-	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);
+	Ref<MxtContentLoadResult> add_local_package(const String &package_root);
+	Ref<MxtContentLoadResult> add_draft_package(const String &package_root);
+	Ref<MxtContentLoadResult> snapshot_draft_package(const String &package_root, const String &library_root);
+	Ref<MxtContentLoadResult> add_workshop_package(const String &package_root, int64_t published_file_id);
 	Dictionary sync_workshop_packages(const Array &items);
-	Dictionary scan_local_library(const String &library_root);
+	Ref<MxtContentLoadResult> scan_local_library(const String &library_root);
 	bool remove_content(const String &content_id);
 	void clear();
 

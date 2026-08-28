@@ -247,17 +247,17 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 		if visual_path.is_empty():
 			push_error("Official track visual is missing: %s" % track_dir)
 			return
-		var result: Dictionary = vehicle_content_controller.content_catalog.add_official_track(
+		var result: MxtContentLoadResult = vehicle_content_controller.content_catalog.add_official_track(
 			slug,
 			title,
 			mxt_path,
 			visual_path,
 			metadata_path,
 			expected_digest)
-		if !bool(result.get("valid", false)):
-			push_error("Official track catalog registration failed for %s: %s" % [slug, str(result.get("errors", []))])
+		if !result.is_valid():
+			push_error("Official track catalog registration failed for %s: %s" % [slug, str(result.errors)])
 			return
-		var record := result.get("record") as MxtContentRecord
+		var record := result.record
 		if record == null:
 			push_error("Official track catalog registration returned no content record for %s" % slug)
 			return
@@ -316,15 +316,15 @@ func _register_loose_track(json_path: String, seen_paths: Dictionary, seen_conte
 	var metadata: Dictionary = parsed
 	var title := String(metadata.get("name", "")).strip_edges()
 	var visual_path := _resolve_visual_path(json_path.get_base_dir(), metadata, mxt_path)
-	var result: Dictionary = vehicle_content_controller.content_catalog.add_loose_track(
+	var result: MxtContentLoadResult = vehicle_content_controller.content_catalog.add_loose_track(
 		title,
 		mxt_path,
 		visual_path,
 		json_path)
-	if !bool(result.get("valid", false)):
-		push_warning("Skipped loose track %s: %s" % [json_path.get_base_dir(), str(result.get("errors", []))])
+	if !result.is_valid():
+		push_warning("Skipped loose track %s: %s" % [json_path.get_base_dir(), str(result.errors)])
 		return
-	var record := result.get("record") as MxtContentRecord
+	var record := result.record
 	if record == null or record.source != MxtContentRecord.SOURCE_LOCAL_LOOSE:
 		return
 	var content_id := record.content_id

@@ -360,13 +360,13 @@ func _register_official_definition(definition_path: String) -> void:
 	elif !FileAccess.file_exists(definition.properties_path):
 		push_error("Vehicle properties file is missing: %s" % definition.properties_path)
 	else:
-		var catalog_result: Dictionary = content_catalog.add_official_vehicle(
+		var catalog_result: MxtContentLoadResult = content_catalog.add_official_vehicle(
 			definition.content_id.trim_prefix(OFFICIAL_VEHICLE_PREFIX),
 			definition.name,
 			definition.properties_path,
 			definition.resource_path)
-		if !bool(catalog_result.get("valid", false)):
-			push_error("Official vehicle catalog registration failed for %s: %s" % [definition.content_id, str(catalog_result.get("errors", []))])
+		if !catalog_result.is_valid():
+			push_error("Official vehicle catalog registration failed for %s: %s" % [definition.content_id, str(catalog_result.errors)])
 		else:
 			definitions.append(definition)
 			definitions_by_content_id[definition.content_id] = definition
@@ -436,11 +436,10 @@ func _scan_local_content_library() -> void:
 	if directory_error != OK:
 		push_error("Could not create the local content library: %s" % error_string(directory_error))
 		return
-	var result: Dictionary = content_catalog.scan_local_library(library_path)
-	for diagnostic_value in result.get("diagnostics", []):
-		var diagnostic: Dictionary = diagnostic_value
-		push_warning("Skipped local content package %s: %s" % [String(diagnostic.get("path", "")), str(diagnostic.get("errors", []))])
-func create_test_drive_snapshot(package_root: String) -> Dictionary:
+	var result: MxtContentLoadResult = content_catalog.scan_local_library(library_path)
+	for index in result.get_diagnostic_count():
+		push_warning("Skipped local content package %s: %s" % [result.get_diagnostic_path(index), str(result.get_diagnostic_errors(index))])
+func create_test_drive_snapshot(package_root: String) -> MxtContentLoadResult:
 	return content_catalog.snapshot_draft_package(
 		package_root,
 		ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH))

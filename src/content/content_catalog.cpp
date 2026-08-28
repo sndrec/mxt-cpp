@@ -266,6 +266,17 @@ static Ref<MxtContentRecord> make_record_ref(const mxt::content::ContentRecord &
 	return output;
 }
 
+static Ref<MxtContentLoadResult> make_load_result(
+		MxtContentLoadResult::ResultCode code,
+		const std::vector<String> &errors = {})
+{
+	Ref<MxtContentLoadResult> output;
+	output.instantiate();
+	output->set_code(code);
+	output->set_errors(errors);
+	return output;
+}
+
 } // namespace
 
 void MxtContentCatalog::_bind_methods()
@@ -298,13 +309,12 @@ void MxtContentCatalog::_bind_methods()
 	ADD_SIGNAL(MethodInfo("catalog_changed", PropertyInfo(Variant::INT, "generation")));
 }
 
-Dictionary MxtContentCatalog::add_official_vehicle(
+Ref<MxtContentLoadResult> MxtContentCatalog::add_official_vehicle(
 		const String &slug,
 		const String &title,
 		const String &properties_path,
 		const String &definition_path)
 {
-	Dictionary result;
 	std::vector<String> errors;
 	if (!valid_official_slug(slug)) {
 		errors.push_back("official content slug must contain only lowercase letters, digits, and hyphens");
@@ -325,9 +335,7 @@ Dictionary MxtContentCatalog::add_official_vehicle(
 				errors);
 	}
 	if (!errors.empty()) {
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		return result;
+		return make_load_result(MxtContentLoadResult::RESULT_VALIDATION_FAILED, errors);
 	}
 
 	mxt::content::ContentRecord record;
@@ -340,13 +348,12 @@ Dictionary MxtContentCatalog::add_official_vehicle(
 	record.title = title;
 	record.author_name = "MaxX Throttle";
 	replace_record(record);
-	result["valid"] = true;
-	result["errors"] = PackedStringArray();
-	result["record"] = make_record_ref(record);
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+	result->set_record(record);
 	return result;
 }
 
-Dictionary MxtContentCatalog::add_official_track(
+Ref<MxtContentLoadResult> MxtContentCatalog::add_official_track(
 		const String &slug,
 		const String &title,
 		const String &track_path,
@@ -354,7 +361,6 @@ Dictionary MxtContentCatalog::add_official_track(
 		const String &metadata_path,
 		const String &expected_gameplay_digest)
 {
-	Dictionary result;
 	std::vector<String> errors;
 	if (!valid_official_slug(slug)) {
 		errors.push_back("official content slug must contain only lowercase letters, digits, and hyphens");
@@ -384,9 +390,7 @@ Dictionary MxtContentCatalog::add_official_track(
 		errors.push_back("official track gameplay digest does not match the checked-in catalog");
 	}
 	if (!errors.empty()) {
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		return result;
+		return make_load_result(MxtContentLoadResult::RESULT_VALIDATION_FAILED, errors);
 	}
 
 	mxt::content::ContentRecord record;
@@ -401,19 +405,17 @@ Dictionary MxtContentCatalog::add_official_track(
 	record.title = title;
 	record.author_name = "MaxX Throttle";
 	replace_record(record);
-	result["valid"] = true;
-	result["errors"] = PackedStringArray();
-	result["record"] = make_record_ref(record);
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+	result->set_record(record);
 	return result;
 }
 
-Dictionary MxtContentCatalog::add_loose_track(
+Ref<MxtContentLoadResult> MxtContentCatalog::add_loose_track(
 		const String &title,
 		const String &track_path,
 		const String &visual_path,
 		const String &metadata_path)
 {
-	Dictionary result;
 	std::vector<String> errors;
 	if (title.is_empty() || title.length() > 128) {
 		errors.push_back("loose track title must contain 1 to 128 characters");
@@ -437,17 +439,14 @@ Dictionary MxtContentCatalog::add_loose_track(
 				errors);
 	}
 	if (!errors.empty()) {
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		return result;
+		return make_load_result(MxtContentLoadResult::RESULT_VALIDATION_FAILED, errors);
 	}
 	for (const mxt::content::ContentRecord &existing : records) {
 		if (existing.content_type == mxt::content::ContentType::TRACK &&
 			existing.source == mxt::content::ContentSource::OFFICIAL &&
 			existing.gameplay_digest == gameplay_digest) {
-			result["valid"] = true;
-			result["errors"] = PackedStringArray();
-			result["record"] = make_record_ref(existing);
+			Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+			result->set_record(existing);
 			return result;
 		}
 	}
@@ -464,16 +463,14 @@ Dictionary MxtContentCatalog::add_loose_track(
 	record.title = title;
 	for (const mxt::content::ContentRecord &existing : records) {
 		if (existing.content_id == record.content_id) {
-			result["valid"] = true;
-			result["errors"] = PackedStringArray();
-			result["record"] = make_record_ref(existing);
+			Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+			result->set_record(existing);
 			return result;
 		}
 	}
 	replace_record(record);
-	result["valid"] = true;
-	result["errors"] = PackedStringArray();
-	result["record"] = make_record_ref(record);
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+	result->set_record(record);
 	return result;
 }
 
@@ -511,7 +508,7 @@ void MxtContentCatalog::replace_record(const mxt::content::ContentRecord &record
 	if (publish) publish_change();
 }
 
-Dictionary MxtContentCatalog::add_package_internal(
+Ref<MxtContentLoadResult> MxtContentCatalog::add_package_internal(
 		const String &package_root,
 		mxt::content::ContentSource source,
 		uint64_t published_file_id)
@@ -520,10 +517,8 @@ Dictionary MxtContentCatalog::add_package_internal(
 	mxt::content::ValidatedPackage package;
 	const String root = global_path(package_root);
 	if (!mxt::content::validate_package_directory_internal(root, package, errors)) {
-		Dictionary result;
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		result["validation_profile"] = package.validation_profile;
+		Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_VALIDATION_FAILED, errors);
+		result->set_validation_profile(package.validation_profile);
 		return result;
 	}
 	const uint64_t catalog_start_usec = Time::get_singleton()->get_ticks_usec();
@@ -531,25 +526,23 @@ Dictionary MxtContentCatalog::add_package_internal(
 	replace_record(record);
 	Dictionary validation_profile = package.validation_profile;
 	validation_profile["catalog_record_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - catalog_start_usec);
-	Dictionary result;
-	result["valid"] = true;
-	result["errors"] = PackedStringArray();
-	result["record"] = make_record_ref(record);
-	result["validation_profile"] = validation_profile;
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+	result->set_record(record);
+	result->set_validation_profile(validation_profile);
 	return result;
 }
 
-Dictionary MxtContentCatalog::add_local_package(const String &package_root)
+Ref<MxtContentLoadResult> MxtContentCatalog::add_local_package(const String &package_root)
 {
 	return add_package_internal(package_root, mxt::content::ContentSource::LOCAL_PACKAGE, 0);
 }
 
-Dictionary MxtContentCatalog::add_draft_package(const String &package_root)
+Ref<MxtContentLoadResult> MxtContentCatalog::add_draft_package(const String &package_root)
 {
 	return add_package_internal(package_root, mxt::content::ContentSource::LOCAL_DRAFT, 0);
 }
 
-Dictionary MxtContentCatalog::snapshot_draft_package(
+Ref<MxtContentLoadResult> MxtContentCatalog::snapshot_draft_package(
 		const String &package_root,
 		const String &library_root)
 {
@@ -557,10 +550,8 @@ Dictionary MxtContentCatalog::snapshot_draft_package(
 	std::vector<String> snapshot_paths;
 	mxt::content::ValidatedPackage package;
 	if (!materialize_snapshot(package_root, library_root, package, snapshot_paths, errors)) {
-		Dictionary result;
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		result["validation_profile"] = package.validation_profile;
+		Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_IO_ERROR, errors);
+		result->set_validation_profile(package.validation_profile);
 		return result;
 	}
 	const String final_path = global_path(library_root).path_join(package.package_digest.substr(7));
@@ -570,23 +561,19 @@ Dictionary MxtContentCatalog::snapshot_draft_package(
 				existing.root_path == final_path &&
 				DirAccess::open(final_path).is_valid()) {
 			remove_snapshot_staging(package.root_path, snapshot_paths);
-			Dictionary result;
-			result["valid"] = true;
-			result["errors"] = PackedStringArray();
-			result["record"] = make_record_ref(existing);
-			result["package_path"] = existing.root_path;
-			result["package_digest"] = existing.package_digest;
-			result["gameplay_digest"] = existing.gameplay_digest;
-			result["validation_profile"] = package.validation_profile;
-			result["reused_existing"] = true;
+			Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+			result->set_record(existing);
+			result->set_package_path(existing.root_path);
+			result->set_package_digest(existing.package_digest);
+			result->set_gameplay_digest(existing.gameplay_digest);
+			result->set_validation_profile(package.validation_profile);
+			result->set_reused_existing(true);
 			return result;
 		}
 	}
 	if (!install_snapshot(package, library_root, snapshot_paths, errors)) {
-		Dictionary result;
-		result["valid"] = false;
-		result["errors"] = error_array(errors);
-		result["validation_profile"] = package.validation_profile;
+		Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_IO_ERROR, errors);
+		result->set_validation_profile(package.validation_profile);
 		return result;
 	}
 	const uint64_t catalog_start_usec = Time::get_singleton()->get_ticks_usec();
@@ -596,26 +583,23 @@ Dictionary MxtContentCatalog::snapshot_draft_package(
 	Dictionary validation_profile = package.validation_profile;
 	validation_profile["catalog_record_usec"] = static_cast<int64_t>(
 			Time::get_singleton()->get_ticks_usec() - catalog_start_usec);
-	Dictionary result;
-	result["valid"] = true;
-	result["errors"] = PackedStringArray();
-	result["record"] = make_record_ref(record);
-	result["package_path"] = package.root_path;
-	result["package_digest"] = package.package_digest;
-	result["gameplay_digest"] = package.gameplay_digest;
-	result["validation_profile"] = validation_profile;
-	result["reused_existing"] = false;
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
+	result->set_record(record);
+	result->set_package_path(package.root_path);
+	result->set_package_digest(package.package_digest);
+	result->set_gameplay_digest(package.gameplay_digest);
+	result->set_validation_profile(validation_profile);
+	result->set_reused_existing(false);
 	return result;
 }
 
-Dictionary MxtContentCatalog::add_workshop_package(const String &package_root, int64_t published_file_id)
+Ref<MxtContentLoadResult> MxtContentCatalog::add_workshop_package(const String &package_root, int64_t published_file_id)
 {
 	uint64_t item_id = 0;
 	if (!decimal_u64(published_file_id, item_id)) {
-		Dictionary result;
-		result["valid"] = false;
-		result["errors"] = PackedStringArray({"published_file_id must be a positive integer"});
-		return result;
+		return make_load_result(
+				MxtContentLoadResult::RESULT_INVALID_INPUT,
+				{"published_file_id must be a positive integer"});
 	}
 	return add_package_internal(package_root, mxt::content::ContentSource::WORKSHOP, item_id);
 }
@@ -811,33 +795,29 @@ Dictionary MxtContentCatalog::sync_workshop_packages(const Array &items)
 	return result;
 }
 
-Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
+Ref<MxtContentLoadResult> MxtContentCatalog::scan_local_library(const String &library_root)
 {
 	const String root = global_path(library_root);
 	Ref<DirAccess> directory = DirAccess::open(root);
-	Dictionary result;
 	if (directory.is_null()) {
-		result["valid"] = false;
-		result["errors"] = PackedStringArray({"local content library directory does not exist"});
-		result["registered_count"] = 0;
-		return result;
+		return make_load_result(
+				MxtContentLoadResult::RESULT_IO_ERROR,
+				{"local content library directory does not exist"});
 	}
 	directory->set_include_hidden(true);
 	directory->set_include_navigational(false);
 	if (directory->list_dir_begin() != OK) {
-		result["valid"] = false;
-		result["errors"] = PackedStringArray({"could not enumerate local content library directory"});
-		result["registered_count"] = 0;
-		return result;
+		return make_load_result(
+				MxtContentLoadResult::RESULT_IO_ERROR,
+				{"could not enumerate local content library directory"});
 	}
 	std::vector<mxt::content::ContentRecord> candidates;
-	Array diagnostics;
+	Ref<MxtContentLoadResult> result = make_load_result(MxtContentLoadResult::RESULT_OK);
 	for (;;) {
 		const String name = directory->get_next();
 		if (name.is_empty()) break;
 		if (name.begins_with(".mxt-import-")) continue;
-		Dictionary diagnostic;
-		diagnostic["path"] = root.path_join(name);
+		const String diagnostic_path = root.path_join(name);
 		std::vector<String> errors;
 		if (!directory->current_is_dir() || directory->is_link(name) || !is_digest_directory_name(name)) {
 			errors.push_back("unexpected entry in content-addressed local library");
@@ -852,8 +832,7 @@ Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
 			}
 		}
 		if (!errors.empty()) {
-			diagnostic["errors"] = error_array(errors);
-			diagnostics.push_back(diagnostic);
+			result->add_diagnostic(diagnostic_path, errors);
 		}
 	}
 	directory->list_dir_end();
@@ -868,10 +847,10 @@ Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
 		return a.content_id < b.content_id;
 	});
 	publish_change();
-	result["valid"] = diagnostics.is_empty();
-	result["errors"] = PackedStringArray();
-	result["diagnostics"] = diagnostics;
-	result["registered_count"] = static_cast<int64_t>(candidates.size());
+	result->set_code(result->get_diagnostic_count() == 0
+			? MxtContentLoadResult::RESULT_OK
+			: MxtContentLoadResult::RESULT_VALIDATION_FAILED);
+	result->set_registered_count(static_cast<int32_t>(candidates.size()));
 	return result;
 }
 
