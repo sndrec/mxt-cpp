@@ -10,6 +10,7 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 const CarSettingsClass = preload("res://ui/car_settings.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const LobbyVehicleContentTrackerClass = preload("res://vehicle/lobby_vehicle_content_tracker.gd")
 const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 const PracticeSetupClass = preload("res://practice/practice_setup.gd")
 const PracticeControllerClass = preload("res://practice/practice_controller.gd")
@@ -31,6 +32,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var race_session_controller: RaceSessionControllerClass = $RaceSessionController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
+@onready var lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass = $LobbyVehicleContentTracker
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -173,6 +175,11 @@ func _ready() -> void:
 	leaderboard_client.submission_completed.connect(_on_leaderboard_submission_completed)
 	leaderboard_client.entries_received.connect(_on_time_attack_rank_entries_received)
 	vehicle_content_controller.initialize(steam_service, network_manager.custom_stamp_network)
+	lobby_vehicle_content_tracker.initialize(
+		steam_service,
+		vehicle_content_controller.content_catalog,
+		vehicle_content_controller,
+		network_manager)
 	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
 	vehicle_content_controller.catalog_delta.connect(_on_vehicle_content_catalog_delta)
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -182,7 +189,13 @@ func _ready() -> void:
 	$GameWorld.add_child(car_render_manager)
 	race_audio_controller.initialize()
 	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
-	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input, vehicle_content_controller)
+	lobby_chibi_controller.initialize(
+		self,
+		network_manager,
+		game_sim,
+		communication_controller.lobby_input,
+		vehicle_content_controller,
+		lobby_vehicle_content_tracker)
 	lobby_controller.initialize(network_manager, track_content_controller, lobby_chibi_controller)
 	lobby_controller.start_race_requested.connect(_on_lobby_start_race_requested)
 	lobby_controller.car_settings_requested.connect(_on_car_settings_button_pressed)

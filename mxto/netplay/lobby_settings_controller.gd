@@ -473,7 +473,7 @@ func _store_player_settings(player_id: int, settings: Dictionary, cpu := false) 
 		log_deduped += 1
 		return false
 	if game_manager != null and game_manager.vehicle_content_controller != null:
-		game_manager.vehicle_content_controller.request_lobby_vehicle_content(get_player_settings(player_id))
+		game_manager.lobby_vehicle_content_tracker.request_vehicle_content(get_player_settings(player_id))
 	revision += 1
 	log_accepted += 1
 	return true

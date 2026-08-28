@@ -4,6 +4,7 @@ extends Node
 signal race_started(track_id, roster)
 signal race_finished
 signal race_setup_changed(configuration, track_evidence, race_state)
+signal session_ended
 const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
 const GameVersionData = preload("res://core/game_version.gd")
 const StateTransferControllerClass = preload("res://netplay/state_transfer_controller.gd")
@@ -668,6 +669,7 @@ func set_spawn_seed(seed: int) -> void:
 		server_game_sim.set_spawn_seed(seed)
 
 func disconnect_from_server() -> void:
+	var had_session := network_active or multiplayer.multiplayer_peer != null
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
@@ -702,6 +704,8 @@ func disconnect_from_server() -> void:
 	_sync_lobby_settings_context()
 	refresh_protocol_contexts()
 	input_transport.reset()
+	if had_session:
+		session_ended.emit()
 
 func force_end_countdown_seconds_for(player_id: int) -> int:
 	if race_results.race_force_end_deadline_tick < 0:

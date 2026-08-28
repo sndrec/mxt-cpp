@@ -3,6 +3,7 @@ extends Node
 
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const LobbyVehicleContentTrackerClass = preload("res://vehicle/lobby_vehicle_content_tracker.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const LOBBY_CHIBI_CAR_SCRIPT := "res://ui/lobby_chibi_car.gd"
 
@@ -36,6 +37,7 @@ var network_manager: NetworkManager
 var game_sim: GameSim
 var input_blocker: LineEdit
 var vehicle_content_controller: VehicleContentControllerClass
+var lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass
 
 var cars := {}
 var pending_states := {}
@@ -89,13 +91,15 @@ func initialize(
 	in_network_manager: NetworkManager,
 	in_game_sim: GameSim,
 	in_input_blocker: LineEdit,
-	in_vehicle_content_controller: VehicleContentControllerClass
+	in_vehicle_content_controller: VehicleContentControllerClass,
+	in_lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass
 ) -> void:
 	game_manager = in_game_manager
 	network_manager = in_network_manager
 	game_sim = in_game_sim
 	input_blocker = in_input_blocker
 	vehicle_content_controller = in_vehicle_content_controller
+	lobby_vehicle_content_tracker = in_lobby_vehicle_content_tracker
 
 func _on_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and input_blocker != null:
@@ -173,7 +177,7 @@ func process_lobby(_delta: float) -> void:
 	var roster := _human_roster()
 	for id in roster:
 		var lobby_settings: Dictionary = network_manager.lobby_settings.get_player_settings(int(id))
-		vehicle_content_controller.request_lobby_vehicle_content(lobby_settings)
+		lobby_vehicle_content_tracker.request_vehicle_content(lobby_settings)
 	var local_id: int = game_manager._local_player_id()
 	var roster_changed := roster != roster_cache
 	if roster_changed:

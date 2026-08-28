@@ -552,6 +552,7 @@ void MxtSteamService::_bind_methods()
 			&MxtSteamService::submit_workshop_item_update);
 	ClassDB::bind_method(D_METHOD("refresh_workshop_items"), &MxtSteamService::refresh_workshop_items);
 	ClassDB::bind_method(D_METHOD("track_workshop_item", "published_file_id"), &MxtSteamService::track_workshop_item);
+	ClassDB::bind_method(D_METHOD("untrack_workshop_item", "published_file_id"), &MxtSteamService::untrack_workshop_item);
 	ClassDB::bind_method(D_METHOD("subscribe_workshop_item", "published_file_id"), &MxtSteamService::subscribe_workshop_item);
 	ClassDB::bind_method(D_METHOD("unsubscribe_workshop_item", "published_file_id"), &MxtSteamService::unsubscribe_workshop_item);
 	ClassDB::bind_method(D_METHOD("download_workshop_item", "published_file_id", "high_priority"), &MxtSteamService::download_workshop_item, DEFVAL(true));
@@ -1014,6 +1015,19 @@ bool MxtSteamService::track_workshop_item(int64_t published_file_id)
 		tracked_workshop_item_ids.sort();
 		save_tracked_workshop_item_ids();
 	}
+	return true;
+#else
+	return false;
+#endif
+}
+
+bool MxtSteamService::untrack_workshop_item(int64_t published_file_id)
+{
+#if defined(MXT_STEAMWORKS_ENABLED)
+	if (!initialized || published_file_id <= 0) return false;
+	if (!tracked_workshop_item_ids.has(published_file_id)) return true;
+	tracked_workshop_item_ids.erase(published_file_id);
+	save_tracked_workshop_item_ids();
 	return true;
 #else
 	return false;

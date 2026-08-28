@@ -77,6 +77,7 @@ public:
 			const String &change_note);
 	bool refresh_workshop_items();
 	bool track_workshop_item(int64_t published_file_id);
+	bool untrack_workshop_item(int64_t published_file_id);
 	bool subscribe_workshop_item(int64_t published_file_id);
 	bool unsubscribe_workshop_item(int64_t published_file_id);
 	bool download_workshop_item(int64_t published_file_id, bool high_priority = true);

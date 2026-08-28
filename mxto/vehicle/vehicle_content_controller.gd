@@ -10,8 +10,6 @@ const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
 const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
 const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
-const LOBBY_WORKSHOP_DOWNLOAD_RETRY_BASE_MSEC := 3000
-const LOBBY_WORKSHOP_DOWNLOAD_RETRY_MAX_MSEC := 30000
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
@@ -24,16 +22,11 @@ var subscribed_workshop_item_ids := {}
 var steam_service: MxtSteamService
 var custom_stamp_network: CustomStampNetworkController
 var runtime_content_loaded := false
-var lobby_workshop_download_requests := {}
-var lobby_workshop_download_failures := {}
-var lobby_known_workshop_items := {}
-var lobby_ready_workshop_packages := {}
 
 func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
 	steam_service = in_steam_service
 	custom_stamp_network = in_custom_stamp_network
 	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
-	steam_service.workshop_request_completed.connect(_on_workshop_request_completed)
 	_scan_local_content_library()
 	var initial_workshop_items := steam_service.get_workshop_items()
 	if !initial_workshop_items.is_empty():
@@ -377,54 +370,6 @@ func refresh_workshop_content() -> bool:
 func get_workshop_content_items() -> Array:
 	return workshop_content_items.duplicate(true)
 
-func request_lobby_vehicle_content(settings: Dictionary) -> bool:
-	var workshop_id_text := String(settings.get("vehicle_workshop_id", ""))
-	if !workshop_id_text.is_valid_int():
-		return false
-	var workshop_id := workshop_id_text.to_int()
-	var content_id := String(settings.get("vehicle_content_id", ""))
-	var package_digest := String(settings.get("vehicle_package_digest", ""))
-	if workshop_id <= 0 or content_id != WORKSHOP_VEHICLE_PREFIX + str(workshop_id):
-		return false
-	if String(lobby_ready_workshop_packages.get(workshop_id, "")) == package_digest:
-		return true
-	var record: MxtContentRecord = content_catalog.resolve_content(content_id)
-	var expected_gameplay_digest := String(settings.get("vehicle_gameplay_digest", ""))
-	var local_published_file_id := str(record.published_file_id) if record != null and record.published_file_id > 0 else ""
-	var local_gameplay_digest := record.gameplay_digest if record != null else ""
-	var local_package_digest := record.package_digest if record != null else ""
-	if (
-		local_published_file_id == workshop_id_text
-		and local_gameplay_digest == expected_gameplay_digest
-		and local_package_digest == package_digest):
-		lobby_workshop_download_requests.erase(workshop_id)
-		lobby_workshop_download_failures.erase(workshop_id)
-		lobby_ready_workshop_packages[workshop_id] = package_digest
-		return true
-	var now_msec := Time.get_ticks_msec()
-	if steam_service == null or !steam_service.is_initialized():
-		return false
-	if !lobby_known_workshop_items.has(workshop_id):
-		var tracked := steam_service.track_workshop_item(workshop_id)
-		if tracked:
-			steam_service.refresh_workshop_items()
-		return false
-	var failure_count := int(lobby_workshop_download_failures.get(workshop_id, 0))
-	var retry_delay_msec := mini(
-		LOBBY_WORKSHOP_DOWNLOAD_RETRY_BASE_MSEC * (1 << mini(failure_count, 4)),
-		LOBBY_WORKSHOP_DOWNLOAD_RETRY_MAX_MSEC)
-	var last_request_msec := int(lobby_workshop_download_requests.get(workshop_id, -retry_delay_msec))
-	if now_msec < last_request_msec + retry_delay_msec:
-		return false
-	lobby_workshop_download_requests[workshop_id] = now_msec
-	# Steam's download-complete and item-installed callbacks refresh the catalog.
-	# Refreshing synchronously here would rebuild every installed Workshop vehicle
-	# once per missing lobby item, causing a severe frame stall for larger rosters.
-	var accepted := steam_service.download_workshop_item(workshop_id, true)
-	if !accepted:
-		lobby_workshop_download_failures[workshop_id] = failure_count + 1
-	return false
-
 func _scan_local_content_library() -> void:
 	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
 	var directory_error := DirAccess.make_dir_recursive_absolute(library_path)
@@ -452,8 +397,6 @@ func _on_workshop_items_changed(items: Array) -> void:
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
-		if published_file_id > 0:
-			lobby_known_workshop_items[published_file_id] = true
 	var synced: MxtWorkshopSyncResult = content_catalog.sync_workshop_packages(items)
 	var native_results_by_id := {}
 	for index in synced.get_item_count():
@@ -477,10 +420,6 @@ func _on_workshop_items_changed(items: Array) -> void:
 		processed_items.append(item)
 	var catalog_materially_changed := synced.catalog_changed
 	var delta := synced.delta
-	for published_file_id in delta.changed_item_ids:
-		lobby_ready_workshop_packages.erase(int(published_file_id))
-	for published_file_id in delta.removed_item_ids:
-		lobby_ready_workshop_packages.erase(int(published_file_id))
 	workshop_content_items = processed_items
 	if runtime_content_loaded and catalog_materially_changed:
 		_apply_workshop_content_delta(delta)
@@ -488,17 +427,6 @@ func _on_workshop_items_changed(items: Array) -> void:
 	workshop_content_changed.emit(get_workshop_content_items())
 	if garage_visibility_changed and !catalog_materially_changed:
 		garage_catalog_changed.emit()
-
-
-func _on_workshop_request_completed(_request_id: int, operation: String, result: Dictionary) -> void:
-	var published_file_id := int(result.get("published_file_id", 0))
-	if published_file_id > 0 and operation == "download":
-		if bool(result.get("success", false)):
-			lobby_workshop_download_failures.erase(published_file_id)
-		else:
-			lobby_workshop_download_failures[published_file_id] = int(lobby_workshop_download_failures.get(published_file_id, 0)) + 1
-	elif published_file_id > 0 and operation == "item_installed":
-		lobby_workshop_download_failures.erase(published_file_id)
 
 
 func _load_packaged_definitions() -> void:
