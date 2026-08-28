@@ -119,6 +119,48 @@ func _init() -> void:
 		push_error("MXT_RACE_ROSTER_CONTENT_SMOKE_FAIL")
 		quit(1)
 		return
+	var metadata_source := MxtReplayRunMetadata.new()
+	metadata_source.schema_version = 8
+	metadata_source.build = "v9.8.7"
+	metadata_source.game_version_major = 9
+	metadata_source.game_version_compatibility = 8
+	metadata_source.game_version_patch = 7
+	metadata_source.engine_version = "smoke"
+	metadata_source.created_unix = 1234567890
+	metadata_source.name = "Typed replay"
+	metadata_source.mode = "Practice"
+	metadata_source.source = "singleplayer"
+	metadata_source.track_content_id = "official:track-a"
+	metadata_source.track_gameplay_digest = "sha256:gameplay"
+	metadata_source.track_package_digest = "sha256:package"
+	metadata_source.track_name = "Track A"
+	metadata_source.roster = roster_source
+	metadata_source.start_grid_slots = PackedInt32Array([3])
+	metadata_source.spawn_seed = 987654321
+	var metadata_race_options := source.to_metadata_dictionary()
+	metadata_race_options.merge(track_source.to_metadata_dictionary(), true)
+	metadata_race_options["grand_prix_current_track"] = 2
+	metadata_race_options["grand_prix_points"] = {123456789: 15}
+	metadata_race_options["grand_prix_ko_energy_bonuses"] = {123456789: 0.25}
+	metadata_source.set_race_metadata(metadata_race_options)
+	metadata_source.runtime_auto_accelerate = true
+	metadata_source.saved_reason = "smoke"
+	metadata_source.duration_ticks = 4321
+	metadata_source.set_results({123456789: 4321}, {123456789: 1}, {})
+	var metadata_decoded := MxtReplayRunMetadata.new()
+	if !metadata_decoded.load_dictionary(metadata_source.to_dictionary()) \
+			or metadata_decoded.schema_version != 8 \
+			or metadata_decoded.roster == null \
+			or metadata_decoded.roster.count() != 1 \
+			or metadata_decoded.race_configuration == null \
+			or metadata_decoded.race_configuration.cpu_count != 999 \
+			or metadata_decoded.track_evidence == null \
+			or metadata_decoded.track_evidence.count() != 2 \
+			or metadata_decoded.start_grid_slots != PackedInt32Array([3]) \
+			or metadata_decoded.duration_ticks != 4321:
+		push_error("MXT_REPLAY_RUN_METADATA_SMOKE_FAIL: " + metadata_decoded.get_last_error())
+		quit(1)
+		return
 	print("MXT_RACE_CONFIGURATION_WIRE_SMOKE_OK config_bytes=", source.encode_wire().size(),
 		" track_bytes=", track_source.encode_wire().size(), " roster_bytes=", roster_source.encode_wire().size())
 	quit(0)

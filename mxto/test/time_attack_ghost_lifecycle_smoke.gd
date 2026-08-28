@@ -181,7 +181,7 @@ func _exercise_practice_cpu_lifecycle(track_index: int, descriptor: Dictionary) 
 		_fail("practice CPU was not kept in the main simulation and out of the ghost simulation")
 		return false
 	var recording := game_manager.replay_controller
-	if String(recording.replay_recording_metadata.get("mode", "")) != "Practice" \
+	if recording.replay_recording_metadata.mode != "Practice" \
 			or recording.replay_recording_racer_ids.size() != 2:
 		_fail("practice CPU roster was not recorded independently from ghost selection")
 		return false
@@ -238,8 +238,12 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 			return false
 		game_manager.network_manager.load_race_metadata_dictionary((replay.get("race_options", {}) as Dictionary))
 		game_manager.singleplayer_mode = true
-		game_manager.replay_controller.start_recording(track_index, settings, racer_ids, [false], grid_slots)
-		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.duplicate(true)
+		var race_roster := MxtRaceRoster.new()
+		if !race_roster.append_settings(int(racer_ids[0]), int(racer_ids[0]), false, false, false, settings[0]):
+			_fail("failed to build ranked replay smoke roster")
+			return false
+		game_manager.replay_controller.start_recording(track_index, race_roster, grid_slots)
+		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.to_dictionary()
 		candidate["saved_reason"] = "time_attack_submission"
 		candidate["duration_ticks"] = int(replay.get("duration_ticks", 0))
 		candidate["finish_times"] = (replay.get("finish_times", {}) as Dictionary).duplicate(true)

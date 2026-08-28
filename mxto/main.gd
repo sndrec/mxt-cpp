@@ -797,7 +797,13 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		race_presentation_controller.show_notification("Replay resume failed while transferring racer control.", 5000)
 		_return_to_menu()
 		return
-	replay_controller.start_recording(track_index, settings, racer_ids, practice_cpu_flags, exact_grid)
+	var resumed_roster: MxtRaceRoster = network_manager.lobby_settings.build_race_roster(racer_ids)
+	if resumed_roster == null or resumed_roster.count() != racer_ids.size():
+		practice_controller.end_session()
+		race_presentation_controller.show_notification("Replay resume failed while rebuilding its racer roster.", 5000)
+		_return_to_menu()
+		return
+	replay_controller.start_recording(track_index, resumed_roster, exact_grid)
 	if !practice_controller.begin_resumed_session(configuration, focused_player_id, replay_stream_value as MxtReplayStream, canonical_prefix_count, transition_start_usec):
 		race_presentation_controller.show_notification("Replay resume failed while restoring its canonical timeline.", 5000)
 		_return_to_menu()

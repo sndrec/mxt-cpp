@@ -130,15 +130,14 @@ func _run_race(track_index: int, racer_count: int, sample_index: int, max_ticks:
 			"ticks": ticks_run,
 			"finished": finished_count,
 		}
-	game_manager.replay_controller.replay_recording_metadata.merge({
-		"name": "Replay Catalog Benchmark - %03d racers - %02d" % [racer_count, sample_index],
-		"benchmark_suite": SUITE_ID,
-		"benchmark_racer_count": racer_count,
-		"benchmark_sample": sample_index,
-		"benchmark_spawn_seed": spawn_seed,
-		"benchmark_generation_ticks": ticks_run,
-		"benchmark_generation_usec": Time.get_ticks_usec() - race_start_usec,
-	}, true)
+	var metadata := game_manager.replay_controller.replay_recording_metadata
+	metadata.name = "Replay Catalog Benchmark - %03d racers - %02d" % [racer_count, sample_index]
+	metadata.benchmark_suite = SUITE_ID
+	metadata.benchmark_racer_count = racer_count
+	metadata.benchmark_sample = sample_index
+	metadata.benchmark_spawn_seed = spawn_seed
+	metadata.benchmark_generation_ticks = ticks_run
+	metadata.benchmark_generation_usec = Time.get_ticks_usec() - race_start_usec
 	var save_start_usec := Time.get_ticks_usec()
 	var replay_path: String = game_manager.replay_controller.save_replay_locally()
 	var save_usec := Time.get_ticks_usec() - save_start_usec

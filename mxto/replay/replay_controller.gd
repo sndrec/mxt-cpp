@@ -61,7 +61,7 @@ var replay_autoload_path: String = ""
 var replay_recording_active: bool = false
 var replay_recording_saved: bool = false
 var replay_recording_source: String = ""
-var replay_recording_metadata: Dictionary = {}
+var replay_recording_metadata: MxtReplayRunMetadata = MxtReplayRunMetadata.new()
 var replay_recording_racer_ids: Array = []
 var replay_recording_cpu_flags: Array = []
 var replay_recording_stream: MxtReplayStream = MxtReplayStream.new()
@@ -69,7 +69,7 @@ var replay_recording_staged_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
 var replay_playback_stream: MxtReplayStream
-var replay_playback_source_metadata: Dictionary = {}
+var replay_playback_source_metadata: MxtReplayRunMetadata = MxtReplayRunMetadata.new()
 var replay_playback_compatible := false
 var replay_playback_track_index := -1
 var replay_playback_index: int = 0
@@ -358,14 +358,14 @@ func detach_playback_for_practice() -> bool:
 
 
 func _clear_recording_payload() -> void:
-	replay_recording_metadata.clear()
+	replay_recording_metadata = MxtReplayRunMetadata.new()
 	replay_recording_racer_ids.clear()
 	replay_recording_cpu_flags.clear()
 	replay_recording_stream = MxtReplayStream.new()
 
 func _clear_playback_payload() -> void:
 	replay_playback_stream = null
-	replay_playback_source_metadata.clear()
+	replay_playback_source_metadata = MxtReplayRunMetadata.new()
 	replay_playback_compatible = false
 	replay_playback_track_index = -1
 	replay_playback_index = 0
@@ -521,83 +521,57 @@ func _replay_should_record_current_race() -> bool:
 		return true
 	return game_manager.network_manager.is_server
 
-func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_flags: Array, start_grid_slots: PackedInt32Array) -> void:
+func start_recording(track_index: int, race_roster: MxtRaceRoster, start_grid_slots: PackedInt32Array) -> void:
 	stop_recording()
 	_clear_recording_payload()
 	replay_recording_staged_path = ""
-	if !_replay_should_record_current_race():
+	if !_replay_should_record_current_race() or race_roster == null:
 		return
-	replay_recording_active = true
-	replay_recording_saved = false
 	var practice_session := game_manager.network_manager.race_configuration.is_practice()
 	replay_recording_source = "practice" if practice_session else ("singleplayer" if game_manager.singleplayer_mode else "server")
-	replay_recording_racer_ids = racer_ids.duplicate(true)
-	replay_recording_cpu_flags = cpu_flags.duplicate(true)
+	var normalized_roster := MxtRaceRoster.new()
+	for index in race_roster.count():
+		var settings: Dictionary = _settings_with_vehicle_content_evidence(race_roster.get_settings_dictionary(index))
+		var player_id: int = race_roster.get_player_id(index)
+		if !normalized_roster.append_settings(player_id, player_id, race_roster.is_cpu(index), false, false, settings):
+			push_error("Replay recording roster rejected: %s" % normalized_roster.get_last_error())
+			return
+		replay_recording_racer_ids.append(player_id)
+		replay_recording_cpu_flags.append(race_roster.is_cpu(index))
 	replay_recording_stream = MxtReplayStream.new()
 	replay_recording_stream.begin_recording(replay_recording_racer_ids, replay_recording_cpu_flags)
 	if !replay_recording_stream.get_last_error().is_empty():
 		push_error("Replay recording roster rejected: %s" % replay_recording_stream.get_last_error())
-		replay_recording_active = false
 		return
+	replay_recording_active = true
+	replay_recording_saved = false
 	if practice_session:
 		game_manager.practice_controller.configure_timeline_roster(replay_recording_racer_ids, replay_recording_cpu_flags)
-	var start_grid_slot_array := []
-	for slot in start_grid_slots:
-		start_grid_slot_array.append(int(slot))
-	var player_records: Array = []
-	var replay_settings: Array = []
-	for settings_value in settings:
-		if typeof(settings_value) == TYPE_DICTIONARY:
-			replay_settings.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
-	for i in range(racer_ids.size()):
-		var id := int(racer_ids[i])
-		var raw_settings: Dictionary = {}
-		if i < settings.size() and typeof(settings[i]) == TYPE_DICTIONARY:
-			raw_settings = (settings[i] as Dictionary).duplicate(true)
-		elif game_manager.network_manager.lobby_settings.has_player_settings(id):
-			raw_settings = game_manager.network_manager.lobby_settings.get_player_settings(id)
-		raw_settings = _settings_with_vehicle_content_evidence(raw_settings)
-		player_records.append({
-			"id": id,
-			"username": str(raw_settings.get("username", "Player")),
-			"cpu": i < cpu_flags.size() and bool(cpu_flags[i]),
-			"vehicle_content_id": str(raw_settings.get("vehicle_content_id", "")),
-			"vehicle_gameplay_digest": str(raw_settings.get("vehicle_gameplay_digest", "")),
-			"sticker_1": int(raw_settings.get("sticker_1", 0)),
-			"sticker_2": int(raw_settings.get("sticker_2", 1)),
-			"sticker_3": int(raw_settings.get("sticker_3", 2)),
-			"sticker_4": int(raw_settings.get("sticker_4", 3)),
-			"car_livery": raw_settings.get("car_livery", {}).duplicate(true) if typeof(raw_settings.get("car_livery", {})) == TYPE_DICTIONARY else {},
-			"settings": raw_settings,
-		})
-	replay_recording_metadata = {
-		"schema_version": REPLAY_SCHEMA_VERSION,
-		"build": GameVersionData.display_string(),
-		"game_version": GameVersionData.metadata(),
-		"engine_version": _replay_engine_version(),
-		"created_unix": Time.get_unix_time_from_system(),
-		"name": "%s %s" % [_current_track_name(), _replay_make_stamp()],
-		"mode": _replay_mode_name(),
-		"source": replay_recording_source,
-		"track_content_id": game_manager.track_content_controller.track_id_for_index(track_index),
-		"track_gameplay_digest": game_manager.track_content_controller.track_gameplay_digest_for_index(track_index),
-		"track_package_digest": String(vehicle_content_controller.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("package_digest", "")),
-		"track_workshop_id": String(vehicle_content_controller.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("published_file_id", "")),
-		"track_name": _current_track_name(),
-		"settings": replay_settings,
-		"racer_ids": racer_ids.duplicate(true),
-		"cpu_flags": cpu_flags.duplicate(true),
-		"start_grid_slots": start_grid_slot_array,
-		"players": player_records,
-		"spawn_seed": game_manager.network_manager.spawn_seed,
-		"race_options": game_manager.network_manager.race_metadata_dictionary(),
-		"runtime_flags": {
-			"auto_accelerate": debug_runtime_controller.auto_accelerate,
-			"auto_bumpers": game_manager.auto_bumpers_mode,
-			"debug_bumper_smoke": debug_runtime_controller.bumper_smoke_enabled,
-			"debug_rail_trace": debug_runtime_controller.rail_trace_enabled,
-		},
-	}
+	var track_content_id := game_manager.track_content_controller.track_id_for_index(track_index)
+	var track_record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(track_content_id)
+	replay_recording_metadata.schema_version = REPLAY_SCHEMA_VERSION
+	replay_recording_metadata.build = GameVersionData.display_string()
+	replay_recording_metadata.game_version_major = GameVersionData.MAJOR
+	replay_recording_metadata.game_version_compatibility = GameVersionData.COMPATIBILITY
+	replay_recording_metadata.game_version_patch = GameVersionData.PATCH
+	replay_recording_metadata.engine_version = _replay_engine_version()
+	replay_recording_metadata.created_unix = int(Time.get_unix_time_from_system())
+	replay_recording_metadata.name = "%s %s" % [_current_track_name(), _replay_make_stamp()]
+	replay_recording_metadata.mode = _replay_mode_name()
+	replay_recording_metadata.source = replay_recording_source
+	replay_recording_metadata.track_content_id = track_content_id
+	replay_recording_metadata.track_gameplay_digest = game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
+	replay_recording_metadata.track_package_digest = String(track_record.get("package_digest", ""))
+	replay_recording_metadata.track_workshop_id = String(track_record.get("published_file_id", ""))
+	replay_recording_metadata.track_name = _current_track_name()
+	replay_recording_metadata.roster = normalized_roster
+	replay_recording_metadata.start_grid_slots = start_grid_slots
+	replay_recording_metadata.spawn_seed = game_manager.network_manager.spawn_seed
+	replay_recording_metadata.set_race_metadata(game_manager.network_manager.race_metadata_dictionary())
+	replay_recording_metadata.runtime_auto_accelerate = debug_runtime_controller.auto_accelerate
+	replay_recording_metadata.runtime_auto_bumpers = game_manager.auto_bumpers_mode
+	replay_recording_metadata.runtime_debug_bumper_smoke = debug_runtime_controller.bumper_smoke_enabled
+	replay_recording_metadata.runtime_debug_rail_trace = debug_runtime_controller.rail_trace_enabled
 	refresh_pause_button()
 
 func _settings_with_vehicle_content_evidence(settings: Dictionary) -> Dictionary:
@@ -668,13 +642,15 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 	if err != OK:
 		push_warning("Replay save failed: could not create %s err=%s" % [replay_dir, str(err)])
 		return ""
-	var metadata := replay_recording_metadata.duplicate(true)
-	metadata["saved_reason"] = reason
-	metadata["duration_ticks"] = export_stream.frame_count()
-	metadata["finish_times"] = game_manager.network_manager.race_results.player_finish_times.duplicate(true)
-	metadata["finish_placements"] = game_manager.network_manager.race_results.player_finish_placements.duplicate(true)
-	metadata["eliminations"] = game_manager.network_manager.race_results.player_eliminations.duplicate(true)
-	var safe_track := str(metadata.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
+	var run_metadata := replay_recording_metadata.copy()
+	run_metadata.saved_reason = reason
+	run_metadata.duration_ticks = export_stream.frame_count()
+	run_metadata.set_results(
+		game_manager.network_manager.race_results.player_finish_times,
+		game_manager.network_manager.race_results.player_finish_placements,
+		game_manager.network_manager.race_results.player_eliminations)
+	var metadata: Dictionary = run_metadata.to_dictionary()
+	var safe_track := run_metadata.track_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
 	var path := _unique_replay_path(replay_dir, safe_track)
 	var temporary_path := path + ".tmp"
 	if !export_stream.write_file(temporary_path, metadata):
@@ -1074,11 +1050,10 @@ func _replay_resume_eligibility() -> Dictionary:
 	var focus_id := _focused_replay_player_id()
 	if game_manager.game_sim.get_finished_player_ids().has(focus_id):
 		return {"eligible": false, "reason": "A racer cannot resume after completing the race."}
-	var settings_value = replay_playback_source_metadata.get("settings", [])
-	var options_value = replay_playback_source_metadata.get("race_options", {})
-	if typeof(settings_value) != TYPE_ARRAY or (settings_value as Array).size() != replay_playback_racer_ids.size():
+	if replay_playback_source_metadata.roster == null \
+			or replay_playback_source_metadata.roster.count() != replay_playback_racer_ids.size():
 		return {"eligible": false, "reason": "The replay does not contain a complete recorded roster."}
-	if typeof(options_value) != TYPE_DICTIONARY:
+	if replay_playback_source_metadata.race_configuration == null:
 		return {"eligible": false, "reason": "The replay does not contain resumable race settings."}
 	if game_manager._singleplayer_tick < 0 or game_manager._singleplayer_tick > _playback_frame_count():
 		return {"eligible": false, "reason": "The current replay cursor is unavailable."}
@@ -1140,7 +1115,7 @@ func _capture_replay_resume_payload(keep_original: bool) -> Dictionary:
 		"race_dnf_low_speed_ticks": game_manager.race_dnf_low_speed_ticks.duplicate(true),
 		"focused_player_id": _focused_replay_player_id(),
 		"track_index": replay_playback_track_index,
-		"metadata": replay_playback_source_metadata.duplicate(true),
+		"metadata": replay_playback_source_metadata.to_dictionary(),
 		"replay_stream": replay_playback_stream,
 		"canonical_prefix_count": cursor,
 		"keep_original_as_ghost": keep_original,
@@ -1633,11 +1608,17 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		for i in range((settings as Array).size()):
 			racer_ids.append(i)
 			cpu_flags.append(false)
+	var metadata_boundary: Dictionary = replay.duplicate(true)
+	metadata_boundary["racer_ids"] = racer_ids
+	metadata_boundary["cpu_flags"] = cpu_flags
 	var profile_validate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us
 	replay_playback_active = true
 	replay_playback_stream = loaded_stream as MxtReplayStream
-	replay_playback_source_metadata = replay.duplicate(true)
-	replay_playback_source_metadata.erase("_replay_stream")
+	replay_playback_source_metadata = MxtReplayRunMetadata.new()
+	if !replay_playback_source_metadata.load_dictionary(metadata_boundary):
+		push_warning("Replay load failed: %s" % replay_playback_source_metadata.get_last_error())
+		replay_playback_active = false
+		return
 	replay_playback_compatible = _replay_is_compatible(replay)
 	replay_playback_track_index = track_index
 	replay_playback_source_bytes = loaded_source_bytes
@@ -1651,16 +1632,12 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	replay_saved_finish_placements = (replay.get("finish_placements", {}) as Dictionary).duplicate(true) if typeof(replay.get("finish_placements", {})) == TYPE_DICTIONARY else {}
 	replay_saved_eliminations = (replay.get("eliminations", {}) as Dictionary).duplicate(true) if typeof(replay.get("eliminations", {})) == TYPE_DICTIONARY else {}
 	replay_start_grid_slots = PackedInt32Array()
-	var saved_grid_slots = replay.get("start_grid_slots", [])
-	if typeof(saved_grid_slots) == TYPE_ARRAY:
-		replay_start_grid_slots.resize((saved_grid_slots as Array).size())
-		for i in range((saved_grid_slots as Array).size()):
-			replay_start_grid_slots[i] = int(saved_grid_slots[i])
+	replay_start_grid_slots = replay_playback_source_metadata.start_grid_slots
 	replay_playback_focus_index = 0
 	replay_input_display_frame_inputs = {}
 	replay_playback_local_player_id = int(replay_playback_racer_ids[0])
-	replay_playback_use_multiplayer_startup = str(replay.get("source", "")) == "server" or str(replay.get("mode", "")) == "Multiplayer"
-	replay_playback_use_singleplayer_tick = str(replay.get("source", "")) == "singleplayer"
+	replay_playback_use_multiplayer_startup = replay_playback_source_metadata.source == "server" or replay_playback_source_metadata.mode == "Multiplayer"
+	replay_playback_use_singleplayer_tick = replay_playback_source_metadata.source == "singleplayer"
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
 	replay_seek_checkpoints.clear()
@@ -1671,9 +1648,8 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	game_manager.singleplayer_mode = true
 	game_manager._singleplayer_tick = 0
 	game_manager.network_manager.reset_race_state()
-	game_manager.network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
-	game_manager.network_manager.load_race_metadata_dictionary(
-		(replay.get("race_options", {}) as Dictionary) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {})
+	game_manager.network_manager.set_spawn_seed(replay_playback_source_metadata.spawn_seed)
+	game_manager.network_manager.load_race_metadata_dictionary(replay_playback_source_metadata.to_dictionary().get("race_options", {}))
 	game_manager.network_manager.player_ids.clear()
 	game_manager.network_manager.lobby_settings.cpu_player_ids.clear()
 	for i in range(replay_playback_racer_ids.size()):

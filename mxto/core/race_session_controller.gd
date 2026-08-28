@@ -110,6 +110,7 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 	var racer_settings: Array = []
 	var racer_ids: Array = []
 	var racer_cpu_flags: Array = []
+	var active_roster := MxtRaceRoster.new()
 	for roster_index in roster.count():
 		var settings_dictionary: Dictionary = roster.get_settings_dictionary(roster_index)
 		var player_id: int = roster.get_player_id(roster_index)
@@ -118,6 +119,7 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 			return false
 		if append_result > 0:
 			last_race_settings.append(settings_dictionary)
+			active_roster.append_settings(player_id, player_id, roster.is_cpu(roster_index), false, false, settings_dictionary)
 	var unique_vehicle_ids := {}
 	for definition: CarDefinition in chosen_definitions:
 		unique_vehicle_ids[definition.content_id] = true
@@ -187,7 +189,7 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 	_configure_game_sim(game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
 	race_audio_controller.configure_vehicle_properties(chosen_definitions)
 	network_manager.input_transport.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
-	replay_controller.start_recording(track_index, last_race_settings, racer_ids, racer_cpu_flags, start_grid_slots)
+	replay_controller.start_recording(track_index, active_roster, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	race_presentation_controller.configure_race(local_player_id, local_player_index, singleplayer_mode, nametag_names)
