@@ -740,7 +740,7 @@ func _process( _delta:float ) -> void:
 		if car.s_boost_charge_max > 0:
 			ratio = float(car.s_boost_charge) / float(car.s_boost_charge_max)
 		ratio = clampf(ratio, 0.0, 1.0)
-		sboost_meter_bg.visible = car.s_boost_active or ratio > 0.0
+		sboost_meter_bg.visible = true
 		var width := _sboost_full_width * ratio
 		sboost_meter_fill.size.x = width
 		if car.s_boost_active:
