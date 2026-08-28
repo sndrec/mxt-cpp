@@ -57,14 +57,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var custom_stamp_catalog_paint_button: Button = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/CatalogActions/PaintCustomStamp")
 @onready var custom_stamp_library_grid: GridContainer = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/LibraryScroll/LibraryGrid")
 @onready var custom_stamp_import_dialog: FileDialog = owner_ui.get_node("CustomStampImportDialog")
-@onready var custom_stamp_painter_popup: PopupPanel = owner_ui.get_node("CustomStampPainter")
-@onready var custom_stamp_painter_size_option: OptionButton = owner_ui.get_node("CustomStampPainter/PainterRoot/SizeRow/SizeOption")
-@onready var custom_stamp_painter_canvas: TextureRect = owner_ui.get_node("CustomStampPainter/PainterRoot/Canvas")
-@onready var custom_stamp_painter_palette_grid: GridContainer = owner_ui.get_node("CustomStampPainter/PainterRoot/PaletteGrid")
-@onready var custom_stamp_painter_colour_picker: ColorPickerButton = owner_ui.get_node("CustomStampPainter/PainterRoot/ColourPicker")
-@onready var custom_stamp_painter_clear_button: Button = owner_ui.get_node("CustomStampPainter/PainterRoot/ButtonRow/Clear")
-@onready var custom_stamp_painter_save_button: Button = owner_ui.get_node("CustomStampPainter/PainterRoot/ButtonRow/Save")
-@onready var custom_stamp_painter_cancel_button: Button = owner_ui.get_node("CustomStampPainter/PainterRoot/ButtonRow/Cancel")
+@onready var stamp_painter: CustomStampPainterController = $CustomStampPainterController
 @onready var stamp_edit_overlay: Control = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay")
 @onready var stamp_edit_square: Panel = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare")
 @onready var stamp_edit_confirm_button: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm")
@@ -99,15 +92,8 @@ var preview_custom_stamp_atlas_active_revision := 0
 var preview_custom_stamp_atlas_latest_revision := 0
 var preview_custom_stamp_atlas_queued_records: Array = []
 var preview_custom_stamp_atlas_has_queued := false
-var custom_painter_size := Vector2i(32, 32)
-var custom_painter_indices := PackedByteArray()
-var custom_painter_palette := PackedColorArray()
-var custom_painter_texture: ImageTexture
-var custom_painter_colour_index := 1
-var custom_painter_drawing := false
 var selected_custom_import_palette_id := 0
 var selected_catalog_stamp_hash := ""
-var editing_catalog_stamp_hash := ""
 var preview_container: SubViewportContainer
 var preview_viewport: SubViewport
 var preview_root: Node3D
@@ -147,7 +133,8 @@ func initialize(in_game_manager: GameManager, in_player_settings: PlayerSettings
 	_setup_stamp_menus()
 	_setup_stamp_properties_popup()
 	_setup_custom_stamp_catalog()
-	_setup_custom_stamp_painter()
+	stamp_painter.initialize(owner_ui)
+	stamp_painter.stamp_saved.connect(_on_custom_stamp_painter_saved)
 	primary_colour_picker.color_changed.connect(_on_primary_colour_changed)
 	secondary_colour_picker.color_changed.connect(_on_secondary_colour_changed)
 	accent_colour_picker.color_changed.connect(_on_accent_colour_changed)
@@ -239,21 +226,6 @@ func _setup_custom_stamp_catalog() -> void:
 	custom_stamp_catalog_menu.id_pressed.connect(_on_custom_stamp_catalog_action_selected)
 	_refresh_custom_stamp_catalog_grid()
 
-func _setup_custom_stamp_painter() -> void:
-	custom_stamp_painter_size_option.clear()
-	for size in [8, 16, 32, 64, 128]:
-		custom_stamp_painter_size_option.add_item("%dx%d" % [size, size], size)
-	custom_stamp_painter_size_option.add_item("256x128", 256128)
-	custom_stamp_painter_size_option.add_item("128x256", 128256)
-	custom_stamp_painter_size_option.select(2)
-	custom_stamp_painter_size_option.item_selected.connect(_on_custom_painter_size_selected)
-	custom_stamp_painter_canvas.gui_input.connect(_on_custom_painter_canvas_input)
-	custom_stamp_painter_colour_picker.color_changed.connect(_on_custom_painter_colour_changed)
-	custom_stamp_painter_clear_button.pressed.connect(_on_custom_painter_clear_pressed)
-	custom_stamp_painter_save_button.pressed.connect(_on_custom_painter_save_pressed)
-	custom_stamp_painter_cancel_button.pressed.connect(_on_custom_painter_cancel_pressed)
-	_custom_painter_reset(Vector2i(32, 32))
-
 func _input(event: InputEvent) -> void:
 	if !owner_ui.visible or stamp_drag_source_layer < 0:
 		return
@@ -333,8 +305,7 @@ func _update_livery_lock_state() -> void:
 		custom_stamp_catalog_palette_option.disabled = locked
 	if custom_stamp_catalog_paint_button != null:
 		custom_stamp_catalog_paint_button.disabled = locked
-	if custom_stamp_painter_save_button != null:
-		custom_stamp_painter_save_button.disabled = locked
+	stamp_painter.set_locked(locked)
 	for button in stamp_layer_buttons:
 		button.disabled = locked
 	for layer in range(stamp_layer_colour_pickers.size()):
@@ -1246,9 +1217,7 @@ func _on_custom_import_palette_selected(index: int, option: OptionButton) -> voi
 func _on_custom_stamp_paint_pressed() -> void:
 	if _livery_editing_locked():
 		return
-	editing_catalog_stamp_hash = ""
-	_custom_painter_reset(custom_painter_size)
-	custom_stamp_painter_popup.popup_centered(Vector2i(580, 660))
+	stamp_painter.open_new()
 
 func _on_custom_stamp_import_file_selected(path: String) -> void:
 	if _livery_editing_locked():
@@ -1338,9 +1307,7 @@ func _edit_custom_stamp_from_catalog(stamp_hash: String) -> void:
 	if blob.bits_per_pixel != CustomStampBlob.BPP_CUSTOM_PALETTE:
 		push_warning("8bpp palette stamps cannot be edited in the painter yet.")
 		return
-	editing_catalog_stamp_hash = stamp_hash
-	_custom_painter_load_blob(blob)
-	custom_stamp_painter_popup.popup_centered(Vector2i(580, 660))
+	stamp_painter.open_blob(stamp_hash, blob)
 
 func _delete_custom_stamp_from_catalog(stamp_hash: String) -> void:
 	var removed_from_current_livery := false
@@ -1355,8 +1322,7 @@ func _delete_custom_stamp_from_catalog(stamp_hash: String) -> void:
 		return
 	custom_stamp_preview_textures.erase(stamp_hash)
 	selected_catalog_stamp_hash = ""
-	if editing_catalog_stamp_hash == stamp_hash:
-		editing_catalog_stamp_hash = ""
+	stamp_painter.cancel_if_editing(stamp_hash)
 	if removed_from_current_livery:
 		_refresh_preview_custom_stamp_atlas()
 		_save_livery_for_selected_car()
@@ -1386,169 +1352,10 @@ func _custom_stamp_preview_texture(blob: CustomStampBlob) -> Texture2D:
 		custom_stamp_preview_textures[blob.stamp_hash] = texture
 	return texture
 
-func _on_custom_painter_size_selected(index: int) -> void:
-	var id := custom_stamp_painter_size_option.get_item_id(index)
-	match id:
-		256128:
-			_custom_painter_reset(Vector2i(256, 128))
-		128256:
-			_custom_painter_reset(Vector2i(128, 256))
-		_:
-			_custom_painter_reset(Vector2i(id, id))
-
-func _custom_painter_reset(size: Vector2i) -> void:
-	custom_painter_size = size
-	_select_custom_painter_size_option(size)
-	custom_painter_indices.resize(size.x * size.y)
-	custom_painter_indices.fill(0)
-	custom_painter_palette = _default_custom_painter_palette()
-	custom_painter_colour_index = 1
-	custom_stamp_painter_colour_picker.color = custom_painter_palette[custom_painter_colour_index]
-	_rebuild_custom_painter_palette_buttons()
-	_refresh_custom_painter_texture()
-
-func _custom_painter_load_blob(blob: CustomStampBlob) -> void:
-	if blob == null or blob.bits_per_pixel != CustomStampBlob.BPP_CUSTOM_PALETTE:
-		return
-	custom_painter_size = Vector2i(blob.width, blob.height)
-	_select_custom_painter_size_option(custom_painter_size)
-	custom_painter_indices = _custom_painter_unpack_indices(blob.decompress_indices(), blob.width * blob.height)
-	custom_painter_palette = _normalized_custom_painter_palette(blob.custom_palette)
-	custom_painter_colour_index = 1
-	custom_stamp_painter_colour_picker.color = custom_painter_palette[custom_painter_colour_index]
-	_rebuild_custom_painter_palette_buttons()
-	_refresh_custom_painter_texture()
-
-func _select_custom_painter_size_option(size: Vector2i) -> void:
-	var target_id := size.x if size.x == size.y else int("%d%d" % [size.x, size.y])
-	for i in range(custom_stamp_painter_size_option.item_count):
-		if custom_stamp_painter_size_option.get_item_id(i) == target_id:
-			custom_stamp_painter_size_option.select(i)
-			return
-
-func _custom_painter_unpack_indices(raw: PackedByteArray, pixel_count: int) -> PackedByteArray:
-	var indices := PackedByteArray()
-	indices.resize(pixel_count)
-	for pixel_index in range(pixel_count):
-		var packed := int(raw[int(pixel_index / 2)])
-		if (pixel_index & 1) == 0:
-			indices[pixel_index] = packed & 0x0f
-		else:
-			indices[pixel_index] = (packed >> 4) & 0x0f
-	return indices
-
-func _normalized_custom_painter_palette(source: PackedColorArray) -> PackedColorArray:
-	var palette := PackedColorArray()
-	palette.append(Color(1.0, 1.0, 1.0, 0.0))
-	var start := 1 if source.size() > 0 and source[0].a <= 0.0 else 0
-	for i in range(start, mini(source.size(), start + 15)):
-		palette.append(source[i])
-	while palette.size() < 16:
-		palette.append(Color.WHITE)
-	return palette
-
-func _default_custom_painter_palette() -> PackedColorArray:
-	var palette := PackedColorArray()
-	palette.append(Color(1.0, 1.0, 1.0, 0.0))
-	for colour in [
-		Color.WHITE,
-		Color.BLACK,
-		Color(0.88, 0.08, 0.12, 1.0),
-		Color(1.0, 0.78, 0.12, 1.0),
-		Color(0.1, 0.75, 0.25, 1.0),
-		Color(0.1, 0.55, 1.0, 1.0),
-		Color(0.55, 0.25, 1.0, 1.0),
-		Color(1.0, 0.25, 0.7, 1.0),
-		Color(0.0, 0.85, 0.85, 1.0),
-		Color(0.95, 0.45, 0.12, 1.0),
-		Color(0.45, 0.25, 0.12, 1.0),
-		Color(0.45, 0.45, 0.45, 1.0),
-		Color(0.72, 0.72, 0.72, 1.0),
-		Color(0.25, 0.35, 0.45, 1.0),
-		Color(0.02, 0.02, 0.04, 1.0),
-	]:
-		palette.append(colour)
-	return palette
-
-func _rebuild_custom_painter_palette_buttons() -> void:
-	for child in custom_stamp_painter_palette_grid.get_children():
-		child.queue_free()
-	for index in range(16):
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(52.0, 28.0)
-		button.text = "T" if index == 0 else str(index)
-		button.modulate = Color(1.0, 1.0, 1.0, 1.0) if index == 0 else custom_painter_palette[index]
-		button.disabled = false
-		button.pressed.connect(_on_custom_painter_palette_pressed.bind(index))
-		custom_stamp_painter_palette_grid.add_child(button)
-
-func _on_custom_painter_palette_pressed(index: int) -> void:
-	custom_painter_colour_index = clampi(index, 0, 15)
-	if custom_painter_colour_index > 0:
-		custom_stamp_painter_colour_picker.color = custom_painter_palette[custom_painter_colour_index]
-
-func _on_custom_painter_colour_changed(colour: Color) -> void:
-	if custom_painter_colour_index <= 0:
-		return
-	custom_painter_palette[custom_painter_colour_index] = Color(colour.r, colour.g, colour.b, 1.0)
-	_rebuild_custom_painter_palette_buttons()
-	_refresh_custom_painter_texture()
-
-func _on_custom_painter_canvas_input(event: InputEvent) -> void:
-	var mouse_button := event as InputEventMouseButton
-	if mouse_button != null and mouse_button.button_index == MOUSE_BUTTON_LEFT:
-		custom_painter_drawing = mouse_button.pressed
-		if mouse_button.pressed:
-			_custom_painter_draw_at(mouse_button.position)
-			custom_stamp_painter_canvas.accept_event()
-		return
-	var motion := event as InputEventMouseMotion
-	if motion != null and custom_painter_drawing:
-		_custom_painter_draw_at(motion.position)
-		custom_stamp_painter_canvas.accept_event()
-
-func _custom_painter_draw_at(position: Vector2) -> void:
-	if custom_stamp_painter_canvas.size.x <= 0.0 or custom_stamp_painter_canvas.size.y <= 0.0:
-		return
-	var x := clampi(int(floorf(position.x / custom_stamp_painter_canvas.size.x * float(custom_painter_size.x))), 0, custom_painter_size.x - 1)
-	var y := clampi(int(floorf(position.y / custom_stamp_painter_canvas.size.y * float(custom_painter_size.y))), 0, custom_painter_size.y - 1)
-	custom_painter_indices[y * custom_painter_size.x + x] = custom_painter_colour_index
-	_refresh_custom_painter_texture()
-
-func _refresh_custom_painter_texture() -> void:
-	var image := Image.create(custom_painter_size.x, custom_painter_size.y, false, Image.FORMAT_RGBA8)
-	for y in range(custom_painter_size.y):
-		for x in range(custom_painter_size.x):
-			var index := int(custom_painter_indices[y * custom_painter_size.x + x])
-			image.set_pixel(x, y, custom_painter_palette[index] if index > 0 else Color(1.0, 1.0, 1.0, 0.0))
-	if custom_painter_texture == null:
-		custom_painter_texture = ImageTexture.create_from_image(image)
-	else:
-		custom_painter_texture.set_image(image)
-	custom_stamp_painter_canvas.texture = custom_painter_texture
-
-func _on_custom_painter_clear_pressed() -> void:
-	custom_painter_indices.fill(0)
-	_refresh_custom_painter_texture()
-
-func _on_custom_painter_save_pressed() -> void:
-	var raw := _custom_painter_pack_indices()
-	var blob: CustomStampBlob = CustomStampBlob.from_index_bytes(custom_painter_size.x, custom_painter_size.y, CustomStampBlob.BPP_CUSTOM_PALETTE, 0, raw, custom_painter_palette)
-	var validation_error := blob.validate_blob()
-	if validation_error != "":
-		push_warning("Painted custom stamp is invalid: %s" % validation_error)
-		return
-	var err := CustomStampStore.save_blob(blob)
-	if err != OK:
-		push_warning("Failed to save painted custom stamp: %s" % err)
-		return
-	var old_hash := editing_catalog_stamp_hash
-	if old_hash != "" and old_hash != blob.stamp_hash:
-		_replace_custom_stamp_references(old_hash, blob)
-		CustomStampStore.delete_blob(old_hash)
-		custom_stamp_preview_textures.erase(old_hash)
-	editing_catalog_stamp_hash = ""
-	custom_stamp_painter_popup.hide()
+func _on_custom_stamp_painter_saved(previous_hash: String, blob: CustomStampBlob) -> void:
+	if !previous_hash.is_empty() and previous_hash != blob.stamp_hash:
+		_replace_custom_stamp_references(previous_hash, blob)
+		custom_stamp_preview_textures.erase(previous_hash)
 	_refresh_custom_stamp_library()
 
 func _replace_custom_stamp_references(old_hash: String, new_blob: CustomStampBlob) -> void:
@@ -1565,22 +1372,6 @@ func _replace_custom_stamp_references(old_hash: String, new_blob: CustomStampBlo
 	_refresh_preview_custom_stamp_atlas()
 	_save_livery_for_selected_car()
 	_refresh_stamp_controls()
-
-func _custom_painter_pack_indices() -> PackedByteArray:
-	var raw := PackedByteArray()
-	raw.resize(CustomStampBlob.index_byte_size(custom_painter_size.x, custom_painter_size.y, CustomStampBlob.BPP_CUSTOM_PALETTE))
-	for pixel_index in range(custom_painter_indices.size()):
-		var index := int(custom_painter_indices[pixel_index]) & 0x0f
-		var byte_index := int(pixel_index / 2)
-		if (pixel_index & 1) == 0:
-			raw[byte_index] = (raw[byte_index] & 0xf0) | index
-		else:
-			raw[byte_index] = (raw[byte_index] & 0x0f) | (index << 4)
-	return raw
-
-func _on_custom_painter_cancel_pressed() -> void:
-	custom_stamp_painter_popup.hide()
-	editing_catalog_stamp_hash = ""
 
 func _begin_stamp_edit(layer: int, stamp: CarLiveryStamp, is_new: bool) -> void:
 	if _livery_editing_locked():

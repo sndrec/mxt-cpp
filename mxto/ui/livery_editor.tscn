@@ -1,7 +1,11 @@
 [gd_scene format=3 uid="uid://eqk3r3r7t5wn"]
 
 [ext_resource type="Script" path="res://ui/livery_editor.gd" id="1_livery"]
+[ext_resource type="Script" path="res://ui/custom_stamp_painter_controller.gd" id="2_painter"]
 
 [node name="LiveryEditor" type="Control"]
 mouse_filter = 2
 script = ExtResource("1_livery")
+
+[node name="CustomStampPainterController" type="Node" parent="."]
+script = ExtResource("2_painter")
