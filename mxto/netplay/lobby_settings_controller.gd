@@ -154,7 +154,12 @@ func process_latency(waiting_peer_ids: Array) -> void:
 				continue
 			latency_pending_msec[player_id] = now
 			_lobby_latency_ping.rpc_id(player_id, now)
-		_lobby_latency_snapshot.rpc(latency_rtt_s)
+		var latency_player_ids := PackedInt64Array()
+		var latency_values := PackedFloat32Array()
+		for id_value in latency_rtt_s:
+			latency_player_ids.append(int(id_value))
+			latency_values.append(float(latency_rtt_s[id_value]))
+		_lobby_latency_snapshot.rpc(latency_player_ids, latency_values)
 	else:
 		latency_pending_msec[1] = now
 		_lobby_latency_ping.rpc_id(1, now)
@@ -298,10 +303,15 @@ func _lobby_latency_pong(sent_msec: int) -> void:
 	latency_pending_msec.erase(sender)
 
 @rpc("authority", "unreliable")
-func _lobby_latency_snapshot(latencies: Dictionary) -> void:
+func _lobby_latency_snapshot(player_ids_snapshot: PackedInt64Array, latencies: PackedFloat32Array) -> void:
 	if race_active:
 		return
-	latency_rtt_s = latencies.duplicate(true)
+	if player_ids_snapshot.size() != latencies.size() or player_ids_snapshot.size() > 1024:
+		return
+	latency_rtt_s.clear()
+	for index in player_ids_snapshot.size():
+		if player_ids_snapshot[index] >= 0 and is_finite(latencies[index]) and latencies[index] >= 0.0:
+			latency_rtt_s[int(player_ids_snapshot[index])] = float(latencies[index])
 	if !is_server:
 		latency_rtt_s[multiplayer.get_unique_id()] = local_rtt_s
 

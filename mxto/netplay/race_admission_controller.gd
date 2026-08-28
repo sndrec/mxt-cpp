@@ -298,7 +298,7 @@ func _request_drop_stalled_players(phase: int) -> void:
 		_drop_stalled_players(_id_array(info.get("stalled_peer_ids", [])))
 
 @rpc("authority", "call_remote", "unreliable", 7)
-func _sync_drop_status(phase: int, stalled_ids: Array, stalled_stages: PackedStringArray, stalled_details: PackedStringArray, drop_remaining_sec: float) -> void:
+func _sync_drop_status(phase: int, stalled_ids: PackedInt64Array, stalled_stages: PackedStringArray, stalled_details: PackedStringArray, drop_remaining_sec: float) -> void:
 	if !_accept_phase(phase):
 		return
 	remote_stalled_ids = _id_array(stalled_ids)
@@ -416,7 +416,7 @@ func _broadcast_drop_status() -> void:
 		return
 	last_drop_status_msec = now_msec
 	var info := drop_info()
-	_sync_drop_status.rpc(race_phase, _id_array(info.get("stalled_peer_ids", [])), info.get("stalled_stages", PackedStringArray()), info.get("stalled_details", PackedStringArray()), float(info.get("drop_remaining_sec", 0.0)))
+	_sync_drop_status.rpc(race_phase, PackedInt64Array(_id_array(info.get("stalled_peer_ids", []))), info.get("stalled_stages", PackedStringArray()), info.get("stalled_details", PackedStringArray()), float(info.get("drop_remaining_sec", 0.0)))
 
 func _drop_stalled_players(peer_ids: Array) -> void:
 	if !is_server or !race_active:

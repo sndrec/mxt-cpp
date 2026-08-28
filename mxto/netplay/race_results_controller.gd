@@ -145,25 +145,38 @@ func send_race_force_end_deadline(deadline_tick: int) -> void:
 	set_race_force_end_deadline.rpc(race_phase, deadline_tick)
 
 @rpc("authority", "call_local", "reliable")
-func set_final_race_results(phase: int, placements: Dictionary, finish_ticks: Dictionary) -> void:
+func set_final_race_results(
+		phase: int,
+		placement_player_ids: PackedInt64Array,
+		placement_values: PackedInt32Array,
+		finish_player_ids: PackedInt64Array,
+		finish_tick_values: PackedInt32Array) -> void:
 	if !_accept_phase(phase):
 		return
-	for id_value in finish_ticks.keys():
-		var player_id := int(id_value)
+	if placement_player_ids.size() != placement_values.size() or finish_player_ids.size() != finish_tick_values.size():
+		push_warning("Rejected malformed final race results")
+		return
+	if placement_player_ids.size() > 1024 or finish_player_ids.size() > 1024:
+		push_warning("Rejected oversized final race results")
+		return
+	for index in finish_player_ids.size():
+		var player_id := int(finish_player_ids[index])
+		if player_id < 0 or finish_tick_values[index] < 0:
+			continue
 		if player_dnfs.has(player_id):
 			continue
 		player_eliminations.erase(player_id)
 		if !player_finish_times.has(player_id):
-			player_finish_times[player_id] = int(finish_ticks[id_value])
+			player_finish_times[player_id] = int(finish_tick_values[index])
 	rebuild_finish_order()
 	var next_place := finish_order.size() + 1
 	var rows := []
-	for id_value in placements.keys():
-		var player_id := int(id_value)
+	for index in placement_player_ids.size():
+		var player_id := int(placement_player_ids[index])
 		if player_finish_placements.has(player_id):
 			continue
-		var place := int(placements[id_value])
-		if place > 0:
+		var place := int(placement_values[index])
+		if player_id >= 0 and place > 0:
 			rows.append([place, player_id])
 	rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
@@ -179,8 +192,20 @@ func set_final_race_results(phase: int, placements: Dictionary, finish_ticks: Di
 func send_final_race_results(placements: Dictionary, finish_ticks: Dictionary) -> void:
 	if !is_server:
 		return
-	set_final_race_results.rpc(race_phase, placements, finish_ticks)
-	set_final_race_results(race_phase, placements, finish_ticks)
+	var placement_player_ids := PackedInt64Array()
+	var placement_values := PackedInt32Array()
+	for id_value in placements:
+		placement_player_ids.append(int(id_value))
+		placement_values.append(int(placements[id_value]))
+	var finish_player_ids := PackedInt64Array()
+	var finish_tick_values := PackedInt32Array()
+	for id_value in finish_ticks:
+		finish_player_ids.append(int(id_value))
+		finish_tick_values.append(int(finish_ticks[id_value]))
+	set_final_race_results.rpc(
+		race_phase, placement_player_ids, placement_values, finish_player_ids, finish_tick_values)
+	set_final_race_results(
+		race_phase, placement_player_ids, placement_values, finish_player_ids, finish_tick_values)
 
 func rebuild_finish_order() -> void:
 	finish_order.clear()

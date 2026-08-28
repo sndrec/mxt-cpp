@@ -262,7 +262,7 @@ func _on_lobby_player_role_changed(player_id: int, spectator: bool) -> void:
 	var cpu_ids_changed := lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
 	refresh_protocol_contexts()
 	if !race_active:
-		_update_player_ids.rpc(player_ids, spectator_ids)
+		_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 		if cpu_ids_changed:
 			lobby_settings.broadcast_cpu_roster()
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
@@ -391,7 +391,7 @@ func _on_peer_disconnected(id: int) -> void:
 		race_admission.remove_peer(id)
 		state_transfer.remove_peer(id)
 		if !race_active:
-			_update_player_ids.rpc(player_ids, spectator_ids)
+			_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 		if race_active:
 			race_admission.evaluate()
@@ -405,7 +405,7 @@ func kick_human_player(id: int) -> void:
 		return
 	multiplayer.disconnect_peer(id)
 	_on_peer_disconnected(id)
-	_update_player_ids.rpc(player_ids, spectator_ids)
+	_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 
 
@@ -417,7 +417,7 @@ func _accept_peer(id: int) -> void:
 	if race_active or (server_game_sim != null and server_game_sim.sim_started):
 		if !waiting_peers.has(id):
 			waiting_peers.append(id)
-		_update_player_ids.rpc_id(id, player_ids, spectator_ids)
+		_update_player_ids.rpc_id(id, PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 		lobby_settings.send_cpu_roster_to_peer(id)
 		sync_race_state.rpc_id(id, race_configuration.encode_wire(), race_track_evidence.encode_wire(), race_state.encode_wire())
 		return
@@ -431,7 +431,7 @@ func _accept_peer(id: int) -> void:
 	input_transport.server_netcode_session.set_peer_last_received(id, -1, input_transport.last_input_time[id])
 	input_transport.server_netcode_session.set_peer_desired_ahead(id, 0.0)
 	if !race_active:
-		_update_player_ids.rpc(player_ids, spectator_ids)
+		_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 		if cpu_ids_changed:
 			lobby_settings.broadcast_cpu_roster()
 		lobby_settings.send_cpu_roster_to_peer(id)
@@ -490,7 +490,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 			custom_stamp_network.send_manifests_to_peer(id)
 	waiting_peers.clear()
 	_sync_lobby_settings_context()
-	_update_player_ids.rpc(player_ids, spectator_ids)
+	_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 	refresh_protocol_contexts()
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	for id in new_ids:
@@ -501,13 +501,13 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 func broadcast_lobby_roster() -> void:
 	if !is_server:
 		return
-	_update_player_ids.rpc(player_ids, spectator_ids)
+	_update_player_ids.rpc(PackedInt64Array(player_ids), PackedInt64Array(spectator_ids))
 	lobby_settings.broadcast_cpu_roster()
 
 @rpc("authority", "call_remote", "reliable", 7)
-func _update_player_ids(ids: Array, spectators: Array) -> void:
-	player_ids = ids
-	spectator_ids = spectators
+func _update_player_ids(ids: PackedInt64Array, spectators: PackedInt64Array) -> void:
+	player_ids = Array(ids)
+	spectator_ids = Array(spectators)
 	_sync_lobby_settings_context()
 	refresh_protocol_contexts()
 	if is_server:
