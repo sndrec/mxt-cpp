@@ -180,7 +180,10 @@ func send_player_settings_to_all(settings: Dictionary, player_id: int) -> void:
 func send_player_settings_snapshot_to_peer(peer_id: int) -> void:
 	if !is_server or race_active or player_settings.is_empty() or !_can_send_to_peer(peer_id):
 		return
-	var raw := var_to_bytes(player_settings)
+	var roster := _build_settings_roster(player_settings.keys())
+	if roster == null:
+		return
+	var raw := roster.encode_wire()
 	if raw.is_empty() or raw.size() > SETTINGS_SNAPSHOT_MAX_BYTES:
 		push_warning("Lobby settings snapshot rejected before send: %d bytes" % raw.size())
 		return
@@ -224,17 +227,25 @@ func remove_player(player_id: int) -> void:
 func broadcast_cpu_roster() -> void:
 	if !is_server:
 		return
-	var settings_array := _collect_cpu_settings_array()
-	_apply_cpu_roster(cpu_player_ids, settings_array)
-	sync_cpu_roster.rpc(cpu_player_ids, settings_array)
+	var roster := _build_settings_roster(cpu_player_ids)
+	if roster == null:
+		return
+	_apply_cpu_roster(roster)
+	sync_cpu_roster.rpc(roster.encode_wire())
 
 func send_cpu_roster_to_peer(peer_id: int) -> void:
 	if is_server:
-		sync_cpu_roster.rpc_id(peer_id, cpu_player_ids, _collect_cpu_settings_array())
+		var roster := _build_settings_roster(cpu_player_ids)
+		if roster != null:
+			sync_cpu_roster.rpc_id(peer_id, roster.encode_wire())
 
 @rpc("authority", "call_remote", "reliable")
-func sync_cpu_roster(ids: Array, settings_array: Array) -> void:
-	_apply_cpu_roster(ids, settings_array)
+func sync_cpu_roster(payload: PackedByteArray) -> void:
+	var roster := MxtRaceRoster.new()
+	if !roster.decode_wire(payload):
+		push_warning("Rejected malformed CPU roster: %s" % roster.get_last_error())
+		return
+	_apply_cpu_roster(roster)
 
 @rpc("any_peer", "unreliable")
 func _lobby_latency_ping(sent_msec: int) -> void:
@@ -282,14 +293,12 @@ func _receive_player_settings_snapshot(raw_size: int, payload: PackedByteArray) 
 	if raw.size() != raw_size:
 		push_warning("Rejected malformed lobby settings snapshot")
 		return
-	var decoded = bytes_to_var(raw)
-	if typeof(decoded) != TYPE_DICTIONARY:
+	var roster := MxtRaceRoster.new()
+	if !roster.decode_wire(raw):
+		push_warning("Rejected malformed lobby settings snapshot: %s" % roster.get_last_error())
 		return
-	for raw_id in (decoded as Dictionary).keys():
-		var player_id := int(raw_id)
-		var settings = (decoded as Dictionary)[raw_id]
-		if player_id > 0 and typeof(settings) == TYPE_DICTIONARY:
-			_store_player_settings(player_id, settings)
+	for index in roster.count():
+		_store_player_settings(roster.get_player_id(index), roster.get_settings_dictionary(index))
 
 @rpc("any_peer", "call_remote", "reliable", 10)
 func update_next_race_accel_setting(accel_setting: float, player_id: int = -1) -> void:
@@ -321,12 +330,18 @@ func _receive_player_settings_update(raw_size: int, payload: PackedByteArray, pl
 		raw = payload
 	if raw.size() != raw_size:
 		return
-	var decoded = bytes_to_var(raw)
-	if typeof(decoded) == TYPE_DICTIONARY:
-		_apply_player_settings_update(decoded, player_id, sender_id)
+	var roster := MxtRaceRoster.new()
+	if !roster.decode_wire(raw) or roster.count() != 1:
+		return
+	_apply_player_settings_update(roster.get_settings_dictionary(0), player_id, sender_id)
 
 func _send_player_settings_update(settings: Dictionary, player_id: int, peer_id: int = 0) -> void:
-	var raw := var_to_bytes(settings)
+	var wire_player_id := player_id if player_id > 0 else multiplayer.get_unique_id()
+	var roster := MxtRaceRoster.new()
+	if !roster.append_settings(wire_player_id, wire_player_id, cpu_player_ids.has(wire_player_id), false, false, settings):
+		push_warning("Lobby settings update rejected before send: %s" % roster.get_last_error())
+		return
+	var raw := roster.encode_wire()
 	if raw.is_empty() or raw.size() > SETTINGS_SNAPSHOT_MAX_BYTES:
 		return
 	var payload := raw.compress(FileAccess.COMPRESSION_ZSTD)
@@ -499,24 +514,34 @@ func _remove_cpu_driver() -> void:
 	race_cpu_player_ids.erase(removed_id)
 	cpu_removed.emit(removed_id)
 
-func _collect_cpu_settings_array() -> Array:
-	var settings_array: Array = []
-	for player_id in cpu_player_ids:
-		settings_array.append(cpu_player_settings.get(player_id, {}))
-	return settings_array
-
-func _apply_cpu_roster(ids: Array, settings_array: Array) -> void:
+func _apply_cpu_roster(roster: MxtRaceRoster) -> void:
 	var previous := cpu_player_ids.duplicate(true)
-	cpu_player_ids = ids.duplicate(true)
+	cpu_player_ids.clear()
+	for index in roster.count():
+		var player_id := roster.get_player_id(index)
+		if !cpu_player_ids.has(player_id):
+			cpu_player_ids.append(player_id)
 	cpu_player_settings.clear()
 	for old_id in previous:
 		if !cpu_player_ids.has(old_id):
 			player_settings.erase(old_id)
-	for index in cpu_player_ids.size():
-		var player_id := int(cpu_player_ids[index])
-		var settings = settings_array[index] if index < settings_array.size() else {}
+	for index in roster.count():
+		var player_id := roster.get_player_id(index)
+		var settings := roster.get_settings_dictionary(index)
 		cpu_player_settings[player_id] = settings
 		player_settings[player_id] = settings
+
+func _build_settings_roster(ids: Array) -> MxtRaceRoster:
+	var roster := MxtRaceRoster.new()
+	for id_value in ids:
+		var player_id := int(id_value)
+		var settings = player_settings.get(player_id, null)
+		if typeof(settings) != TYPE_DICTIONARY:
+			continue
+		if !roster.append_settings(player_id, player_id, cpu_player_ids.has(player_id), false, false, settings):
+			push_warning("Lobby roster rejected before send: %s" % roster.get_last_error())
+			return null
+	return roster
 
 func _id_array(values: Array) -> Array:
 	var result: Array = []

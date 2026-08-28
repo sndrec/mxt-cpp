@@ -25,6 +25,13 @@ struct Writer {
 	void u32(uint32_t value) {
 		for (uint32_t shift = 0; shift < 32; shift += 8) bytes.push_back(static_cast<uint8_t>(value >> shift));
 	}
+	void i32(int32_t value) { u32(static_cast<uint32_t>(value)); }
+	void f32(float value) {
+		uint32_t bits = 0;
+		static_assert(sizeof(bits) == sizeof(value));
+		std::memcpy(&bits, &value, sizeof(bits));
+		u32(bits);
+	}
 	void i64(int64_t value) {
 		const uint64_t bits = static_cast<uint64_t>(value);
 		u32(static_cast<uint32_t>(bits));
@@ -72,6 +79,18 @@ struct Reader {
 			(static_cast<uint32_t>(bytes[1]) << 8) |
 			(static_cast<uint32_t>(bytes[2]) << 16) |
 			(static_cast<uint32_t>(bytes[3]) << 24);
+		return true;
+	}
+	bool i32(int32_t &out) {
+		uint32_t bits = 0;
+		if (!u32(bits)) return false;
+		out = static_cast<int32_t>(bits);
+		return true;
+	}
+	bool f32(float &out) {
+		uint32_t bits = 0;
+		if (!u32(bits)) return false;
+		std::memcpy(&out, &bits, sizeof(out));
 		return true;
 	}
 	bool i64(int64_t &out) {
