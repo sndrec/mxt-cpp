@@ -15,6 +15,7 @@ func _run() -> void:
 	var game_manager := packed.instantiate() as GameManager
 	root.add_child(game_manager)
 	var content := game_manager.track_content_controller as TrackContentController
+	var presentation := game_manager.track_presentation_controller as TrackPresentationController
 	if content.tracks.is_empty():
 		_fail("catalog is empty")
 		return
@@ -60,20 +61,20 @@ func _run() -> void:
 				and String(track.get("gameplay_digest", "")) == first_digest:
 			_fail("an official gameplay digest was retained as loose content")
 			return
-	if !content.prepare_race(0):
+	if !presentation.prepare_race(first_track):
 		_fail("could not prepare first track")
 		return
-	if content.current_track_index != 0 or content.current_metadata.is_empty():
+	if presentation.current_metadata.is_empty():
 		_fail("current track metadata was not loaded")
 		return
-	if content.current_track_dir.is_empty():
+	if presentation.current_track_dir.is_empty():
 		_fail("current track directory was not retained")
 		return
-	if content.current_visual_path.is_empty():
+	if presentation.current_visual_path.is_empty():
 		_fail("current track visual was not resolved")
 		return
-	content.load_runtime_visuals()
-	if content.visual_scene_instance == null and game_manager.debug_track_mesh.mesh == null:
+	presentation.load_runtime_visuals()
+	if presentation.visual_scene_instance == null and game_manager.debug_track_mesh.mesh == null:
 		_fail("current track visual was not loaded")
 		return
 	var fallback_track_index := -1
@@ -82,15 +83,15 @@ func _run() -> void:
 		if !FileAccess.file_exists(String(track.get("dir", "")).path_join("ground.png")):
 			fallback_track_index = i
 			break
-	if fallback_track_index < 0 or !content.prepare_race(fallback_track_index):
+	if fallback_track_index < 0 or !presentation.prepare_race(content.tracks[fallback_track_index]):
 		_fail("could not prepare a track without ground.png")
 		return
 	var floor_material := game_manager.track_floor.get_active_material(0) as ShaderMaterial
-	if floor_material == null or floor_material.get_shader_parameter("texture_albedo") != TrackContentController.DEFAULT_GROUND_TEXTURE:
+	if floor_material == null or floor_material.get_shader_parameter("texture_albedo") != TrackPresentationController.DEFAULT_GROUND_TEXTURE:
 		_fail("track without ground.png did not restore cityscape.png")
 		return
-	content.teardown_runtime()
-	if content.current_track_index != -1 or !content.current_metadata.is_empty():
+	presentation.teardown_runtime()
+	if !presentation.current_metadata.is_empty():
 		_fail("runtime teardown did not clear owned state")
 		return
 	if game_manager.world_environment.environment != game_manager.default_world_environment_resource:

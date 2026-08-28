@@ -856,6 +856,69 @@ int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray pack
 	InputFrame* frames[MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET] = {};
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		const int tick = first_tick + f;
+		InputFrame& frame = frame_for(authoritative_history, tick);
+		clear_frame(frame, tick);
+		frames[f] = &frame;
+		for (int i = 0; i < racer_count; ++i) {
+			frame.inputs[i] = neutral_input;
+			frame.present[i] = 1;
+		}
+	}
+
+	for (int f = 0; f < static_cast<int>(count); ++f) {
+		InputFrame* frame = frames[f];
+		for (int i = 0; i < racer_count; ++i) {
+			const int input_index = f * racer_count + i;
+			uint8_t mask = 0;
+			for (int bit = 0; bit < 5; ++bit) {
+				if ((raw_bytes[bit * bitset_bytes + (input_index >> 3)] &
+						static_cast<uint8_t>(1u << (input_index & 7))) != 0) {
+					mask |= static_cast<uint8_t>(1u << bit);
+				}
+			}
+			frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
+			frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
+			frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
+			frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
+			frame->inputs[i].boost = (mask & (1u << 4)) != 0;
+		}
+	}
+
+	int raw_pos = bitset_bytes * 5;
+	uint8_t previous_values[MAX_RACERS] = {};
+	for (int component = 0; component < 4; ++component) {
+		std::memset(previous_values, 0, sizeof(previous_values));
+		for (int f = 0; f < static_cast<int>(count); ++f) {
+			InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				uint8_t value = raw_bytes[raw_pos++];
+				if (analog_delta_layout && f > 0) {
+					value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
+				}
+				previous_values[i] = value;
+				switch (component) {
+					case 0:
+						frame->inputs[i].strafe_left = trigger_from_byte(value);
+						break;
+					case 1:
+						frame->inputs[i].strafe_right = trigger_from_byte(value);
+						break;
+					case 2:
+						frame->inputs[i].steer_horizontal = axis_from_byte(value);
+						break;
+					default:
+						frame->inputs[i].steer_vertical = axis_from_byte(value);
+						break;
+				}
+			}
+		}
+	}
+	if (raw_pos != raw.size()) {
+		return PACKET_STORE_INVALID;
+	}
+
+	for (int f = 0; f < static_cast<int>(count); ++f) {
+		const int tick = first_tick + f;
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 		last_authoritative_packet_result.last_tick = tick;
 	}
