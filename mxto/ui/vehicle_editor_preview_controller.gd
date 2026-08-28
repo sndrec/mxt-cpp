@@ -69,6 +69,9 @@ func initialize(owner_ui: Control, authoring_session: MxtCarAuthoringSession) ->
 	preview_preset.item_selected.connect(_apply_preview_preset)
 	preview_diagnostic.item_selected.connect(_apply_preview_diagnostic)
 
+func set_session(authoring_session: MxtCarAuthoringSession) -> void:
+	session = authoring_session
+
 func set_document_context(in_draft_id: String, in_properties_path: String, in_draft_root: String, in_official_definition: CarDefinition) -> void:
 	draft_id = in_draft_id
 	properties_path = in_properties_path

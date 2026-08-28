@@ -4,13 +4,10 @@ signal content_changed
 signal test_drive_requested(snapshot: MxtContentLoadResult)
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
-const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
 const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
-const AUTOSAVE_DEBOUNCE_MSEC := 900
-const AUTOSAVE_RETRY_MSEC := 5000
 const MATERIAL_TEXTURE_MAX_BYTES := 20 * 1024 * 1024
 const MATERIAL_TEXTURE_MAX_DIMENSION := 2048
 const MATERIAL_TEXTURE_FILES := {
@@ -48,7 +45,6 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var workshop_status: Label = $Workshop/Status
 @onready var workshop_page_button: Button = $Workshop/OpenPage
 @onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
-@onready var autosave_status: Label = $Toolbar/AutosaveStatus
 @onready var archive_draft_dialog: ConfirmationDialog = $ArchiveDraftDialog
 @onready var delete_draft_dialog: ConfirmationDialog = $DeleteDraftDialog
 @onready var workshop_capture_button: Button = $Workshop/CapturePreview
@@ -58,18 +54,11 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var publish_changelog: TextEdit = $PublishReviewDialog/Review/Changelog
 @onready var preview_controller: VehicleEditorPreviewController = $PreviewController
 @onready var curve_controller: VehicleEditorCurveController = $CurveController
+@onready var document_controller: VehicleEditorDocumentController = $DocumentController
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
 var session := MxtCarAuthoringSession.new()
-var draft_store := MxtCarDraftStore.new()
-var draft_id := ""
-var current_properties_path := ""
-var editing_official_definition: CarDefinition
-var metadata_dirty := false
-var draft_initialized := false
-var autosave_due_msec := 0
-var autosave_error := ""
 var pending_material_texture := ""
 var workshop_request_id := 0
 var workshop_operation := ""
@@ -91,6 +80,10 @@ func _ready() -> void:
 	curve_controller.initialize(self, session)
 	curve_controller.diagnostics_requested.connect(_show_diagnostics)
 	curve_controller.history_changed.connect(_refresh_history_buttons)
+	document_controller.initialize(self, session, preview_controller, curve_controller)
+	document_controller.diagnostics_requested.connect(_show_diagnostics)
+	document_controller.content_changed.connect(func(): content_changed.emit())
+	document_controller.draft_saved.connect(_refresh_draft_options)
 	_setup_options()
 	_setup_vector_controls()
 	preview_controller.initialize(self, session)
@@ -232,19 +225,15 @@ func _connect_controls() -> void:
 				control.value_changed.connect(func(_value): _apply_visual_controls())
 		else:
 			controls_value.value_changed.connect(func(_value): _apply_visual_controls())
-	title_input.text_changed.connect(func(_value): _mark_dirty())
-	author_input.text_changed.connect(func(_value): _mark_dirty())
-	description_input.text_changed.connect(_mark_dirty)
 
 
 func _new_draft() -> bool:
-	if _has_editable_document() and !_flush_autosave():
+	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
 		return false
-	editing_official_definition = null
-	draft_id = "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
+	var new_draft_id := "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
 	session = MxtCarAuthoringSession.new()
-	draft_initialized = true
-	current_properties_path = ""
+	document_controller.set_session(session)
+	document_controller.begin_new(new_draft_id)
 	preview_controller.reset_livery()
 	updating_controls = true
 	title_input.text = "New Machine"
@@ -256,26 +245,20 @@ func _new_draft() -> bool:
 	updating_controls = false
 	workshop_published_file_id = 0
 	workshop_preview_captured = false
-	metadata_dirty = true
-	autosave_error = ""
 	_refresh_workshop_controls()
 	_refresh_document_mode_controls()
 	_refresh_all()
 	visual_status.text = "New draft. Import a static GLB or glTF vehicle model."
-	if !_autosave_draft():
+	if !document_controller.save(workshop_published_file_id):
 		return false
 	return true
 
 
-func _draft_root() -> String:
-	return "%s/%s" % [DRAFTS_ROOT, draft_id]
-
-
 func _boost_sound_path() -> String:
-	if !draft_initialized:
+	if !document_controller.draft_initialized:
 		return ""
 	for extension in ["wav", "ogg"]:
-		var path := "%s/manual_boost_sfx.%s" % [_draft_root(), extension]
+		var path := "%s/manual_boost_sfx.%s" % [document_controller.draft_root(), extension]
 		if FileAccess.file_exists(path):
 			return path
 	return ""
@@ -283,13 +266,13 @@ func _boost_sound_path() -> String:
 
 func _refresh_boost_sound_controls() -> void:
 	var sound_path := _boost_sound_path()
-	$Toolbar/ImportBoostSound.disabled = !draft_initialized
+	$Toolbar/ImportBoostSound.disabled = !document_controller.draft_initialized
 	$Toolbar/ImportBoostSound.text = "Replace Boost Sound" if !sound_path.is_empty() else "Add Boost Sound"
 	$Toolbar/ClearBoostSound.disabled = sound_path.is_empty()
 
 
 func _import_boost_sound(source_path: String) -> void:
-	if !draft_initialized:
+	if !document_controller.draft_initialized:
 		return
 	var extension := source_path.get_extension().to_lower()
 	if extension != "wav" and extension != "ogg":
@@ -304,7 +287,7 @@ func _import_boost_sound(source_path: String) -> void:
 	if stream == null:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected boost sound could not be decoded"]), "warnings": PackedStringArray()})
 		return
-	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var draft_path := ProjectSettings.globalize_path(document_controller.draft_root())
 	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The vehicle draft directory could not be created"]), "warnings": PackedStringArray()})
 		return
@@ -315,23 +298,23 @@ func _import_boost_sound(source_path: String) -> void:
 	var other_extension := "ogg" if extension == "wav" else "wav"
 	DirAccess.remove_absolute("%s/manual_boost_sfx.%s" % [draft_path, other_extension])
 	_refresh_boost_sound_controls()
-	_update_autosave_status("Custom boost sound ready")
+	document_controller.update_status("Custom boost sound ready")
 
 
 func _clear_boost_sound() -> void:
-	if !draft_initialized:
+	if !document_controller.draft_initialized:
 		return
-	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var draft_path := ProjectSettings.globalize_path(document_controller.draft_root())
 	DirAccess.remove_absolute(draft_path.path_join("manual_boost_sfx.wav"))
 	DirAccess.remove_absolute(draft_path.path_join("manual_boost_sfx.ogg"))
 	_refresh_boost_sound_controls()
-	_update_autosave_status("Custom boost sound cleared")
+	document_controller.update_status("Custom boost sound cleared")
 
 
 func _material_texture_path(layer: String) -> String:
-	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+	if !document_controller.draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
 		return ""
-	return _draft_root().path_join(String(MATERIAL_TEXTURE_FILES[layer]))
+	return document_controller.draft_root().path_join(String(MATERIAL_TEXTURE_FILES[layer]))
 
 
 func _material_texture_row(layer: String) -> HBoxContainer:
@@ -352,7 +335,7 @@ func _refresh_material_texture_controls() -> void:
 			continue
 		var path := _material_texture_path(layer)
 		var has_override := !path.is_empty() and FileAccess.file_exists(path)
-		var editable := draft_initialized and editing_official_definition == null
+		var editable := document_controller.draft_initialized and document_controller.editing_official_definition == null
 		var source := row.get_node("Source") as OptionButton
 		var import_button := row.get_node("Import") as Button
 		var clear_button := row.get_node("Clear") as Button
@@ -367,7 +350,7 @@ func _refresh_material_texture_controls() -> void:
 
 
 func _open_material_texture_dialog(layer: String) -> void:
-	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+	if !document_controller.draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
 		return
 	pending_material_texture = layer
 	import_material_texture_dialog.title = "Import %s PNG" % layer.replace("_", " ").capitalize()
@@ -377,7 +360,7 @@ func _open_material_texture_dialog(layer: String) -> void:
 func _import_material_texture(source_path: String) -> void:
 	var layer := pending_material_texture
 	pending_material_texture = ""
-	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+	if !document_controller.draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
 		return
 	if source_path.get_extension().to_lower() != "png":
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Vehicle material textures must be PNG files"]), "warnings": PackedStringArray()})
@@ -394,7 +377,7 @@ func _import_material_texture(source_path: String) -> void:
 	if image.get_width() > MATERIAL_TEXTURE_MAX_DIMENSION or image.get_height() > MATERIAL_TEXTURE_MAX_DIMENSION:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Vehicle material PNG dimensions cannot exceed 2048 x 2048"]), "warnings": PackedStringArray()})
 		return
-	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var draft_path := ProjectSettings.globalize_path(document_controller.draft_root())
 	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The vehicle draft directory could not be created"]), "warnings": PackedStringArray()})
 		return
@@ -426,7 +409,7 @@ func _import_material_texture(source_path: String) -> void:
 	_refresh_material_texture_controls()
 	preview_controller.refresh()
 	_refresh_history_buttons()
-	_update_autosave_status("Custom %s texture ready" % layer.replace("_", " "))
+	document_controller.update_status("Custom %s texture ready" % layer.replace("_", " "))
 
 
 func _clear_material_texture(layer: String) -> void:
@@ -436,21 +419,17 @@ func _clear_material_texture(layer: String) -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	_refresh_material_texture_controls()
 	preview_controller.refresh()
-	_update_autosave_status("Custom %s texture cleared" % layer.replace("_", " "))
-
-
-func _has_editable_document() -> bool:
-	return draft_initialized or editing_official_definition != null
+	document_controller.update_status("Custom %s texture cleared" % layer.replace("_", " "))
 
 
 func _refresh_document_mode_controls() -> void:
-	var editing_official := editing_official_definition != null
+	var editing_official := document_controller.editing_official_definition != null
 	title_input.editable = !editing_official
 	author_input.editable = !editing_official
 	description_input.editable = !editing_official
 	$Toolbar/DuplicateDraft.disabled = editing_official
 	$Toolbar/ArchiveDraft.disabled = editing_official
-	$Toolbar/DeleteDraft.disabled = editing_official or !draft_initialized
+	$Toolbar/DeleteDraft.disabled = editing_official or !document_controller.draft_initialized
 	$Toolbar/ImportModel.disabled = editing_official
 	$Toolbar/InstallVehicle.disabled = editing_official
 	$Toolbar/ExportPackage.disabled = editing_official
@@ -470,9 +449,9 @@ func _refresh_document_mode_controls() -> void:
 
 
 func _refresh_draft_options() -> void:
-	var selected_id := draft_id
+	var selected_id := document_controller.draft_id
 	draft_option.clear()
-	var drafts: Array = draft_store.list_drafts()
+	var drafts: Array = document_controller.draft_store.list_drafts()
 	drafts.sort_custom(func(a, b): return int(a.get("modified_unix", 0)) > int(b.get("modified_unix", 0)))
 	for draft_value in drafts:
 		var draft: Dictionary = draft_value
@@ -499,20 +478,18 @@ func _open_selected_draft() -> void:
 	if draft_option.selected < 0:
 		return
 	var selected_id := String(draft_option.get_item_metadata(draft_option.selected))
-	if draft_initialized and selected_id == draft_id:
+	if document_controller.draft_initialized and selected_id == document_controller.draft_id:
 		return
-	if _has_editable_document() and !_flush_autosave():
+	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
 		return
 	var candidate := MxtCarAuthoringSession.new()
-	var result: Dictionary = draft_store.load_draft(selected_id, candidate)
+	var result: Dictionary = document_controller.draft_store.load_draft(selected_id, candidate)
 	if !bool(result.get("valid", false)):
 		_show_diagnostics(result)
 		return
 	session = candidate
-	editing_official_definition = null
-	draft_id = selected_id
-	draft_initialized = true
-	current_properties_path = String(result.get("properties_path", ""))
+	document_controller.set_session(session)
+	document_controller.begin_loaded(selected_id, String(result.get("properties_path", "")))
 	preview_controller.load_livery(result.get("preview_livery", {}))
 	updating_controls = true
 	title_input.text = String(result.get("title", selected_id))
@@ -521,20 +498,18 @@ func _open_selected_draft() -> void:
 	updating_controls = false
 	workshop_published_file_id = int(result.get("workshop_published_file_id", 0))
 	workshop_preview_captured = FileAccess.file_exists(_workshop_preview_path())
-	metadata_dirty = false
-	autosave_error = ""
 	_refresh_workshop_controls()
 	_refresh_document_mode_controls()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
-	_update_autosave_status("Saved")
+	document_controller.update_status("Saved")
 
 
 func _duplicate_current_draft() -> void:
-	if !draft_initialized or !_flush_autosave():
+	if !document_controller.draft_initialized or !document_controller.flush(workshop_published_file_id):
 		return
 	var new_id := "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
-	var result: Dictionary = draft_store.duplicate_draft(draft_id, new_id, title_input.text + " Copy")
+	var result: Dictionary = document_controller.draft_store.duplicate_draft(document_controller.draft_id, new_id, title_input.text + " Copy")
 	_show_diagnostics(result)
 	if !bool(result.get("valid", false)):
 		return
@@ -547,15 +522,14 @@ func _duplicate_current_draft() -> void:
 
 
 func _archive_current_draft() -> void:
-	if !draft_initialized or !_flush_autosave():
+	if !document_controller.draft_initialized or !document_controller.flush(workshop_published_file_id):
 		return
-	var archived_id := draft_id
-	var result: Dictionary = draft_store.archive_draft(archived_id)
+	var archived_id := document_controller.draft_id
+	var result: Dictionary = document_controller.draft_store.archive_draft(archived_id)
 	_show_diagnostics(result)
 	if !bool(result.get("valid", false)):
 		return
-	draft_initialized = false
-	draft_id = ""
+	document_controller.clear()
 	_refresh_draft_options()
 	if draft_option.item_count > 0:
 		draft_option.select(0)
@@ -565,7 +539,7 @@ func _archive_current_draft() -> void:
 
 
 func _prompt_delete_current_draft() -> void:
-	if !draft_initialized or editing_official_definition != null:
+	if !document_controller.draft_initialized or document_controller.editing_official_definition != null:
 		return
 	delete_draft_dialog.dialog_text = (
 		"Permanently delete “%s” and all of its local authoring files?\n\nThis cannot be undone."
@@ -574,19 +548,14 @@ func _prompt_delete_current_draft() -> void:
 
 
 func _delete_current_draft() -> void:
-	if !draft_initialized or editing_official_definition != null:
+	if !document_controller.draft_initialized or document_controller.editing_official_definition != null:
 		return
 	curve_controller.cancel_active_edit()
-	var result: Dictionary = draft_store.delete_draft(draft_id)
+	var result: Dictionary = document_controller.draft_store.delete_draft(document_controller.draft_id)
 	_show_diagnostics(result)
 	if !bool(result.get("valid", false)):
 		return
-	draft_initialized = false
-	draft_id = ""
-	current_properties_path = ""
-	metadata_dirty = false
-	autosave_error = ""
-	autosave_due_msec = 0
+	document_controller.clear()
 	_refresh_draft_options()
 	if draft_option.item_count > 0:
 		draft_option.select(0)
@@ -648,7 +617,7 @@ func _open_selected_official_vehicle() -> void:
 			"warnings": PackedStringArray(),
 		})
 		return
-	if _has_editable_document() and !_flush_autosave():
+	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
 		return
 	var candidate := MxtCarAuthoringSession.new()
 	var result: Dictionary = candidate.load_file(definition.properties_path)
@@ -656,25 +625,20 @@ func _open_selected_official_vehicle() -> void:
 		_show_diagnostics(result)
 		return
 	session = candidate
-	editing_official_definition = definition
-	draft_initialized = false
-	draft_id = ""
-	current_properties_path = definition.properties_path
+	document_controller.set_session(session)
+	document_controller.begin_official(definition)
 	preview_controller.reset_livery()
 	updating_controls = true
 	title_input.text = definition.name
 	author_input.text = "Shipped Asset"
 	description_input.text = definition.properties_path
 	updating_controls = false
-	metadata_dirty = false
-	autosave_error = ""
-	autosave_due_msec = 0
 	workshop_published_file_id = 0
 	workshop_preview_captured = false
 	_refresh_workshop_controls()
 	_refresh_document_mode_controls()
 	_refresh_all()
-	_update_autosave_status("Editing official %s" % definition.name)
+	document_controller.update_status("Editing official %s" % definition.name)
 
 
 func _import_selected_vehicle_template() -> void:
@@ -725,7 +689,7 @@ func _copy_packaged_vehicle_visual(record: MxtContentRecord) -> Dictionary:
 	var source_path := record.visual_path if record != null else ""
 	if source_path.is_empty() or !FileAccess.file_exists(source_path):
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle package has no readable model"]), "warnings": PackedStringArray()}
-	var imported: Dictionary = session.import_model(source_path, _draft_root())
+	var imported: Dictionary = session.import_model(source_path, document_controller.draft_root())
 	if !bool(imported.get("valid", false)):
 		return imported
 	var visual_metadata: Dictionary = record.visual_metadata
@@ -757,7 +721,7 @@ func _copy_official_vehicle_visual(definition: CarDefinition) -> Dictionary:
 	export_body.mesh = body.mesh
 	export_body.material_override = _gltf_material_from_official_body(body.material_override)
 	export_root.add_child(export_body)
-	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var draft_path := ProjectSettings.globalize_path(document_controller.draft_root())
 	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
 		export_root.free()
 		source.free()
@@ -765,13 +729,13 @@ func _copy_official_vehicle_visual(definition: CarDefinition) -> Dictionary:
 	var gltf_document := GLTFDocument.new()
 	var gltf_state := GLTFState.new()
 	var append_error := gltf_document.append_from_scene(export_root, gltf_state)
-	var source_path := _draft_root() + "/template-source.glb"
+	var source_path := document_controller.draft_root() + "/template-source.glb"
 	var write_error := FAILED if append_error != OK else gltf_document.write_to_filesystem(gltf_state, source_path)
 	export_root.free()
 	if append_error != OK or write_error != OK:
 		source.free()
 		return {"valid": false, "errors": PackedStringArray(["The selected built-in vehicle could not be converted into an editable GLB"]), "warnings": PackedStringArray()}
-	var imported: Dictionary = session.import_model(source_path, _draft_root())
+	var imported: Dictionary = session.import_model(source_path, document_controller.draft_root())
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(source_path))
 	if !bool(imported.get("valid", false)):
 		source.free()
@@ -877,7 +841,7 @@ func _on_steam_status_changed(status: Dictionary) -> void:
 
 
 func _refresh_workshop_controls() -> void:
-	if editing_official_definition != null:
+	if document_controller.editing_official_definition != null:
 		workshop_publish_button.disabled = true
 		workshop_page_button.disabled = true
 		workshop_capture_button.disabled = true
@@ -913,7 +877,7 @@ func _publish_workshop() -> void:
 	if !bool(built.get("valid", false)):
 		return
 	var package_io := MxtContentPackageIO.new()
-	var archive_path := _draft_root() + "/workshop-upload.mxtpkg"
+	var archive_path := document_controller.draft_root() + "/workshop-upload.mxtpkg"
 	var exported: Dictionary = package_io.export_mxtpkg(String(built["package_path"]), archive_path)
 	if !bool(exported.get("valid", false)):
 		_show_diagnostics(exported)
@@ -1017,7 +981,7 @@ func _on_workshop_request_completed(request_id: int, operation: String, result: 
 	if operation == "create_item":
 		workshop_published_file_id = int(result.get("published_file_id", 0))
 		_mark_dirty()
-		_flush_autosave()
+		document_controller.flush(workshop_published_file_id)
 		_refresh_workshop_controls()
 		_submit_workshop_update()
 		return
@@ -1035,12 +999,7 @@ func _open_workshop_page() -> void:
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec()
-	if _has_editable_document() and !curve_controller.gesture_active and (metadata_dirty or session.is_dirty()):
-		if autosave_due_msec == 0:
-			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
-			_update_autosave_status("Unsaved changes")
-		elif now >= autosave_due_msec:
-			_autosave_draft()
+	document_controller.process_autosave(now, workshop_published_file_id)
 	if workshop_request_id != 0 and workshop_operation == "submit_update" \
 			and game_manager != null and game_manager.steam_service != null \
 			and now >= workshop_progress_update_msec + 200:
@@ -1054,17 +1013,17 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	if _has_editable_document():
-		_flush_autosave()
+	if document_controller.has_editable_document():
+		document_controller.flush(workshop_published_file_id)
 
 
 func _on_visibility_changed() -> void:
-	if _has_editable_document() and !is_visible_in_tree():
-		_flush_autosave()
+	if document_controller.has_editable_document() and !is_visible_in_tree():
+		document_controller.flush(workshop_published_file_id)
 
 
 func flush_pending_changes() -> bool:
-	return _flush_autosave()
+	return document_controller.flush(workshop_published_file_id)
 
 
 func _import_model(path: String) -> void:
@@ -1074,7 +1033,7 @@ func _import_model(path: String) -> void:
 		_show_model_import_failure(normalized)
 		return
 	var normalized_path := String(normalized.get("path", ""))
-	var result: Dictionary = session.import_model(normalized_path, _draft_root())
+	var result: Dictionary = session.import_model(normalized_path, document_controller.draft_root())
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(normalized_path))
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
@@ -1115,8 +1074,8 @@ func _normalize_imported_vehicle_model(path: String) -> Dictionary:
 	var normalized_document := GLTFDocument.new()
 	var normalized_state := GLTFState.new()
 	var append_error := normalized_document.append_from_scene(export_root, normalized_state)
-	var normalized_path := _draft_root() + "/normalized-model-import.glb"
-	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var normalized_path := document_controller.draft_root() + "/normalized-model-import.glb"
+	var draft_path := ProjectSettings.globalize_path(document_controller.draft_root())
 	var directory_error := DirAccess.make_dir_recursive_absolute(draft_path)
 	var write_error := FAILED if append_error != OK or directory_error != OK else normalized_document.write_to_filesystem(normalized_state, normalized_path)
 	export_root.free()
@@ -1165,95 +1124,27 @@ func _show_model_import_failure(result: Dictionary) -> void:
 	visual_status.text = "Import failed" if errors.is_empty() else "Import failed: %s" % String(errors[0])
 
 
-func _draft_metadata() -> Dictionary:
-	return {
-		"title": title_input.text,
-		"author_name": author_input.text,
-		"description": description_input.text,
-		"workshop_published_file_id": workshop_published_file_id,
-		"authoring_intent": session.get_authoring_intent(),
-		"preview_livery": preview_controller.livery_dict(),
-	}
-
-
-func _autosave_draft() -> bool:
-	if editing_official_definition != null:
-		return _save_official_properties()
-	if !draft_initialized:
-		return true
-	var result: Dictionary = draft_store.save_draft(draft_id, session, _draft_metadata())
-	if !bool(result.get("valid", false)):
-		var errors: PackedStringArray = result.get("errors", PackedStringArray(["Unknown autosave error"]))
-		autosave_error = "Unknown autosave error" if errors.is_empty() else String(errors[0])
-		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_RETRY_MSEC
-		_update_autosave_status("Autosave failed: %s" % autosave_error, true)
-		_show_diagnostics(result)
-		return false
-	metadata_dirty = false
-	autosave_error = ""
-	autosave_due_msec = 0
-	current_properties_path = String(result.get("properties_path", ""))
-	_update_autosave_status("Saved")
-	_refresh_draft_options()
-	return true
-
-
-func _save_official_properties() -> bool:
-	if editing_official_definition == null:
-		return false
-	if current_properties_path != editing_official_definition.properties_path \
-			or !current_properties_path.begins_with("res://vehicle/asset/"):
-		autosave_error = "Official vehicle save target is invalid"
-		_update_autosave_status(autosave_error, true)
-		return false
-	var result: Dictionary = session.save_file(current_properties_path)
-	if !bool(result.get("valid", false)):
-		var errors: PackedStringArray = result.get(
-			"errors", PackedStringArray(["Unknown official vehicle save error"]))
-		autosave_error = "Unknown official vehicle save error" if errors.is_empty() else String(errors[0])
-		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_RETRY_MSEC
-		_update_autosave_status("Official save failed: %s" % autosave_error, true)
-		_show_diagnostics(result)
-		return false
-	metadata_dirty = false
-	autosave_error = ""
-	autosave_due_msec = 0
-	curve_controller.reset_performance_analysis()
-	content_changed.emit()
-	_update_autosave_status("Saved official %s" % editing_official_definition.name)
-	return true
-
-
-func _flush_autosave() -> bool:
-	curve_controller.cancel_active_edit()
-	if !_has_editable_document():
-		return true
-	if metadata_dirty or session.is_dirty() or !autosave_error.is_empty():
-		return _autosave_draft()
-	return true
-
-
 func _manual_save_draft() -> void:
-	if editing_official_definition != null:
-		_save_official_properties()
+	if document_controller.editing_official_definition != null:
+		document_controller.save(workshop_published_file_id)
 		return
-	if !_flush_autosave():
+	if !document_controller.flush(workshop_published_file_id):
 		return
-	var thumbnail_path := _draft_root() + "/thumbnail.png"
+	var thumbnail_path := document_controller.draft_root() + "/thumbnail.png"
 	if _save_preview_png(thumbnail_path):
 		_refresh_draft_options()
-		_update_autosave_status("Saved with thumbnail")
+		document_controller.update_status("Saved with thumbnail")
 	else:
-		_update_autosave_status("Saved; previous thumbnail kept")
+		document_controller.update_status("Saved; previous thumbnail kept")
 
 
 func _build_package(preview_override := "", validate_package := true) -> Dictionary:
-	if !_flush_autosave():
-		return {"valid": false, "errors": PackedStringArray([autosave_error]), "warnings": PackedStringArray()}
+	if !document_controller.flush(workshop_published_file_id):
+		return {"valid": false, "errors": PackedStringArray([document_controller.autosave_error]), "warnings": PackedStringArray()}
 	var preview_path := String(preview_override)
 	var preview_ready := false
 	if preview_path.is_empty():
-		preview_path = _draft_root() + "/thumbnail.png"
+		preview_path = document_controller.draft_root() + "/thumbnail.png"
 		preview_ready = _save_preview_png(preview_path)
 	else:
 		preview_ready = FileAccess.file_exists(preview_path)
@@ -1262,7 +1153,7 @@ func _build_package(preview_override := "", validate_package := true) -> Diction
 		_show_diagnostics(failed)
 		return failed
 	var result: Dictionary = session.build_vehicle_package(
-		_draft_root() + "/package",
+		document_controller.draft_root() + "/package",
 		preview_path,
 		title_input.text,
 		description_input.text,
@@ -1275,11 +1166,11 @@ func _build_package(preview_override := "", validate_package := true) -> Diction
 
 
 func _workshop_preview_path() -> String:
-	return _draft_root() + "/workshop-preview.png"
+	return document_controller.draft_root() + "/workshop-preview.png"
 
 
 func _capture_workshop_preview() -> void:
-	if !draft_initialized:
+	if !document_controller.draft_initialized:
 		return
 	workshop_preview_captured = _save_preview_png(_workshop_preview_path())
 	workshop_status.text = "Workshop preview captured from the current camera and paint." if workshop_preview_captured else "Workshop preview capture failed."
@@ -1316,8 +1207,8 @@ func _install_vehicle() -> String:
 	if !bool(built.get("valid", false)):
 		return ""
 	var package_io := MxtContentPackageIO.new()
-	var archive_path := _draft_root() + "/%s.mxtpkg" % draft_id
-	var exported: Dictionary = package_io.export_mxtpkg(_draft_root() + "/package", archive_path)
+	var archive_path := document_controller.draft_root() + "/%s.mxtpkg" % document_controller.draft_id
+	var exported: Dictionary = package_io.export_mxtpkg(document_controller.draft_root() + "/package", archive_path)
 	if !bool(exported.get("valid", false)):
 		_show_diagnostics(exported)
 		return ""
@@ -1335,7 +1226,7 @@ func _export_package(path: String) -> void:
 	if !bool(built.get("valid", false)):
 		return
 	var destination := path if path.to_lower().ends_with(".mxtpkg") else path + ".mxtpkg"
-	_show_diagnostics(MxtContentPackageIO.new().export_mxtpkg(_draft_root() + "/package", destination))
+	_show_diagnostics(MxtContentPackageIO.new().export_mxtpkg(document_controller.draft_root() + "/package", destination))
 
 
 func _test_drive() -> void:
@@ -1397,23 +1288,18 @@ func _refresh_history_buttons() -> void:
 func _undo() -> void:
 	if session.undo():
 		_refresh_all()
-		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
+		document_controller.schedule_autosave()
 
 
 func _redo() -> void:
 	if session.redo():
 		_refresh_all()
-		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
-
-
-func _update_autosave_status(message: String, failed := false) -> void:
-	autosave_status.text = message
-	autosave_status.modulate = Color(1.0, 0.42, 0.35) if failed else Color.WHITE
+		document_controller.schedule_autosave()
 
 
 func _refresh_resource_usage() -> void:
-	if editing_official_definition != null:
-		visual_status.text = "Editing shipped properties: %s" % current_properties_path
+	if document_controller.editing_official_definition != null:
+		visual_status.text = "Editing shipped properties: %s" % document_controller.current_properties_path
 		return
 	var usage: Dictionary = session.get_model_resource_usage()
 	if !bool(usage.get("valid", false)):
@@ -1613,10 +1499,10 @@ func _remove_thruster() -> void:
 
 func _sync_preview_context() -> void:
 	preview_controller.set_document_context(
-		draft_id,
-		current_properties_path,
-		_draft_root() if !draft_id.is_empty() else "",
-		editing_official_definition)
+		document_controller.draft_id,
+		document_controller.current_properties_path,
+		document_controller.draft_root() if !document_controller.draft_id.is_empty() else "",
+		document_controller.editing_official_definition)
 
 func _on_preview_thruster_position_changed(_index: int, position: Vector3) -> void:
 	_set_vector_value("thruster_position", position)
@@ -1686,10 +1572,8 @@ func _select_physical_tab(title: String) -> void:
 
 func _mark_dirty() -> void:
 	if !updating_controls:
-		metadata_dirty = true
-		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
-		_update_autosave_status("Unsaved changes")
+		document_controller.mark_dirty()
 		diagnostics.text = "[color=#ffd166]%s[/color]" % (
 			"Unsaved official vehicle changes"
-			if editing_official_definition != null
+			if document_controller.editing_official_definition != null
 			else "Unsaved draft changes")

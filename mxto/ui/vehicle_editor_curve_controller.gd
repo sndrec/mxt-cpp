@@ -75,6 +75,14 @@ func initialize(owner_ui: Control, authoring_session: MxtCarAuthoringSession) ->
 	_setup_options()
 	_connect_controls(owner_ui)
 
+func set_session(authoring_session: MxtCarAuthoringSession) -> void:
+	session = authoring_session
+	stat_schema = session.get_stat_schema()
+	schema_by_name.clear()
+	for entry_value in stat_schema:
+		var entry: Dictionary = entry_value
+		schema_by_name[String(entry["name"])] = entry
+
 func refresh_all() -> void:
 	refresh_stat_options()
 	refresh_samples()
