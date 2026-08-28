@@ -22,6 +22,7 @@ const MANUAL_SPEED_MAX := 5000.0
 @onready var spectator_controller: SpectatorController = get_node("../SpectatorController") as SpectatorController
 @onready var race_presentation_controller: RacePresentationController = get_node("../RacePresentationController") as RacePresentationController
 @onready var debug_runtime_controller: DebugRuntimeController = get_node("../DebugRuntimeController") as DebugRuntimeController
+@onready var timeline: ReplayTimelineController = get_node("../ReplayTimelineController") as ReplayTimelineController
 
 var mode := CAMERA_GAME
 var auto_camera: Camera3D
@@ -188,7 +189,7 @@ func apply_focus_to_local_visual() -> void:
 			car.player_settings = player_settings
 	if is_instance_valid(car.name_label):
 		car.name_label.text = race_presentation_controller.player_display_name(focus_id)
-	playback._apply_replay_hud_visibility()
+	timeline.apply_hud_visibility()
 	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.disable_hud_process_only:
 		car.race_hud.process_mode = Node.PROCESS_MODE_INHERIT
 
@@ -218,7 +219,7 @@ func apply_mode() -> void:
 		spectator_controller.show_free_camera_at(_focused_transform())
 		apply_manual_settings()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	playback._update_replay_timeline_controls()
+	timeline.update()
 
 
 func cycle_mode() -> void:
@@ -249,8 +250,8 @@ func change_focus(delta: int) -> void:
 		playback.replay_playback_focus_index + delta,
 		playback.replay_playback_racer_ids.size())
 	apply_mode()
-	playback._refresh_replay_input_display()
-	playback.replay_timeline_markers_dirty = true
+	timeline.refresh_input_display()
+	timeline.replay_timeline_markers_dirty = true
 	race_presentation_controller.show_notification(
 		"Replay Focus: %s" % race_presentation_controller.player_display_name(
 			focused_player_id()), 1200)

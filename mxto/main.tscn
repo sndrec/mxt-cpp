@@ -29,6 +29,7 @@
 [ext_resource type="Script" uid="uid://dhgrs6b3fhdpr" path="res://replay/replay_recorder.gd" id="31_replay_recorder"]
 [ext_resource type="Script" uid="uid://kfkmpahdev0c" path="res://replay/debug_replay_controller.gd" id="31_debug_replay"]
 [ext_resource type="Script" uid="uid://1i5sts03goa7" path="res://replay/replay_camera_controller.gd" id="31_replay_camera"]
+[ext_resource type="Script" uid="uid://dq3l4abyfy4ux" path="res://replay/replay_timeline_controller.gd" id="31_replay_timeline"]
 [ext_resource type="Script" uid="uid://b1faew0my54vq" path="res://ui/lobby_controller.gd" id="32_lobby"]
 [ext_resource type="Script" uid="uid://bb56bbim32ckv" path="res://ui/spectator_controller.gd" id="33_spectator"]
 [ext_resource type="PackedScene" path="res://ui/spectator_roster.tscn" id="33_spectator_roster"]
@@ -253,6 +254,9 @@ script = ExtResource("31_debug_replay")
 
 [node name="ReplayCameraController" type="Node" parent="."]
 script = ExtResource("31_replay_camera")
+
+[node name="ReplayTimelineController" type="Node" parent="."]
+script = ExtResource("31_replay_timeline")
 
 [node name="PlaytestLobbyProbe" type="Node" parent="." unique_id=2105027119]
 script = ExtResource("27_playtest_probe")

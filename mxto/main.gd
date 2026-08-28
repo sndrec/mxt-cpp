@@ -41,6 +41,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var replay_recorder: ReplayRecorder = $ReplayRecorder
 @onready var debug_replay_controller: DebugReplayController = $DebugReplayController
 @onready var replay_camera_controller: ReplayCameraController = $ReplayCameraController
+@onready var replay_timeline_controller: ReplayTimelineController = $ReplayTimelineController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -224,8 +225,9 @@ func _ready() -> void:
 	replay_catalog_controller.initialize()
 	replay_catalog_controller.watch_requested.connect(replay_controller.play_replay_file)
 	replay_recorder.initialize()
-	replay_recorder.staged_replay_saved.connect(replay_controller._refresh_replay_timeline_save_local_button)
+	replay_recorder.staged_replay_saved.connect(replay_timeline_controller.refresh_save_local_button)
 	replay_camera_controller.initialize()
+	replay_timeline_controller.initialize()
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -302,7 +304,6 @@ func _ready() -> void:
 	practice_setup.initialize(self, time_attack_setup.ghost_selection)
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
-	replay_controller.initialize()
 	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
 	_build_start_sync_drop_panel()
 	_load_tracks()
@@ -1204,8 +1205,8 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 func _consume_authoritative_race_events() -> void:
 	if singleplayer_mode:
 		for event in game_sim.consume_race_events():
-			if replay_controller.replay_collecting_timeline_markers:
-				replay_controller.record_timeline_event(event)
+			if replay_timeline_controller.collecting_markers:
+				replay_timeline_controller.record_timeline_event(event)
 			_on_race_event("ko", int(event["actor_id"]), int(event["target_id"]), int(event["tick"]), int(event["value"]))
 		return
 	if network_manager.is_server and server_game_sim != null:
@@ -1910,7 +1911,7 @@ func _process(delta: float) -> void:
 	if game_sim.sim_started:
 		spectator_controller.update_finished_input()
 		var profile_visuals_start := Time.get_ticks_usec() if profile_enabled else 0
-		replay_controller.update(delta)
+		replay_timeline_controller.update()
 		replay_camera_controller.update(delta)
 		_update_native_render_camera()
 		game_sim.render_gamesim_visuals_only(delta)
