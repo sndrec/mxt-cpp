@@ -10,7 +10,6 @@ const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.g
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
 const CustomStampPacker = preload("res://vehicle/customization/custom_stamp_packer.gd")
-const CustomStampPaletteCatalog = preload("res://vehicle/customization/custom_stamp_palette_catalog.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
 const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
@@ -36,7 +35,6 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var garage_car_name_label: Label = owner_ui.get_node("Container/SettingsTabs/Garage/GaragePanel/GarageCarName")
 @onready var stamp_layer_list: VBoxContainer = owner_ui.get_node("Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList")
 @onready var stamp_action_menu: PopupMenu = owner_ui.get_node("StampActionMenu")
-@onready var custom_stamp_catalog_menu: PopupMenu = owner_ui.get_node("CustomStampCatalogMenu")
 @onready var stamp_properties_popup: PopupPanel = owner_ui.get_node("StampPropertiesPopup")
 @onready var stamp_properties_rotation: SpinBox = owner_ui.get_node("StampPropertiesPopup/PropertiesRoot/RotationRow/RotationSpin")
 @onready var stamp_properties_scale_x: SpinBox = owner_ui.get_node("StampPropertiesPopup/PropertiesRoot/ScaleXRow/ScaleXSpin")
@@ -51,12 +49,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var stamp_chooser_base_list: GridContainer = owner_ui.get_node("StampChooser/StampChooserList/StampChooserTabs/Base/BaseList")
 @onready var stamp_chooser_custom_list: GridContainer = owner_ui.get_node("StampChooser/StampChooserList/StampChooserTabs/Custom/CustomList")
 @onready var stamp_chooser_cancel_button: Button = owner_ui.get_node("StampChooser/StampChooserList/Cancel")
-@onready var custom_stamp_catalog_tab: VBoxContainer = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog")
-@onready var custom_stamp_catalog_import_button: Button = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/CatalogActions/ImportCustomStamp")
-@onready var custom_stamp_catalog_palette_option: OptionButton = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/CatalogActions/ImportPaletteOption")
-@onready var custom_stamp_catalog_paint_button: Button = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/CatalogActions/PaintCustomStamp")
-@onready var custom_stamp_library_grid: GridContainer = owner_ui.get_node("Container/SettingsTabs/Stamp Catalog/LibraryScroll/LibraryGrid")
-@onready var custom_stamp_import_dialog: FileDialog = owner_ui.get_node("CustomStampImportDialog")
+@onready var stamp_library: CustomStampLibraryController = $CustomStampLibraryController
 @onready var stamp_painter: CustomStampPainterController = $CustomStampPainterController
 @onready var stamp_edit_overlay: Control = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay")
 @onready var stamp_edit_square: Panel = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare")
@@ -83,8 +76,6 @@ var updating_stamp_properties := false
 var stamp_layer_rows: Array[Control] = []
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
-var custom_stamp_blobs: Array = []
-var custom_stamp_preview_textures := {}
 var preview_custom_stamp_atlas: Texture2D
 var preview_custom_stamp_region_texture: Texture2D
 var preview_custom_stamp_atlas_thread: Thread
@@ -92,8 +83,6 @@ var preview_custom_stamp_atlas_active_revision := 0
 var preview_custom_stamp_atlas_latest_revision := 0
 var preview_custom_stamp_atlas_queued_records: Array = []
 var preview_custom_stamp_atlas_has_queued := false
-var selected_custom_import_palette_id := 0
-var selected_catalog_stamp_hash := ""
 var preview_container: SubViewportContainer
 var preview_viewport: SubViewport
 var preview_root: Node3D
@@ -132,7 +121,10 @@ func initialize(in_game_manager: GameManager, in_player_settings: PlayerSettings
 	_setup_garage_preview()
 	_setup_stamp_menus()
 	_setup_stamp_properties_popup()
-	_setup_custom_stamp_catalog()
+	stamp_library.initialize(owner_ui)
+	stamp_library.paint_requested.connect(_on_custom_stamp_paint_pressed)
+	stamp_library.edit_requested.connect(_edit_custom_stamp_from_catalog)
+	stamp_library.delete_requested.connect(_delete_custom_stamp_from_catalog)
 	stamp_painter.initialize(owner_ui)
 	stamp_painter.stamp_saved.connect(_on_custom_stamp_painter_saved)
 	primary_colour_picker.color_changed.connect(_on_primary_colour_changed)
@@ -158,7 +150,7 @@ func flush_livery(rebuild_preview := false) -> void:
 	publish_livery_reference()
 
 func refresh_custom_stamp_library() -> void:
-	_refresh_custom_stamp_library()
+	stamp_library.refresh()
 
 func update_lock_state() -> void:
 	_update_livery_lock_state()
@@ -211,20 +203,6 @@ func _setup_stamp_properties_popup() -> void:
 	stamp_properties_mirror_local_x.toggled.connect(_on_stamp_property_toggled)
 	stamp_properties_close_button.pressed.connect(func(): stamp_properties_popup.hide())
 	stamp_properties_popup.popup_hide.connect(_on_stamp_properties_popup_hidden)
-
-func _setup_custom_stamp_catalog() -> void:
-	custom_stamp_catalog_palette_option.clear()
-	custom_stamp_catalog_palette_option.add_item("Auto / Custom 15", 0)
-	for palette_id in range(CustomStampPaletteCatalog.PALETTE_MIN_ID, CustomStampPaletteCatalog.PALETTE_MAX_ID + 1):
-		custom_stamp_catalog_palette_option.add_item(CustomStampPaletteCatalog.palette_name(palette_id), palette_id)
-	custom_stamp_catalog_palette_option.item_selected.connect(_on_custom_import_palette_selected.bind(custom_stamp_catalog_palette_option))
-	custom_stamp_catalog_import_button.pressed.connect(_on_custom_stamp_import_pressed)
-	custom_stamp_catalog_paint_button.pressed.connect(_on_custom_stamp_paint_pressed)
-	custom_stamp_catalog_menu.clear()
-	custom_stamp_catalog_menu.add_item("Edit", 0)
-	custom_stamp_catalog_menu.add_item("Delete", 1)
-	custom_stamp_catalog_menu.id_pressed.connect(_on_custom_stamp_catalog_action_selected)
-	_refresh_custom_stamp_catalog_grid()
 
 func _input(event: InputEvent) -> void:
 	if !owner_ui.visible or stamp_drag_source_layer < 0:
@@ -297,14 +275,7 @@ func _update_livery_lock_state() -> void:
 	trail_colour_picker.disabled = locked
 	if garage_panel != null:
 		garage_panel.modulate = Color(0.55, 0.55, 0.55, 1.0) if locked else Color.WHITE
-	if custom_stamp_catalog_tab != null:
-		custom_stamp_catalog_tab.modulate = Color(0.55, 0.55, 0.55, 1.0) if locked else Color.WHITE
-	if custom_stamp_catalog_import_button != null:
-		custom_stamp_catalog_import_button.disabled = locked
-	if custom_stamp_catalog_palette_option != null:
-		custom_stamp_catalog_palette_option.disabled = locked
-	if custom_stamp_catalog_paint_button != null:
-		custom_stamp_catalog_paint_button.disabled = locked
+	stamp_library.set_locked(locked)
 	stamp_painter.set_locked(locked)
 	for button in stamp_layer_buttons:
 		button.disabled = locked
@@ -472,7 +443,6 @@ func _setup_stamp_edit_overlay() -> void:
 		handle.gui_input.connect(_on_stamp_edit_handle_input.bind(kind))
 	stamp_edit_confirm_button.pressed.connect(_on_stamp_edit_confirm_pressed)
 	stamp_edit_cancel_button.pressed.connect(_on_stamp_edit_cancel_pressed)
-	custom_stamp_import_dialog.file_selected.connect(_on_custom_stamp_import_file_selected)
 	stamp_edit_overlay.gui_input.connect(_on_stamp_edit_overlay_gui_input)
 	stamp_edit_overlay.resized.connect(_layout_stamp_edit_overlay)
 
@@ -825,8 +795,8 @@ func _stamp_preview_texture(stamp: CarLiveryStamp) -> Texture2D:
 	if stamp == null:
 		return null
 	if stamp.is_custom():
-		var blob := _custom_stamp_blob_for_hash(stamp.custom_hash)
-		return _custom_stamp_preview_texture(blob) if blob != null else null
+		var blob := stamp_library.blob_for_hash(stamp.custom_hash)
+		return stamp_library.preview_texture(blob) if blob != null else null
 	if stamp_catalog == null:
 		return null
 	return stamp_catalog.get_preview_texture(stamp.stamp_id)
@@ -1118,7 +1088,7 @@ func _on_stamp_properties_popup_hidden() -> void:
 func _show_stamp_chooser(layer: int, action: String) -> void:
 	if stamp_chooser_popup == null or stamp_chooser_base_list == null or stamp_chooser_custom_list == null or _livery_editing_locked():
 		return
-	_refresh_custom_stamp_library()
+	stamp_library.refresh()
 	stamp_ui_mode = StampUiMode.CHOOSING
 	pending_stamp_layer = layer
 	pending_stamp_choice_action = action
@@ -1134,11 +1104,11 @@ func _show_stamp_chooser(layer: int, action: String) -> void:
 			var button := _make_stamp_choice_image_button(stamp_catalog.get_preview_texture(entry.stamp_id))
 			button.pressed.connect(_on_stamp_choice_pressed.bind(entry.stamp_id))
 			stamp_chooser_base_list.add_child(button)
-	for blob in custom_stamp_blobs:
+	for blob in stamp_library.blobs:
 		var custom_blob := blob as CustomStampBlob
 		if custom_blob == null:
 			continue
-		var button := _make_stamp_choice_image_button(_custom_stamp_preview_texture(custom_blob))
+		var button := _make_stamp_choice_image_button(stamp_library.preview_texture(custom_blob))
 		button.pressed.connect(_on_custom_stamp_choice_pressed.bind(custom_blob.stamp_hash))
 		stamp_chooser_custom_list.add_child(button)
 	if stamp_chooser_custom_list.get_child_count() == 0:
@@ -1181,7 +1151,7 @@ func _on_custom_stamp_choice_pressed(stamp_hash: String) -> void:
 	if pending_stamp_layer < 0 or _livery_editing_locked():
 		stamp_ui_mode = StampUiMode.IDLE
 		return
-	var blob := _custom_stamp_blob_for_hash(stamp_hash)
+	var blob := stamp_library.blob_for_hash(stamp_hash)
 	if blob == null:
 		push_warning("Custom stamp blob is missing: %s" % stamp_hash)
 		stamp_ui_mode = StampUiMode.IDLE
@@ -1206,30 +1176,8 @@ func _on_custom_stamp_choice_pressed(stamp_hash: String) -> void:
 		return
 	_begin_stamp_edit(pending_stamp_layer, stamp, true)
 
-func _on_custom_stamp_import_pressed() -> void:
-	if _livery_editing_locked():
-		return
-	custom_stamp_import_dialog.popup_centered(Vector2i(720, 520))
-
-func _on_custom_import_palette_selected(index: int, option: OptionButton) -> void:
-	selected_custom_import_palette_id = option.get_item_id(index)
-
 func _on_custom_stamp_paint_pressed() -> void:
-	if _livery_editing_locked():
-		return
 	stamp_painter.open_new()
-
-func _on_custom_stamp_import_file_selected(path: String) -> void:
-	if _livery_editing_locked():
-		return
-	var result := CustomStampStore.import_png(path, selected_custom_import_palette_id)
-	if !bool(result.get("ok", false)):
-		push_warning("Failed to import custom stamp: %s" % str(result.get("error", "unknown error")))
-		return
-	var blob := result.get("blob", null) as CustomStampBlob
-	if blob == null:
-		return
-	_refresh_custom_stamp_library()
 
 func _on_stamp_choice_cancel_pressed() -> void:
 	stamp_chooser_popup.hide()
@@ -1237,74 +1185,8 @@ func _on_stamp_choice_cancel_pressed() -> void:
 	pending_stamp_layer = -1
 	pending_stamp_choice_action = ""
 
-func _refresh_custom_stamp_library() -> void:
-	custom_stamp_blobs = CustomStampStore.list_local_blobs()
-	_refresh_custom_stamp_catalog_grid()
-
-func _refresh_custom_stamp_catalog_grid() -> void:
-	if custom_stamp_library_grid == null:
-		return
-	for child in custom_stamp_library_grid.get_children():
-		child.queue_free()
-	if custom_stamp_blobs.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = "No custom stamps imported."
-		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		empty_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		custom_stamp_library_grid.add_child(empty_label)
-		return
-	for blob in custom_stamp_blobs:
-		var custom_blob := blob as CustomStampBlob
-		if custom_blob == null:
-			continue
-		var tile := VBoxContainer.new()
-		tile.custom_minimum_size = Vector2(168.0, 188.0)
-		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tile.mouse_filter = Control.MOUSE_FILTER_STOP
-		tile.gui_input.connect(_on_custom_stamp_catalog_tile_input.bind(custom_blob.stamp_hash))
-		var preview := TextureRect.new()
-		preview.custom_minimum_size = Vector2(160.0, 144.0)
-		preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		preview.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-		preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		preview.texture = _custom_stamp_preview_texture(custom_blob)
-		tile.add_child(preview)
-		var label := Label.new()
-		label.text = _custom_stamp_button_text(custom_blob)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tile.add_child(label)
-		custom_stamp_library_grid.add_child(tile)
-
-func _on_custom_stamp_catalog_tile_input(event: InputEvent, stamp_hash: String) -> void:
-	if _livery_editing_locked():
-		return
-	var mouse_button := event as InputEventMouseButton
-	if mouse_button == null or !mouse_button.pressed or mouse_button.button_index != MOUSE_BUTTON_RIGHT:
-		return
-	selected_catalog_stamp_hash = stamp_hash
-	var blob := _custom_stamp_blob_for_hash(stamp_hash)
-	custom_stamp_catalog_menu.set_item_disabled(0, blob == null or blob.bits_per_pixel != CustomStampBlob.BPP_CUSTOM_PALETTE)
-	custom_stamp_catalog_menu.position = Vector2i(get_global_mouse_position())
-	custom_stamp_catalog_menu.popup()
-	accept_event()
-
-func _on_custom_stamp_catalog_action_selected(id: int) -> void:
-	if selected_catalog_stamp_hash == "" or _livery_editing_locked():
-		return
-	match id:
-		0:
-			_edit_custom_stamp_from_catalog(selected_catalog_stamp_hash)
-		1:
-			_delete_custom_stamp_from_catalog(selected_catalog_stamp_hash)
-
-func _edit_custom_stamp_from_catalog(stamp_hash: String) -> void:
-	var blob := _custom_stamp_blob_for_hash(stamp_hash)
-	if blob == null:
-		return
-	if blob.bits_per_pixel != CustomStampBlob.BPP_CUSTOM_PALETTE:
+func _edit_custom_stamp_from_catalog(stamp_hash: String, blob: CustomStampBlob) -> void:
+	if blob == null or blob.bits_per_pixel != CustomStampBlob.BPP_CUSTOM_PALETTE:
 		push_warning("8bpp palette stamps cannot be edited in the painter yet.")
 		return
 	stamp_painter.open_blob(stamp_hash, blob)
@@ -1316,47 +1198,19 @@ func _delete_custom_stamp_from_catalog(stamp_hash: String) -> void:
 		if stamp != null and stamp.is_custom() and stamp.custom_hash == stamp_hash:
 			current_livery.stamps.remove_at(i)
 			removed_from_current_livery = true
-	var err := CustomStampStore.delete_blob(stamp_hash)
-	if err != OK:
-		push_warning("Failed to delete custom stamp: %s" % err)
+	if !stamp_library.delete_blob(stamp_hash):
 		return
-	custom_stamp_preview_textures.erase(stamp_hash)
-	selected_catalog_stamp_hash = ""
 	stamp_painter.cancel_if_editing(stamp_hash)
 	if removed_from_current_livery:
 		_refresh_preview_custom_stamp_atlas()
 		_save_livery_for_selected_car()
 		_refresh_stamp_controls()
-	_refresh_custom_stamp_library()
-
-func _custom_stamp_blob_for_hash(stamp_hash: String) -> CustomStampBlob:
-	for blob in custom_stamp_blobs:
-		var custom_blob := blob as CustomStampBlob
-		if custom_blob != null and custom_blob.stamp_hash == stamp_hash:
-			return custom_blob
-	var loaded := CustomStampStore.load_blob(stamp_hash)
-	if loaded != null:
-		custom_stamp_blobs.append(loaded)
-	return loaded
-
-func _custom_stamp_button_text(blob: CustomStampBlob) -> String:
-	var mode := "4bpp" if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE else "8bpp"
-	var palette_text := "Custom" if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE else CustomStampPaletteCatalog.palette_name(blob.palette_id)
-	return "%dx%d %s %s %s" % [blob.width, blob.height, mode, palette_text, blob.stamp_hash.substr(0, 8)]
-
-func _custom_stamp_preview_texture(blob: CustomStampBlob) -> Texture2D:
-	if custom_stamp_preview_textures.has(blob.stamp_hash):
-		return custom_stamp_preview_textures[blob.stamp_hash]
-	var texture := CustomStampStore.create_preview_texture(blob)
-	if texture != null:
-		custom_stamp_preview_textures[blob.stamp_hash] = texture
-	return texture
 
 func _on_custom_stamp_painter_saved(previous_hash: String, blob: CustomStampBlob) -> void:
 	if !previous_hash.is_empty() and previous_hash != blob.stamp_hash:
 		_replace_custom_stamp_references(previous_hash, blob)
-		custom_stamp_preview_textures.erase(previous_hash)
-	_refresh_custom_stamp_library()
+		stamp_library.erase_preview(previous_hash)
+	stamp_library.refresh()
 
 func _replace_custom_stamp_references(old_hash: String, new_blob: CustomStampBlob) -> void:
 	if old_hash == "" or new_blob == null:
