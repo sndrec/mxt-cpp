@@ -71,7 +71,7 @@ fog_depth_end = 2000.0
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, world_vertex_coords, depth_draw_never, cull_back, unshaded, ambient_light_disabled, fog_disabled;
+render_mode blend_mix, world_vertex_coords, cull_back, unshaded, ambient_light_disabled, fog_disabled;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
@@ -120,7 +120,7 @@ size = Vector2(32768, 32768)
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, cull_disabled, depth_draw_never, unshaded, fog_disabled;
+render_mode blend_mix, cull_disabled, unshaded, fog_disabled;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
@@ -197,7 +197,7 @@ script = ExtResource("32_lobby")
 [node name="SpectatorController" type="Node" parent="." unique_id=900485722]
 script = ExtResource("33_spectator")
 
-[node name="SpectatorRoster" parent="." instance=ExtResource("33_spectator_roster")]
+[node name="SpectatorRoster" parent="." unique_id=880290244 instance=ExtResource("33_spectator_roster")]
 
 [node name="RacePresentationController" type="Node" parent="." unique_id=166495912]
 script = ExtResource("34_race_presentation")

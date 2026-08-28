@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dkjcr66oxndry" path="res://ui/race_hud.gd" id="1_w35b3"]
 [ext_resource type="Shader" uid="uid://c3ld4bxnm18d0" path="res://ui/health_meter.gdshader" id="2_2xneg"]
+[ext_resource type="FontFile" uid="uid://diaan53pmsix8" path="res://ui/MODENINE.TTF" id="2_075pc"]
 [ext_resource type="Texture2D" uid="uid://c12nhn05is6ov" path="res://ui/placeholder.png" id="2_ifpia"]
 [ext_resource type="Texture2D" uid="uid://d3xfb8wko2v52" path="res://ui/countdown_back.png" id="3_qb5k8"]
 [ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]
@@ -11,18 +12,22 @@
 [ext_resource type="Shader" uid="uid://bimv2yofetvh3" path="res://ui/attack_meter.gdshader" id="10_xsrat"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_4jbru"]
-font_size = 32
-outline_size = 6
+font = ExtResource("2_075pc")
+font_size = 48
 outline_color = Color(0, 0, 0, 1)
+shadow_size = 2
+shadow_color = Color(0, 0, 0, 0.6039216)
+shadow_offset = Vector2(3, 3)
 
 [sub_resource type="Gradient" id="Gradient_energy_meter"]
 interpolation_mode = 2
 interpolation_color_space = 1
-offsets = PackedFloat32Array(0, 0.12592593, 0.29259259, 0.43333334, 0.62222224, 0.73703706, 1)
-colors = PackedColorArray(0.94038117, 1.21289495e-05, 0.518021, 1, 1, 0.23000002, 0.30699992, 1, 1, 0.5866667, 0.19999999, 1, 0.41899997, 1, 0.17000002, 1, 0.27999997, 0.27999997, 1, 1, 0.7810002, 0.26999998, 1, 1, 1, 0.53852403, 0.49821866, 1)
+offsets = PackedFloat32Array(0, 0.21486267, 0.5121163, 0.76090467, 1)
+colors = PackedColorArray(0.6, 0, 0.32999983, 1, 0.94038117, 1.21289495e-05, 0.518021, 1, 1, 0.23000002, 0.30699992, 1, 1, 0.6005, 0.49, 1, 1, 0.82766664, 0.78, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_energy_meter"]
 gradient = SubResource("Gradient_energy_meter")
+width = 64
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_m7o86"]
 shader = ExtResource("2_2xneg")
@@ -40,14 +45,12 @@ shader_parameter/fill_amount = 1.0
 shader_parameter/cooldown_modulate = Color(0.035, 0.035, 0.035, 1)
 
 [sub_resource type="LabelSettings" id="LabelSettings_cix6h"]
+font = ExtResource("2_075pc")
 font_size = 24
-outline_size = 4
 outline_color = Color(0, 0, 0, 1)
-
-[sub_resource type="LabelSettings" id="LabelSettings_m1icb"]
-font_size = 24
-outline_size = 4
-outline_color = Color(0, 0, 0, 1)
+shadow_size = 3
+shadow_color = Color(0, 0, 0, 0.6117647)
+shadow_offset = Vector2(3, 3)
 
 [sub_resource type="World3D" id="World3D_r1orx"]
 
@@ -83,32 +86,38 @@ label_settings = SubResource("LabelSettings_4jbru")
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -76.0
-offset_top = 19.0
-offset_right = -18.0
-offset_bottom = 55.0
+anchors_preset = -1
+anchor_left = 0.634
+anchor_top = 0.142
+anchor_right = 0.739
+anchor_bottom = 0.268
+offset_left = -0.52001953
+offset_top = -10.2400055
+offset_right = 0.079956055
+offset_bottom = 0.039993286
 grow_horizontal = 0
 text = "1/3
 "
 label_settings = SubResource("LabelSettings_4jbru")
+horizontal_alignment = 2
 
 [node name="racetimer" type="Label" parent="." unique_id=1507212016]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -77.0
-offset_top = 24.0
-offset_right = 77.0
-offset_bottom = 60.0
+anchors_preset = -1
+anchor_left = 0.59400004
+anchor_top = 0.20600002
+anchor_right = 0.97700006
+anchor_bottom = 0.27400002
+offset_left = -0.32006836
+offset_top = -0.32000732
+offset_right = -0.5600586
+offset_bottom = -0.28001404
 grow_horizontal = 2
 text = "02:34.30"
 label_settings = SubResource("LabelSettings_4jbru")
+horizontal_alignment = 2
 
 [node name="forceendtimer" type="Label" parent="." unique_id=1089643638]
 unique_name_in_owner = true
@@ -133,16 +142,16 @@ process_mode = 4
 material = SubResource("ShaderMaterial_m7o86")
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 0.664
-anchor_top = 0.024
-anchor_right = 0.854
-anchor_bottom = 0.081
-offset_left = 0.0799561
-offset_top = -0.280001
-offset_right = -0.119995
-offset_bottom = -0.32
+anchor_left = 0.97700006
+anchor_top = 0.040000003
+anchor_right = 0.97700006
+anchor_bottom = 0.12200001
+offset_left = -399.56006
+offset_top = -0.80000114
+offset_right = 0.4399414
+offset_bottom = 0.15999603
 grow_horizontal = 0
-pivot_offset = Vector2(243, 0)
+pivot_offset = Vector2(400, 0)
 mouse_filter = 2
 texture = ExtResource("2_ifpia")
 expand_mode = 2
@@ -152,14 +161,14 @@ unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 0.664
-anchor_top = 0.09
-anchor_right = 0.854
-anchor_bottom = 0.094
-offset_left = 0.0800171
-offset_top = 0.199997
-offset_right = -0.119995
-offset_bottom = 17.32
+anchor_left = 0.78700006
+anchor_top = 0.128
+anchor_right = 0.97700006
+anchor_bottom = 0.156
+offset_left = -0.36010742
+offset_top = -0.16000366
+offset_right = -0.5600586
+offset_bottom = 25.68
 mouse_filter = 2
 color = Color(0.09, 0.07, 0.02, 0.6)
 
@@ -176,14 +185,14 @@ color = Color(1, 0.8, 0.3, 0.9)
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
-anchor_left = 0.664
-anchor_top = 0.091000006
-anchor_right = 0.664
-anchor_bottom = 0.091000006
-offset_left = -52.0
-offset_top = -0.2400055
-offset_right = -6.0
-offset_bottom = 45.759995
+anchor_left = 0.74600005
+anchor_top = 0.128
+anchor_right = 0.78200006
+anchor_bottom = 0.192
+offset_left = 0.039916992
+offset_top = 0.11999512
+offset_right = -0.040100098
+offset_bottom = 0.039993286
 mouse_filter = 2
 
 [node name="attack_meter_border" type="ColorRect" parent="attack_meter" unique_id=589736190]
@@ -302,7 +311,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 1
 text = "Twilight"
-label_settings = SubResource("LabelSettings_m1icb")
+label_settings = SubResource("LabelSettings_cix6h")
 
 [node name="place_3" type="Label" parent="Control/leaderboard_container" unique_id=348646300]
 process_mode = 4
@@ -310,7 +319,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 1
 text = "Twilight"
-label_settings = SubResource("LabelSettings_m1icb")
+label_settings = SubResource("LabelSettings_cix6h")
 
 [node name="place_4" type="Label" parent="Control/leaderboard_container" unique_id=1618931124]
 process_mode = 4
@@ -318,7 +327,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 1
 text = "Twilight"
-label_settings = SubResource("LabelSettings_m1icb")
+label_settings = SubResource("LabelSettings_cix6h")
 
 [node name="place_5" type="Label" parent="Control/leaderboard_container" unique_id=2008966780]
 process_mode = 4
@@ -326,7 +335,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 1
 text = "Twilight"
-label_settings = SubResource("LabelSettings_m1icb")
+label_settings = SubResource("LabelSettings_cix6h")
 
 [node name="place_6" type="Label" parent="Control/leaderboard_container" unique_id=1189635180]
 process_mode = 4
@@ -334,7 +343,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 1
 text = "Twilight"
-label_settings = SubResource("LabelSettings_m1icb")
+label_settings = SubResource("LabelSettings_cix6h")
 
 [node name="MinimapControl" type="Control" parent="." unique_id=1519719537]
 process_mode = 4
@@ -394,14 +403,12 @@ process_mode = 4
 visible = false
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 0.798
-anchor_top = 0.057
-anchor_right = 0.998
-anchor_bottom = 0.412
-offset_left = 0.559937
-offset_top = -0.0400009
-offset_right = 0.559937
-offset_bottom = 0.359985
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = -20.0
+offset_top = -232.0
+offset_right = 236.00012
+offset_bottom = 24.0
 texture = ExtResource("8_2hfuj")
 expand_mode = 1
 

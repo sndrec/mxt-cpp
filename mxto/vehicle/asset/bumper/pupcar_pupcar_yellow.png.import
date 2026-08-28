@@ -2,17 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ddvwl1qpt5pne"
-path.s3tc="res://.godot/imported/bumper_explosion_spark.png-3b4881c5aa6855000ddfaf5e9e43f20c.s3tc.ctex"
+uid="uid://dfkgjivc3e15s"
+path.s3tc="res://.godot/imported/pupcar_pupcar_yellow.png-0a475cbdbfc236fb9fb72ca238889252.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
+generator_parameters={
+"md5": "4a34fbc8a203cc6bfc352002bd96ea43"
+}
 
 [deps]
 
-source_file="res://asset/tex/bumper_explosion_spark.png"
-dest_files=["res://.godot/imported/bumper_explosion_spark.png-3b4881c5aa6855000ddfaf5e9e43f20c.s3tc.ctex"]
+source_file="res://vehicle/asset/bumper/pupcar_pupcar_yellow.png"
+dest_files=["res://.godot/imported/pupcar_pupcar_yellow.png-0a475cbdbfc236fb9fb72ca238889252.s3tc.ctex"]
 
 [params]
 

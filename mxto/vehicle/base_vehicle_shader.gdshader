@@ -54,13 +54,15 @@ void fragment() {
 		discard;
 	}
 	use_screen_pixel = SCREEN_UV * VIEWPORT_SIZE;
-	vec3 normal_1 = texture(in_normal, UV).rgb * 2.0 - 1.0;
-	//vec3 normal_2 = texture(in_normal, UV + vec2(-0.002, 0.001)).rgb * 2.0 - 1.0;
-	//vec3 normal_3 = texture(in_normal, UV + vec2(0.002, -0.001)).rgb * 2.0 - 1.0;
-	//vec3 normal_4 = texture(in_normal, UV + vec2(-0.001, -0.002)).rgb * 2.0 - 1.0;
-	//vec3 normal_combined = normal_1 + normal_2 + normal_3 + normal_4;
-	vec3 base_normal = NORMAL;
-	NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + base_normal * normal_1.z);
+	if (use_mesh_normals == false){
+		vec3 normal_1 = texture(in_normal, UV).rgb * 2.0 - 1.0;
+		//vec3 normal_2 = texture(in_normal, UV + vec2(-0.002, 0.001)).rgb * 2.0 - 1.0;
+		//vec3 normal_3 = texture(in_normal, UV + vec2(0.002, -0.001)).rgb * 2.0 - 1.0;
+		//vec3 normal_4 = texture(in_normal, UV + vec2(-0.001, -0.002)).rgb * 2.0 - 1.0;
+		//vec3 normal_combined = normal_1 + normal_2 + normal_3 + normal_4;
+		vec3 base_normal = NORMAL;
+		NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + base_normal * normal_1.z);
+	}
 	vec3 base_colour = texture(in_albedo, UV).rgb;
 	vec3 paint_mask = clamp(texture(in_paint_mask, UV).rgb, vec3(0.0), vec3(1.0));
 	float mask_sum = paint_mask.r + paint_mask.g + paint_mask.b;
@@ -73,17 +75,8 @@ void fragment() {
 		livery_accent_colour * mask_weights.b;
 	vec3 painted_colour = base_value * paint_colour * 1.25;
 	vec3 final_colour = mix(base_colour, painted_colour, clamp(livery_colour_strength, 0.0, 1.0) * paint_coverage);
-	if (diagnostic_mode > 0) {
-		if (diagnostic_mode == 1) final_colour = base_colour;
-		else if (diagnostic_mode == 2) final_colour = normal_1 * 0.5 + 0.5;
-		else if (diagnostic_mode == 3) final_colour = paint_mask;
-		else final_colour = vec3(1.0, 0.1, 0.75);
-		ALBEDO = vec3(0.0);
-		EMISSION = final_colour;
-	} else {
-		ALBEDO = final_colour;// * fres;
-		EMISSION = in_overlay_colour;
-	}
+	ALBEDO = final_colour;// * fres;
+	EMISSION = in_overlay_colour;
 }
 
 void light() {
