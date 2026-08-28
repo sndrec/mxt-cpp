@@ -15,6 +15,7 @@ const PracticeSetupClass = preload("res://practice/practice_setup.gd")
 const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 const PracticeInputEditorClass = preload("res://practice/practice_input_editor.gd")
 const CpuVehiclePoolButtonClass = preload("res://ui/cpu_vehicle_pool_button.gd")
+const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -64,19 +65,6 @@ const CpuVehiclePoolButtonClass = preload("res://ui/cpu_vehicle_pool_button.gd")
 @onready var version_label: Label = $VersionLabel
 @onready var cpu_slider: HSlider = $Control/CpuSlider
 @onready var cpu_slider_label: Label = $Control/CpuSliderLabel
-@onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
-@onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
-@onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
-@onready var race_pause_game_speed_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/GameSpeedButton
-@onready var race_pause_input_mode_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputModeButton
-@onready var race_pause_input_editor_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputEditorButton
-@onready var race_pause_telemetry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/TelemetryButton
-@onready var race_pause_retry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RetryButton
-@onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
-@onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
-@onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
-@onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
-
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
 @onready var obj_viewport_texture: ColorRect = get_node_or_null("GameWorld/ObjViewportTexture") as ColorRect
@@ -137,10 +125,6 @@ var start_sync_drop_button: Button
 const DNF_SPEED_THRESHOLD_KMH := 400.0
 const DNF_LOW_SPEED_TICKS := 60 * 10
 const FORCE_END_WINDOW_TICKS := 60 * 60
-const RACE_PAUSE_NAV_PRESS_THRESHOLD := 0.60
-const RACE_PAUSE_NAV_RELEASE_THRESHOLD := 0.35
-const RACE_PAUSE_NAV_DAS_SECONDS := 0.33
-const RACE_PAUSE_NAV_ARR_SECONDS := 0.09
 const NATIVE_UI_FOCUS_ACTIONS: Array[StringName] = [
 	&"ui_up",
 	&"ui_down",
@@ -154,10 +138,7 @@ const NATIVE_UI_FOCUS_ACTIONS: Array[StringName] = [
 	&"ui_end",
 ]
 
-var race_pause_open := false
-var race_pause_options_open := false
-var race_pause_nav_direction := 0
-var race_pause_nav_repeat_seconds := 0.0
+var race_pause_controller: RacePauseController
 var last_process_ticks_usec := 0
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
@@ -271,12 +252,21 @@ func _ready() -> void:
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
+	race_pause_controller = RacePauseControllerClass.new()
+	race_pause_controller.name = "RacePauseController"
+	add_child(race_pause_controller)
+	race_pause_controller.initialize(
+		$RacePauseLayer/RacePauseRoot, practice_controller, replay_controller, options_menu)
+	race_pause_controller.retry_requested.connect(_on_pause_retry_pressed)
+	race_pause_controller.disconnect_requested.connect(_on_pause_disconnect_pressed)
+	race_pause_controller.lobby_requested.connect(_on_pause_lobby_pressed)
+	race_pause_controller.options_requested.connect(_on_pause_options_requested)
 	practice_controller.initialize(
 		self,
-		race_pause_game_speed_button,
-		race_pause_input_mode_button,
-		race_pause_input_editor_button,
-		race_pause_telemetry_button,
+		race_pause_controller.game_speed_button,
+		race_pause_controller.input_mode_button,
+		race_pause_controller.input_editor_button,
+		race_pause_controller.telemetry_button,
 		practice_hud,
 		practice_hud_label,
 		practice_input_editor_layer,
@@ -317,7 +307,6 @@ func _ready() -> void:
 		join_playtest_button.pressed.connect(_on_join_playtest_button_pressed)
 	if !playtest_lobby_probe.availability_changed.is_connected(_on_playtest_lobby_availability_changed):
 		playtest_lobby_probe.availability_changed.connect(_on_playtest_lobby_availability_changed)
-	_build_race_pause_menu()
 	singleplayer_cpu_count = int(cpu_slider.value)
 	_update_cpu_slider_label()
 	headless_mode = DisplayServer.get_name() == "headless"
@@ -1141,164 +1130,27 @@ func _multiplayer_lobby_port() -> int:
 		return 27016
 	return int(clamp(parsed_port, 1, 65535))
 
-func _build_race_pause_menu() -> void:
-	if !race_pause_resume_button.pressed.is_connected(_close_race_pause_menu):
-		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
-	if !race_pause_retry_button.pressed.is_connected(_on_pause_retry_pressed):
-		race_pause_retry_button.pressed.connect(_on_pause_retry_pressed)
-	if !race_pause_options_button.pressed.is_connected(_on_pause_options_pressed):
-		race_pause_options_button.pressed.connect(_on_pause_options_pressed)
-	if !race_pause_lobby_button.pressed.is_connected(_on_pause_lobby_pressed):
-		race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
-	if !race_pause_disconnect_button.pressed.is_connected(_on_pause_disconnect_pressed):
-		race_pause_disconnect_button.pressed.connect(_on_pause_disconnect_pressed)
-
-func _open_race_pause_menu() -> void:
-	if race_pause_root == null or !game_sim.sim_started:
-		return
-	race_pause_open = true
-	race_pause_root.visible = true
-	var host := network_manager.is_server and !singleplayer_mode
-	var configuration := network_manager.race_configuration
-	var practice := configuration.is_practice()
-	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
-	race_pause_game_speed_button.visible = singleplayer_mode and practice
-	race_pause_input_mode_button.visible = singleplayer_mode and practice
-	race_pause_input_editor_button.visible = singleplayer_mode and practice
-	race_pause_telemetry_button.visible = singleplayer_mode and practice
-	race_pause_retry_button.visible = singleplayer_mode and (configuration.is_time_attack() or practice)
-	race_pause_lobby_button.visible = host
-	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
-	if practice:
-		practice_controller.set_pause_freeze(true)
-	replay_controller.refresh_pause_button()
-	_reset_race_pause_navigation()
-	race_pause_resume_button.grab_focus()
-
-func _close_race_pause_menu() -> void:
-	race_pause_open = false
-	_reset_race_pause_navigation()
-	if race_pause_options_open:
-		race_pause_options_open = false
-		if options_menu != null and options_menu.visible:
-			options_menu.call("close_settings")
-	if race_pause_root != null:
-		race_pause_root.visible = false
-	if practice_controller != null and practice_controller.session_active:
-		practice_controller.set_pause_freeze(false)
-
 func _on_pause_retry_pressed() -> void:
 	var configuration := network_manager.race_configuration.copy()
 	if !singleplayer_mode or (!configuration.is_time_attack() and !configuration.is_practice()):
 		return
 	var race_state := network_manager.race_state.duplicate(true)
 	var track_evidence := network_manager.race_track_evidence.copy()
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	_return_to_menu(configuration.is_practice())
 	call_deferred("_start_singleplayer_race", false, configuration, race_state, track_evidence)
 
 func _on_pause_disconnect_pressed() -> void:
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	_return_to_menu()
 
 func _on_pause_lobby_pressed() -> void:
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	if network_manager.is_server:
 		network_manager.send_end_race()
 
-func _on_pause_options_pressed() -> void:
-	race_pause_options_open = true
-	race_pause_root.visible = false
+func _on_pause_options_requested() -> void:
 	options_menu.call("open_settings")
-
-func _race_pause_buttons() -> Array[Button]:
-	var buttons: Array[Button] = []
-	for button in [
-		race_pause_resume_button,
-		race_pause_game_speed_button,
-		race_pause_input_mode_button,
-		race_pause_input_editor_button,
-		race_pause_telemetry_button,
-		race_pause_retry_button,
-		race_pause_options_button,
-		race_pause_save_replay_button,
-		race_pause_lobby_button,
-		race_pause_disconnect_button,
-	]:
-		if button != null and button.visible and !button.disabled:
-			buttons.append(button)
-	return buttons
-
-func _move_race_pause_focus(direction: int) -> void:
-	var buttons := _race_pause_buttons()
-	if buttons.is_empty():
-		return
-	var focused := get_viewport().gui_get_focus_owner()
-	var index := buttons.find(focused)
-	if index < 0:
-		index = 0
-	else:
-		index = posmod(index + direction, buttons.size())
-	buttons[index].grab_focus()
-
-func _reset_race_pause_navigation() -> void:
-	race_pause_nav_direction = 0
-	race_pause_nav_repeat_seconds = 0.0
-
-func _race_pause_navigation_value() -> float:
-	var up_strength := maxf(
-		Input.get_action_strength("SteerUp"),
-		maxf(Input.get_action_strength("DPadUp"), Input.get_action_strength("DpadUp")))
-	var down_strength := maxf(
-		Input.get_action_strength("SteerDown"), Input.get_action_strength("DpadDown"))
-	return down_strength - up_strength
-
-func _update_race_pause_controller_navigation(delta: float) -> void:
-	if !race_pause_open or race_pause_root == null or !race_pause_root.visible:
-		_reset_race_pause_navigation()
-		return
-	var value := _race_pause_navigation_value()
-	var next_direction := race_pause_nav_direction
-	if race_pause_nav_direction == 0:
-		if value <= -RACE_PAUSE_NAV_PRESS_THRESHOLD:
-			next_direction = -1
-		elif value >= RACE_PAUSE_NAV_PRESS_THRESHOLD:
-			next_direction = 1
-	elif race_pause_nav_direction < 0 and value >= -RACE_PAUSE_NAV_RELEASE_THRESHOLD:
-		next_direction = 1 if value >= RACE_PAUSE_NAV_PRESS_THRESHOLD else 0
-	elif race_pause_nav_direction > 0 and value <= RACE_PAUSE_NAV_RELEASE_THRESHOLD:
-		next_direction = -1 if value <= -RACE_PAUSE_NAV_PRESS_THRESHOLD else 0
-	if next_direction != race_pause_nav_direction:
-		race_pause_nav_direction = next_direction
-		if next_direction == 0:
-			race_pause_nav_repeat_seconds = 0.0
-		else:
-			_move_race_pause_focus(next_direction)
-			race_pause_nav_repeat_seconds = RACE_PAUSE_NAV_DAS_SECONDS
-		return
-	if race_pause_nav_direction == 0:
-		return
-	race_pause_nav_repeat_seconds -= delta
-	if race_pause_nav_repeat_seconds <= 0.0:
-		_move_race_pause_focus(race_pause_nav_direction)
-		race_pause_nav_repeat_seconds = RACE_PAUSE_NAV_ARR_SECONDS
-
-func _handle_race_pause_controller_input(event: InputEvent) -> bool:
-	if !race_pause_open or race_pause_root == null or !race_pause_root.visible:
-		return false
-	if practice_controller.handle_pause_input(event, get_viewport().gui_get_focus_owner()):
-		return true
-	if event.is_action_pressed("Accelerate"):
-		var focused := get_viewport().gui_get_focus_owner()
-		if focused is BaseButton and focused.visible and !focused.disabled:
-			(focused as BaseButton).pressed.emit()
-		return true
-	if event is InputEventJoypadMotion \
-			or event.is_action_pressed("DPadUp") or event.is_action_released("DPadUp") \
-			or event.is_action_pressed("DpadUp") or event.is_action_released("DpadUp") \
-			or event.is_action_pressed("DpadDown") or event.is_action_released("DpadDown"):
-		return true
-	return false
 
 func _initialize_grand_prix_options(configuration: MxtRaceConfiguration, options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
@@ -1462,11 +1314,7 @@ func _on_vehicle_view_distance_changed(multiplier: float, render_all: bool) -> v
 func _on_controller_settings_visibility_changed() -> void:
 	if options_menu != null and !options_menu.visible:
 		replay_controller.reload_input_calibration()
-		if race_pause_options_open:
-			race_pause_options_open = false
-			if race_pause_open and game_sim.sim_started:
-				race_pause_root.visible = true
-				race_pause_options_button.grab_focus()
+		race_pause_controller.on_options_visibility_changed(game_sim.sim_started)
 
 func _close_settings_menus_for_race_start() -> void:
 	if car_settings != null:
@@ -1575,7 +1423,7 @@ func _on_network_race_finished() -> void:
 		_return_to_lobby()
 
 func _window_accepts_input() -> bool:
-	if race_pause_open:
+	if race_pause_controller.open:
 		return false
 	if communication_controller.is_race_chat_open():
 		return false
@@ -1787,22 +1635,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			push_warning(str(export_result.get("error", "Netplay telemetry export failed.")))
 		get_viewport().set_input_as_handled()
 		return
-	if race_pause_options_open and options_menu != null and options_menu.visible \
+	if race_pause_controller.options_open and options_menu != null and options_menu.visible \
 			and event.is_action_pressed("ui_cancel"):
 		options_menu.call("close_settings")
 		get_viewport().set_input_as_handled()
 		return
-	if _handle_race_pause_controller_input(event):
+	if race_pause_controller.handle_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if practice_controller.handle_runtime_input(event):
 		get_viewport().set_input_as_handled()
 		return
-	if game_sim.sim_started and !race_pause_options_open and event.is_action_pressed("Pause"):
-		if race_pause_open:
-			_close_race_pause_menu()
+	if game_sim.sim_started and !race_pause_controller.options_open and event.is_action_pressed("Pause"):
+		if race_pause_controller.open:
+			race_pause_controller.close()
 		else:
-			_open_race_pause_menu()
+			race_pause_controller.open_for_race(network_manager.race_configuration,
+				singleplayer_mode, network_manager.is_server and !singleplayer_mode)
 		get_viewport().set_input_as_handled()
 		return
 	if replay_controller.handle_unhandled_input(event):
@@ -1816,10 +1665,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_return_to_menu()
 		get_viewport().set_input_as_handled()
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
-		if race_pause_open:
-			_close_race_pause_menu()
+		if race_pause_controller.open:
+			race_pause_controller.close()
 		else:
-			_open_race_pause_menu()
+			race_pause_controller.open_for_race(network_manager.race_configuration,
+				singleplayer_mode, network_manager.is_server and !singleplayer_mode)
 		get_viewport().set_input_as_handled()
 
 func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
@@ -1827,7 +1677,7 @@ func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
 	practice_controller.end_session(preserve_practice_speed_for_retry)
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(true, true)
@@ -1847,7 +1697,7 @@ func _return_to_lobby() -> void:
 	communication_controller.close_race_chat()
 	practice_controller.end_session()
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(false, false)
@@ -1862,7 +1712,7 @@ func _return_to_lobby() -> void:
 func _teardown_race_world_for_transition() -> void:
 	practice_controller.end_session()
 	race_session_controller.begin_transition(singleplayer_mode)
-	_close_race_pause_menu()
+	race_pause_controller.close()
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(false, false)
@@ -2439,7 +2289,7 @@ func _process(delta: float) -> void:
 		float(now_ticks_usec - last_process_ticks_usec) / 1000000.0, 0.0, 0.1)
 	last_process_ticks_usec = now_ticks_usec
 	_update_playtest_lobby_probe()
-	_update_race_pause_controller_navigation(unscaled_delta)
+	race_pause_controller.update_navigation(unscaled_delta)
 	practice_controller.update(unscaled_delta)
 	practice_controller.consume_frame_rewind()
 	if practice_controller.consume_frame_advance() and game_sim.sim_started and singleplayer_mode:
