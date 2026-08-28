@@ -52,12 +52,12 @@ func _arg_int(args: Array, name: String, fallback: int) -> int:
 	return int(args[idx + 1])
 
 func _validate_packet_roundtrip(source: NetcodeSession, validator: NetcodeSession, packet: PackedByteArray, expected_last_tick: int, player_ids: Array) -> bool:
-	var stats: Dictionary = validator.store_authoritative_input_packet(packet, 0, expected_last_tick)
-	if !bool(stats.get("valid", false)) or bool(stats.get("stale", false)):
-		push_error("auth_input_size_sample invalid roundtrip stats=%s" % [stats])
+	var packet_status := validator.store_authoritative_input_packet(packet, 0, expected_last_tick)
+	if packet_status != NetcodeSession.PACKET_STORE_VALID:
+		push_error("auth_input_size_sample invalid roundtrip status=%d" % packet_status)
 		return false
-	var first_tick := int(stats.get("first_tick", -1))
-	var last_tick := int(stats.get("last_tick", -1))
+	var first_tick := validator.get_last_authoritative_packet_first_tick()
+	var last_tick := validator.get_last_authoritative_packet_last_tick()
 	for tick in range(first_tick, last_tick + 1):
 		var source_frame: Dictionary = source.get_frame_as_dictionary(tick)
 		var decoded_frame: Dictionary = validator.get_frame_as_dictionary(tick)

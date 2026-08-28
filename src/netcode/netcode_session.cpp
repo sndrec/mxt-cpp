@@ -2802,6 +2802,8 @@ void NetcodeSession::reset()
 	cpu_racer_count = 0;
 	local_player_id = -1;
 	latest_authoritative_tick = -1;
+	last_pending_packet_result = PendingInputPacketResult();
+	last_authoritative_packet_result = AuthoritativeInputPacketResult();
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;
@@ -2831,6 +2833,8 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	cpu_racer_count = 0;
 	local_player_id = p_local_player_id;
 	latest_authoritative_tick = -1;
+	last_pending_packet_result = PendingInputPacketResult();
+	last_authoritative_packet_result = AuthoritativeInputPacketResult();
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;
@@ -2986,25 +2990,17 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase)
+int NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase)
 {
-	Dictionary stats;
-	stats["start_tick"] = -1;
-	stats["count"] = 0;
-	stats["accepted"] = 0;
-	stats["dropped"] = 0;
-	stats["last_tick"] = -1;
-	stats["valid"] = false;
-	stats["stale"] = false;
-	stats["seen_before"] = false;
+	last_pending_packet_result = PendingInputPacketResult();
 
 	const int index = find_racer_index(static_cast<int32_t>(player_id));
 	if (index < 0) {
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	const int peer_index = ensure_peer_index(static_cast<int32_t>(player_id));
 	const bool seen_before = peer_index >= 0 && peer_states[peer_index].last_received_tick >= 0;
-	stats["seen_before"] = seen_before;
+	last_pending_packet_result.seen_before = seen_before ? 1 : 0;
 	if (peer_index >= 0) {
 		peer_states[peer_index].desired_ahead = static_cast<float>(ahead);
 	}
@@ -3012,20 +3008,17 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	uint8_t count = 0;
 	int32_t packed_start_tick = -1;
 	if (!reader.read_i32(packed_start_tick) || !reader.read_u8(count)) {
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	if (unpack_race_phase(packed_start_tick) != (expected_race_phase & 1)) {
-		stats["stale"] = true;
-		stats["valid"] = true;
-		return stats;
+		return PACKET_STORE_STALE;
 	}
 	const int start_tick = unpack_tick(packed_start_tick);
-	stats["start_tick"] = start_tick;
-	stats["count"] = static_cast<int>(count);
-	stats["valid"] = true;
+	last_pending_packet_result.start_tick = start_tick;
+	last_pending_packet_result.count = static_cast<int32_t>(count);
 	if (count > 0 && start_tick + static_cast<int32_t>(count) <= reject_before_tick) {
-		stats["dropped"] = static_cast<int>(count);
-		return stats;
+		last_pending_packet_result.dropped = static_cast<int32_t>(count);
+		return PACKET_STORE_VALID;
 	}
 
 	int accepted = 0;
@@ -3034,14 +3027,12 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	for (int i = 0; i < static_cast<int>(count); ++i) {
 		const uint8_t* bytes = nullptr;
 		if (!reader.read_bytes(bytes, 1)) {
-			stats["valid"] = false;
-			break;
+			return PACKET_STORE_INVALID;
 		}
 		const int len = PlayerInput::encoded_raw_size_from_mask(bytes[0]);
 		reader.pos -= 1;
 		if (len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
-			stats["valid"] = false;
-			break;
+			return PACKET_STORE_INVALID;
 		}
 		const int tick = start_tick + i;
 		if (tick < reject_before_tick) {
@@ -3054,14 +3045,44 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 		++accepted;
 		last_tick = tick;
 	}
-	stats["accepted"] = accepted;
-	stats["dropped"] = dropped;
-	stats["last_tick"] = last_tick;
+	last_pending_packet_result.accepted = accepted;
+	last_pending_packet_result.dropped = dropped;
+	last_pending_packet_result.last_tick = last_tick;
 	if (accepted > 0 && peer_index >= 0) {
 		peer_states[peer_index].last_received_tick = last_tick;
 		peer_states[peer_index].last_input_time = now_sec;
 	}
-	return stats;
+	return PACKET_STORE_VALID;
+}
+
+int NetcodeSession::get_last_pending_packet_start_tick() const
+{
+	return last_pending_packet_result.start_tick;
+}
+
+int NetcodeSession::get_last_pending_packet_count() const
+{
+	return last_pending_packet_result.count;
+}
+
+int NetcodeSession::get_last_pending_packet_accepted() const
+{
+	return last_pending_packet_result.accepted;
+}
+
+int NetcodeSession::get_last_pending_packet_dropped() const
+{
+	return last_pending_packet_result.dropped;
+}
+
+int NetcodeSession::get_last_pending_packet_last_tick() const
+{
+	return last_pending_packet_result.last_tick;
+}
+
+bool NetcodeSession::get_last_pending_packet_seen_before() const
+{
+	return last_pending_packet_result.seen_before != 0;
 }
 
 godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last_tick, int max_frame_count, int race_phase) const
@@ -3185,14 +3206,9 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase, int authoritative_last_tick, int external_mode_count_phase)
+int NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase, int authoritative_last_tick, int external_mode_count_phase)
 {
-	Dictionary stats;
-	stats["first_tick"] = -1;
-	stats["last_tick"] = -1;
-	stats["count"] = 0;
-	stats["valid"] = false;
-	stats["stale"] = false;
+	last_authoritative_packet_result = AuthoritativeInputPacketResult();
 
 	PacketReader reader(packet);
 	uint8_t count = 0;
@@ -3201,7 +3217,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		mode_count_phase = static_cast<uint8_t>(external_mode_count_phase & 0xff);
 	} else {
 		if (!reader.read_u8(mode_count_phase)) {
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 	}
 	const uint8_t compression_mode = mode_count_phase & MXT_NET_AUTH_MODE_MASK;
@@ -3222,33 +3238,28 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		count = 2;
 	} else if (mode_is_low_entropy) {
 		if (count_code > MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT) {
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 		count = 2;
 		low_entropy_sublayout = static_cast<int>(count_code);
 	} else if (count_code == MXT_NET_AUTH_COUNT_ESCAPE) {
 		if (!reader.read_u8(count)) {
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 	} else {
 		count = static_cast<uint8_t>(count_code + 1);
 	}
 	if (((mode_count_phase & MXT_NET_AUTH_PHASE_BIT) ? 1 : 0) != (expected_race_phase & 1)) {
-		stats["stale"] = true;
-		stats["valid"] = true;
-		return stats;
+		return PACKET_STORE_STALE;
 	}
 	if (authoritative_last_tick < 0 || static_cast<int>(count) - 1 > authoritative_last_tick) {
-		stats["valid"] = false;
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	const int first_tick = authoritative_last_tick - static_cast<int>(count) + 1;
-	stats["first_tick"] = first_tick;
-	stats["count"] = static_cast<int>(count);
-	stats["valid"] = true;
+	last_authoritative_packet_result.first_tick = first_tick;
+	last_authoritative_packet_result.count = static_cast<int32_t>(count);
 	if (!auth_input_mode_valid(compression_mode)) {
-		stats["valid"] = false;
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	const AuthInputLayout packet_layout = mode_is_zero_bitmap_strafe_sparse ?
 		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP_STRAFE_SPARSE :
@@ -3261,11 +3272,10 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		auth_input_delta_low_entropy_raw_size_bound(static_cast<int>(count), racer_count, low_entropy_sublayout < 0) :
 		auth_input_raw_size(static_cast<int>(count), racer_count, packet_layout);
 	if (raw_size < 0) {
-		stats["valid"] = false;
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	if (count == 0) {
-		return stats;
+		return PACKET_STORE_VALID;
 	}
 	PackedByteArray compressed = packet.slice(reader.pos, packet.size());
 	PackedByteArray raw;
@@ -3354,15 +3364,13 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	}
 	if ((!zero_bitmap_layout && !low_entropy_layout && raw.size() != raw_size) ||
 		((zero_bitmap_layout || low_entropy_layout) && raw.size() > raw_size)) {
-		stats["valid"] = false;
-		return stats;
+		return PACKET_STORE_INVALID;
 	}
 	AuthInputLayout layout = packet_layout;
 	if (low_entropy_layout) {
 		PackedByteArray expanded_raw;
 		if (!decode_delta_low_entropy_raw(raw, expanded_raw, static_cast<int>(count), racer_count, low_entropy_sublayout)) {
-			stats["valid"] = false;
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 		raw = expanded_raw;
 		layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
@@ -3370,8 +3378,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	if (zero_bitmap_strafe_sparse_layout) {
 		PackedByteArray expanded_raw;
 		if (!decode_zero_bitmap_strafe_sparse_raw(raw, expanded_raw, static_cast<int>(count), racer_count)) {
-			stats["valid"] = false;
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 		raw = expanded_raw;
 		layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
@@ -3379,8 +3386,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		PackedByteArray expanded_raw;
 		const int bitpacked_size = auth_input_bitpacked_raw_size(static_cast<int>(count), racer_count);
 		if (!decode_zero_bitmap_raw(raw, expanded_raw, bitpacked_size)) {
-			stats["valid"] = false;
-			return stats;
+			return PACKET_STORE_INVALID;
 		}
 		raw = expanded_raw;
 		layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
@@ -3559,9 +3565,24 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		const int tick = first_tick + f;
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
-		stats["last_tick"] = tick;
+		last_authoritative_packet_result.last_tick = tick;
 	}
-	return stats;
+	return PACKET_STORE_VALID;
+}
+
+int NetcodeSession::get_last_authoritative_packet_first_tick() const
+{
+	return last_authoritative_packet_result.first_tick;
+}
+
+int NetcodeSession::get_last_authoritative_packet_last_tick() const
+{
+	return last_authoritative_packet_result.last_tick;
+}
+
+int NetcodeSession::get_last_authoritative_packet_count() const
+{
+	return last_authoritative_packet_result.count;
 }
 
 godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase) const

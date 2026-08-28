@@ -90,12 +90,19 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 	if expected_packet_mode >= 0 and packet.size() > 0 and (int(packet[0]) & 0x07) != expected_packet_mode:
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP wrong packet mode=%s got=%d want=%d packet=%d" % [mode, int(packet[0]) & 0x07, expected_packet_mode, packet.size()])
 		return false
-	var stats: Dictionary = client.store_authoritative_input_packet(packet, 1, frame_count - 1)
-	if !bool(stats.get("valid", false)) or bool(stats.get("stale", false)):
-		push_error("MXT_AUTH_INPUT_ROUNDTRIP invalid mode=%s stats=%s" % [mode, stats])
+	var packet_status := client.store_authoritative_input_packet(packet, 1, frame_count - 1)
+	if packet_status != NetcodeSession.PACKET_STORE_VALID:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP invalid mode=%s status=%d" % [mode, packet_status])
 		return false
-	if int(stats.get("count", -1)) != frame_count or int(stats.get("first_tick", -1)) != 0 or int(stats.get("last_tick", -1)) != frame_count - 1:
-		push_error("MXT_AUTH_INPUT_ROUNDTRIP bad range mode=%s stats=%s" % [mode, stats])
+	if client.get_last_authoritative_packet_count() != frame_count \
+			or client.get_last_authoritative_packet_first_tick() != 0 \
+			or client.get_last_authoritative_packet_last_tick() != frame_count - 1:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP bad range mode=%s first=%d last=%d count=%d" % [
+			mode,
+			client.get_last_authoritative_packet_first_tick(),
+			client.get_last_authoritative_packet_last_tick(),
+			client.get_last_authoritative_packet_count(),
+		])
 		return false
 
 	for tick in range(frame_count):
@@ -116,12 +123,19 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP unexpected escaped count mode=%s packet=%d" % [mode, packet.size()])
 		return false
 	var stripped_packet := packet.slice(1)
-	var stripped_stats: Dictionary = stripped_client.store_authoritative_input_packet(stripped_packet, 1, frame_count - 1, packet_meta)
-	if !bool(stripped_stats.get("valid", false)) or bool(stripped_stats.get("stale", false)):
-		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped invalid mode=%s stats=%s" % [mode, stripped_stats])
+	var stripped_status := stripped_client.store_authoritative_input_packet(stripped_packet, 1, frame_count - 1, packet_meta)
+	if stripped_status != NetcodeSession.PACKET_STORE_VALID:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped invalid mode=%s status=%d" % [mode, stripped_status])
 		return false
-	if int(stripped_stats.get("count", -1)) != frame_count or int(stripped_stats.get("first_tick", -1)) != 0 or int(stripped_stats.get("last_tick", -1)) != frame_count - 1:
-		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped bad range mode=%s stats=%s" % [mode, stripped_stats])
+	if stripped_client.get_last_authoritative_packet_count() != frame_count \
+			or stripped_client.get_last_authoritative_packet_first_tick() != 0 \
+			or stripped_client.get_last_authoritative_packet_last_tick() != frame_count - 1:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped bad range mode=%s first=%d last=%d count=%d" % [
+			mode,
+			stripped_client.get_last_authoritative_packet_first_tick(),
+			stripped_client.get_last_authoritative_packet_last_tick(),
+			stripped_client.get_last_authoritative_packet_count(),
+		])
 		return false
 	for tick in range(frame_count):
 		var stripped_decoded: Dictionary = stripped_client.get_frame_as_dictionary(tick)

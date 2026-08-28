@@ -737,16 +737,17 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 		var reject_before := recovery_cutoff if sender_delayed else maxi(recovery_cutoff, server_tick)
 		if !sender_seen_before:
 			reject_before = server_tick
-		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ahead, now_sec, race_netplay_phase)
-		if !bool(stats.get("valid", false)):
+		var packet_status := server_netcode_session.store_pending_input_packet(
+			sender_id, reject_before, packet, ahead, now_sec, race_netplay_phase)
+		if packet_status == NetcodeSession.PACKET_STORE_INVALID:
 			return
-		if bool(stats.get("stale", false)):
+		if packet_status == NetcodeSession.PACKET_STORE_STALE:
 			return
-		var start_tick := int(stats.get("start_tick", -1))
-		var count := int(stats.get("count", 0))
-		var accepted := int(stats.get("accepted", 0))
-		var dropped := int(stats.get("dropped", 0))
-		var last_tick := int(stats.get("last_tick", -1))
+		var start_tick := server_netcode_session.get_last_pending_packet_start_tick()
+		var count := server_netcode_session.get_last_pending_packet_count()
+		var accepted := server_netcode_session.get_last_pending_packet_accepted()
+		var dropped := server_netcode_session.get_last_pending_packet_dropped()
+		var last_tick := server_netcode_session.get_last_pending_packet_last_tick()
 		var server_lead := last_tick - server_tick if last_tick >= 0 else -9999
 		var target_lead := last_tick - target_tick if last_tick >= 0 else -9999
 		log_peer_last_packet_start[sender_id] = start_tick
@@ -828,14 +829,15 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 	if not is_server or listen_server:
 		var old_clients_server_tick : int = clients_server_tick
 		var old_clients_target_tick : int = clients_target_tick
-		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase, authoritative_last_tick, input_packet_meta)
-		if bool(stats.get("valid", false)):
-			if bool(stats.get("stale", false)):
-				return
-			var count := int(stats.get("count", 0))
+		var packet_status := netcode_session.store_authoritative_input_packet(
+			input_packet, race_netplay_phase, authoritative_last_tick, input_packet_meta)
+		if packet_status == NetcodeSession.PACKET_STORE_STALE:
+			return
+		if packet_status == NetcodeSession.PACKET_STORE_VALID:
+			var count := netcode_session.get_last_authoritative_packet_count()
 			if count > 0:
-				var first_tick := int(stats.get("first_tick", -1))
-				var last_tick := int(stats.get("last_tick", -1))
+				var first_tick := netcode_session.get_last_authoritative_packet_first_tick()
+				var last_tick := netcode_session.get_last_authoritative_packet_last_tick()
 				if race_admission.first_authoritative_input_msec < 0:
 					race_admission.first_authoritative_input_msec = Time.get_ticks_msec()
 					race_admission.first_authoritative_first_tick = first_tick

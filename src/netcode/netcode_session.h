@@ -14,6 +14,15 @@ class GameSim;
 class NetcodeSession : public Object {
 	GDCLASS(NetcodeSession, Object)
 
+public:
+	enum PacketStoreStatus : int32_t {
+		PACKET_STORE_INVALID = 0,
+		PACKET_STORE_VALID = 1,
+		PACKET_STORE_STALE = 2,
+	};
+
+private:
+
 	static constexpr int MAX_RACERS = 1024;
 	static constexpr int HISTORY_LEN = 128;
 	static constexpr int MAX_PEERS = 256;
@@ -35,6 +44,21 @@ class NetcodeSession : public Object {
 		uint8_t active = 0;
 	};
 
+	struct PendingInputPacketResult {
+		int32_t start_tick = -1;
+		int32_t count = 0;
+		int32_t accepted = 0;
+		int32_t dropped = 0;
+		int32_t last_tick = -1;
+		uint8_t seen_before = 0;
+	};
+
+	struct AuthoritativeInputPacketResult {
+		int32_t first_tick = -1;
+		int32_t last_tick = -1;
+		int32_t count = 0;
+	};
+
 	int racer_count = 0;
 	int cpu_racer_count = 0;
 	int32_t local_player_id = -1;
@@ -49,6 +73,8 @@ class NetcodeSession : public Object {
 	InputFrame authoritative_history[HISTORY_LEN];
 	InputFrame pending_inputs[HISTORY_LEN];
 	PeerState peer_states[MAX_PEERS];
+	PendingInputPacketResult last_pending_packet_result;
+	AuthoritativeInputPacketResult last_authoritative_packet_result;
 	int32_t latest_authoritative_tick = -1;
 	mutable uint64_t stat_auth_packets = 0;
 	mutable uint64_t stat_auth_frames = 0;
@@ -88,9 +114,18 @@ public:
 	godot::Dictionary fill_missing_pending_inputs(int tick, godot::Array player_ids, godot::Array disconnected_ids, godot::Array delayed_ids, bool allow_new_delayed);
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count, int race_phase = 0) const;
 	godot::Array build_state_fec_chunks(godot::PackedByteArray payload, int chunk_size, int data_chunks_per_group) const;
-	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);
+	int store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);
+	int get_last_pending_packet_start_tick() const;
+	int get_last_pending_packet_count() const;
+	int get_last_pending_packet_accepted() const;
+	int get_last_pending_packet_dropped() const;
+	int get_last_pending_packet_last_tick() const;
+	bool get_last_pending_packet_seen_before() const;
 	godot::PackedByteArray build_authoritative_input_packet(int last_tick, int max_frame_count, int race_phase = 0) const;
-	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase = 0, int authoritative_last_tick = -1, int external_mode_count_phase = -1);
+	int store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase = 0, int authoritative_last_tick = -1, int external_mode_count_phase = -1);
+	int get_last_authoritative_packet_first_tick() const;
+	int get_last_authoritative_packet_last_tick() const;
+	int get_last_authoritative_packet_count() const;
 	godot::Dictionary debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase = 0) const;
 	godot::Dictionary consume_authoritative_packet_stats();
 	godot::Dictionary get_input_frame_debug(int tick) const;
@@ -114,3 +149,5 @@ public:
 };
 
 }
+
+VARIANT_ENUM_CAST(godot::NetcodeSession::PacketStoreStatus);

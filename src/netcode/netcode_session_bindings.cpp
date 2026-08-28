@@ -5,6 +5,10 @@
 using namespace godot;
 void NetcodeSession::_bind_methods()
 {
+	BIND_ENUM_CONSTANT(PACKET_STORE_INVALID);
+	BIND_ENUM_CONSTANT(PACKET_STORE_VALID);
+	BIND_ENUM_CONSTANT(PACKET_STORE_STALE);
+
 	ClassDB::bind_method(D_METHOD("reset"), &NetcodeSession::reset);
 	ClassDB::bind_method(D_METHOD("configure", "player_ids", "cpu_flags", "local_player_id"), &NetcodeSession::configure);
 	ClassDB::bind_method(D_METHOD("set_local_input", "input_bytes"), &NetcodeSession::set_local_input);
@@ -15,8 +19,17 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count", "race_phase"), &NetcodeSession::build_local_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("build_state_fec_chunks", "payload", "chunk_size", "data_chunks_per_group"), &NetcodeSession::build_state_fec_chunks);
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_start_tick"), &NetcodeSession::get_last_pending_packet_start_tick);
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_count"), &NetcodeSession::get_last_pending_packet_count);
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_accepted"), &NetcodeSession::get_last_pending_packet_accepted);
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_dropped"), &NetcodeSession::get_last_pending_packet_dropped);
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_last_tick"), &NetcodeSession::get_last_pending_packet_last_tick);
+	ClassDB::bind_method(D_METHOD("get_last_pending_packet_seen_before"), &NetcodeSession::get_last_pending_packet_seen_before);
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::build_authoritative_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet", "expected_race_phase", "authoritative_last_tick", "external_mode_count_phase"), &NetcodeSession::store_authoritative_input_packet, DEFVAL(0), DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_last_authoritative_packet_first_tick"), &NetcodeSession::get_last_authoritative_packet_first_tick);
+	ClassDB::bind_method(D_METHOD("get_last_authoritative_packet_last_tick"), &NetcodeSession::get_last_authoritative_packet_last_tick);
+	ClassDB::bind_method(D_METHOD("get_last_authoritative_packet_count"), &NetcodeSession::get_last_authoritative_packet_count);
 	ClassDB::bind_method(D_METHOD("debug_compare_authoritative_input_packet_sizes", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::debug_compare_authoritative_input_packet_sizes, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
