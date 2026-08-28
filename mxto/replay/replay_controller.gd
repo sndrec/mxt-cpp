@@ -128,6 +128,7 @@ var replay_timeline_marker_layer: Control
 var replay_timeline_time_label: Label
 var replay_timeline_rate_label: Label
 var replay_timeline_play_button: Button
+var replay_timeline_camera_mode_button: Button
 var replay_timeline_save_local_button: Button
 var replay_timeline_focus_prev_button: Button
 var replay_timeline_focus_next_button: Button
@@ -257,11 +258,6 @@ func handle_unhandled_input(event: InputEvent) -> bool:
 		var replay_mouse_button := event as InputEventMouseButton
 		if replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT and replay_mouse_button.pressed and _replay_camera_mode_uses_mouse_capture():
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-			return true
-	if replay_playback_active and event is InputEventKey:
-		var replay_key := event as InputEventKey
-		if replay_key.pressed and !replay_key.echo and replay_key.keycode == KEY_SPACE:
-			_cycle_replay_camera_mode()
 			return true
 	if replay_playback_active and event.is_action_pressed("SpinAttack"):
 		_cycle_replay_camera_mode()
@@ -944,6 +940,11 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_play_button.focus_mode = Control.FOCUS_NONE
 	replay_timeline_play_button.pressed.connect(_on_replay_timeline_play_pressed)
 	controls.add_child(replay_timeline_play_button)
+	replay_timeline_camera_mode_button = Button.new()
+	replay_timeline_camera_mode_button.text = "Camera: Game"
+	replay_timeline_camera_mode_button.focus_mode = Control.FOCUS_NONE
+	replay_timeline_camera_mode_button.pressed.connect(_cycle_replay_camera_mode)
+	controls.add_child(replay_timeline_camera_mode_button)
 	var slower := Button.new()
 	slower.text = "-"
 	slower.focus_mode = Control.FOCUS_NONE
@@ -1547,6 +1548,8 @@ func _update_replay_timeline_controls() -> void:
 		replay_timeline_rate_label.text = _format_replay_playback_rate()
 	if replay_timeline_play_button != null:
 		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
+	if replay_timeline_camera_mode_button != null:
+		replay_timeline_camera_mode_button.text = "Camera: %s" % _replay_camera_mode_name()
 	if replay_camera_controls != null:
 		replay_camera_controls.visible = replay_playback_active and (
 			replay_camera_mode == REPLAY_CAMERA_RELATIVE or replay_camera_mode == REPLAY_CAMERA_SPECTATOR)
