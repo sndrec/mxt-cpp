@@ -25,7 +25,8 @@ and communication.
 Networking is coordinated by `mxto/netplay/network_manager.gd`, with direct
 owners for lobby settings, race admission, input transport/timing/rollback,
 state transfer, results, and telemetry. RPCs live on the node that owns their
-state; `NetworkManager` is lifecycle coordination, not a forwarding facade.
+state; `NetworkManager` coordinates the networking lifecycle across these
+owners.
 
 Native production source is grouped under `src/gamesim`, `src/car`, `src/track`,
 `src/core`, `src/netcode`, `src/audio`, `src/render`, `src/camera`,
@@ -43,8 +44,8 @@ tree under `reference/fzgx`.
 - optional Steamworks SDK through `STEAMWORKS_SDK_ROOT`, `steamworks_sdk=...`,
   or a sibling `../steamworks-sdk` directory
 
-Initialize submodules before the first build. Vendored zstd and Opus sources are
-compiled by SCons; no separate library install is required.
+Initialize submodules before the first build. SCons compiles the vendored zstd
+and Opus sources as part of the build.
 
 ## Build and launch
 
@@ -77,7 +78,7 @@ The stable single-process suite and deterministic simulation suite are:
 ```
 
 Replay and lobby-load groups require their documented inputs/helpers. Smoke
-logs default to a timestamped system temporary directory rather than the repo.
+logs are written to timestamped directories under system temporary storage.
 The Blender add-on's lightweight Python tests are:
 
 ```powershell

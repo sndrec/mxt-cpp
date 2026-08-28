@@ -22,10 +22,10 @@ The default output folder is:
 A:\blender_stuff\mxt\mxt_track_editor\tracks\fzgx_imports
 ```
 
-Current limitations:
+## Current conversion coverage
 
-- The sampler follows the primary branch/driveable surface only.
-- Decorative/collision triangle mesh data is intentionally ignored.
-- Shape-family support is best-effort; Course 01 currently converts as flat
-  road throughout.
-- Trigger objects, embeds, materials, and GX-specific effects are not ported yet.
+- The sampler follows the primary branch and its analytic driveable surface.
+- Conversion output contains MXT road segments and the preview/collision exports
+  produced from those segments.
+- Shape-family mapping is best-effort; Course 01 currently uses flat road
+  segments throughout.

@@ -1,13 +1,13 @@
 # MaxX Throttle Leaderboard API
 
-This Cloudflare Worker is the authoritative metadata and replay store for ranked Time Attack. The native verifier remains responsible for Steam authentication, app ownership, official-content validation, and deterministic replay simulation. Only its signed output can enter this service.
+This Cloudflare Worker is the authoritative metadata and replay store for ranked Time Attack. The native verifier remains responsible for Steam authentication, app ownership, official-content validation, and deterministic replay simulation. The Worker authenticates verifier output with the shared `INGEST_SECRET`.
 
 ## Storage
 
 - D1 stores Steam identities, board identities, immutable verified runs, and conditional per-vehicle best references.
 - R2 stores every successfully verified completed ranked replay by SHA-256.
-- Slower runs remain in `verified_runs` and R2 even when `player_vehicle_bests` does not change.
-- Practice, unranked, custom-track, and non-official-vehicle runs never reach the ingest endpoint.
+- Every verified completion remains in `verified_runs` and R2; a faster run also updates `player_vehicle_bests`.
+- The native verifier sends completed ranked runs on official tracks with official vehicles to the ingest endpoint.
 
 The ingest operation stores and checksum-validates the replay object before committing its D1 metadata. Retrying the same authenticated Steam ID and replay digest is idempotent.
 
@@ -32,7 +32,7 @@ The integration tests use the current Cloudflare Vitest plugin and real local D1
 5. Run `npm run check`, `npm test`, `npm run deploy:dry`, and `npx wrangler check startup`.
 6. Deploy and verify `/healthz` before configuring the native verifier or game client.
 
-The verifier and Worker must share `INGEST_SECRET`. `REPLAY_URL_SECRET` belongs only to the Worker.
+The verifier and Worker must share `INGEST_SECRET`. The Worker owns `REPLAY_URL_SECRET`.
 
 Apply migrations before deploying Worker code that depends on them:
 
@@ -58,9 +58,9 @@ Verify each environment's `/healthz` after deployment. Keep staging and producti
 - `GET /v1/replays/{run_id}` — signed replay download.
 - `GET /healthz` — service and D1 health.
 
-Friends filtering is deliberately not an authority-cutover requirement. The endpoint reports it as unavailable until a client-Steam-friends filtering path is enabled.
+Friends filtering becomes available when the client-Steam-friends filtering path is enabled. Until then, the endpoint reports that view as unavailable.
 
-Global reads use deterministic cursor pagination. One immutable board revision admits only one gameplay digest for each official vehicle content ID, so a vehicle rebalance must ship with a new Time Attack ruleset/board revision rather than silently mixing physics revisions.
+Global reads use deterministic cursor pagination. One immutable board revision admits one gameplay digest for each official vehicle content ID. A vehicle rebalance therefore ships with a new Time Attack ruleset and board revision, keeping each revision tied to one physics version.
 
 ## Operations
 
@@ -78,4 +78,4 @@ The backup is marked complete only after every replay is downloaded and verified
 
 Restores checksum all local files, upload replay objects first, and commit the D1 export last. The script refuses to merge into or overwrite a populated authority.
 
-Moderation never destroys replay evidence. Use `scripts/moderate.py` with the environment's untracked admin-secret file to set a run, historical score, or player to `visible`, `quarantined`, or `hidden`. Every action records its operator, reason, target, state, and timestamp in `moderation_actions`. Moderating a run also atomically repairs its per-vehicle best pointer.
+Moderation preserves replay evidence. Use `scripts/moderate.py` with the environment's untracked admin-secret file to set a run, historical score, or player to `visible`, `quarantined`, or `hidden`. Every action records its operator, reason, target, state, and timestamp in `moderation_actions`. Moderating a run also atomically repairs its per-vehicle best pointer.

@@ -1,8 +1,7 @@
 # Official vehicle reference repair
 
-Vehicle properties are authored by the in-game Car Creator and parsed by the
-native GDExtension. There is no separate Python implementation of the vehicle
-property format.
+The in-game Car Creator authors vehicle properties, and the native GDExtension
+parses their binary format.
 
 `update_vehicle_files.py` is a narrowly scoped maintenance script that repairs
 official vehicle scene and definition references from the assets currently
