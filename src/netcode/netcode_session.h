@@ -59,6 +59,17 @@ private:
 		int32_t count = 0;
 	};
 
+	struct AuthoritativePacketStats {
+		uint64_t packets = 0;
+		uint64_t frames = 0;
+		uint64_t encoded_inputs = 0;
+		uint64_t unchanged_inputs = 0;
+		uint64_t raw_bytes = 0;
+		uint64_t payload_bytes = 0;
+		uint64_t compression_candidates = 0;
+		uint64_t build_usec = 0;
+	};
+
 	int racer_count = 0;
 	int cpu_racer_count = 0;
 	int32_t local_player_id = -1;
@@ -75,6 +86,7 @@ private:
 	PeerState peer_states[MAX_PEERS];
 	PendingInputPacketResult last_pending_packet_result;
 	AuthoritativeInputPacketResult last_authoritative_packet_result;
+	AuthoritativePacketStats last_consumed_authoritative_packet_stats;
 	int32_t last_replaced_pending_player_ids[MAX_RACERS] = {};
 	int32_t last_replaced_pending_player_count = 0;
 	int32_t latest_authoritative_tick = -1;
@@ -130,7 +142,15 @@ public:
 	int get_last_authoritative_packet_last_tick() const;
 	int get_last_authoritative_packet_count() const;
 	godot::Dictionary debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase = 0) const;
-	godot::Dictionary consume_authoritative_packet_stats();
+	void consume_authoritative_packet_stats();
+	int64_t get_authoritative_stat_packets() const;
+	int64_t get_authoritative_stat_frames() const;
+	int64_t get_authoritative_stat_encoded_inputs() const;
+	int64_t get_authoritative_stat_unchanged_inputs() const;
+	int64_t get_authoritative_stat_raw_bytes() const;
+	int64_t get_authoritative_stat_payload_bytes() const;
+	int64_t get_authoritative_stat_compression_candidates() const;
+	int64_t get_authoritative_stat_build_usec() const;
 	godot::Dictionary get_input_frame_debug(int tick) const;
 	void configure_authoritative_input_sample_dump(bool enabled, int limit, godot::String directory);
 	void clear_peer_state();

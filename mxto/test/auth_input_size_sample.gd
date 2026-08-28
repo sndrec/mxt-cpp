@@ -218,7 +218,7 @@ func _init() -> void:
 						low_entropy_mask_pair_counts[mask_pair_code] = int(low_entropy_mask_pair_counts.get(mask_pair_code, 0)) + mask_pair_count
 			sample_count += 1
 
-	var stats := session.consume_authoritative_packet_stats()
+	session.consume_authoritative_packet_stats()
 	var avg_packet := float(packet_bytes) / float(maxi(sample_count, 1))
 	var avg_wire_packet := float(wire_packet_bytes) / float(maxi(sample_count, 1))
 	print("MXT_AUTH_INPUT_SIZE_DONE track=", track_path,
@@ -264,9 +264,9 @@ func _init() -> void:
 		" bitpacked_zero_dict_packet_avg=", float(bitpacked_zero_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_dict_packet_avg=", float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_smooth_dict_packet_avg=", float(hybrid_smooth_dict_packet_bytes) / float(maxi(sample_count, 1)),
-		" auth_packets=", int(stats.get("auth_packets", 0)),
-		" auth_frames=", int(stats.get("auth_frames", 0)),
-		" auth_encoded_inputs=", int(stats.get("auth_encoded_inputs", 0)),
-		" auth_raw_bytes=", int(stats.get("auth_raw_bytes", 0)),
-		" auth_payload_bytes=", int(stats.get("auth_payload_bytes", 0)))
+		" auth_packets=", session.get_authoritative_stat_packets(),
+		" auth_frames=", session.get_authoritative_stat_frames(),
+		" auth_encoded_inputs=", session.get_authoritative_stat_encoded_inputs(),
+		" auth_raw_bytes=", session.get_authoritative_stat_raw_bytes(),
+		" auth_payload_bytes=", session.get_authoritative_stat_payload_bytes())
 	quit()

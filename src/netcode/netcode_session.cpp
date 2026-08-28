@@ -2804,6 +2804,8 @@ void NetcodeSession::reset()
 	latest_authoritative_tick = -1;
 	last_pending_packet_result = PendingInputPacketResult();
 	last_authoritative_packet_result = AuthoritativeInputPacketResult();
+	last_consumed_authoritative_packet_stats = AuthoritativePacketStats();
+	last_replaced_pending_player_count = 0;
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;
@@ -2835,6 +2837,8 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	latest_authoritative_tick = -1;
 	last_pending_packet_result = PendingInputPacketResult();
 	last_authoritative_packet_result = AuthoritativeInputPacketResult();
+	last_consumed_authoritative_packet_stats = AuthoritativePacketStats();
+	last_replaced_pending_player_count = 0;
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;

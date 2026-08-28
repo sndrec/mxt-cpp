@@ -33,6 +33,14 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_last_authoritative_packet_count"), &NetcodeSession::get_last_authoritative_packet_count);
 	ClassDB::bind_method(D_METHOD("debug_compare_authoritative_input_packet_sizes", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::debug_compare_authoritative_input_packet_sizes, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_packets"), &NetcodeSession::get_authoritative_stat_packets);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_frames"), &NetcodeSession::get_authoritative_stat_frames);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_encoded_inputs"), &NetcodeSession::get_authoritative_stat_encoded_inputs);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_unchanged_inputs"), &NetcodeSession::get_authoritative_stat_unchanged_inputs);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_raw_bytes"), &NetcodeSession::get_authoritative_stat_raw_bytes);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_payload_bytes"), &NetcodeSession::get_authoritative_stat_payload_bytes);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_compression_candidates"), &NetcodeSession::get_authoritative_stat_compression_candidates);
+	ClassDB::bind_method(D_METHOD("get_authoritative_stat_build_usec"), &NetcodeSession::get_authoritative_stat_build_usec);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("configure_authoritative_input_sample_dump", "enabled", "limit", "directory"), &NetcodeSession::configure_authoritative_input_sample_dump);
 	ClassDB::bind_method(D_METHOD("clear_peer_state"), &NetcodeSession::clear_peer_state);

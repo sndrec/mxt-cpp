@@ -44,17 +44,16 @@ godot::Array NetcodeSession::build_state_fec_chunks(godot::PackedByteArray paylo
 	return chunks;
 }
 
-godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
+void NetcodeSession::consume_authoritative_packet_stats()
 {
-	Dictionary stats;
-	stats["auth_packets"] = static_cast<int64_t>(stat_auth_packets);
-	stats["auth_frames"] = static_cast<int64_t>(stat_auth_frames);
-	stats["auth_encoded_inputs"] = static_cast<int64_t>(stat_auth_encoded_inputs);
-	stats["auth_unchanged_inputs"] = static_cast<int64_t>(stat_auth_unchanged_inputs);
-	stats["auth_raw_bytes"] = static_cast<int64_t>(stat_auth_raw_bytes);
-	stats["auth_payload_bytes"] = static_cast<int64_t>(stat_auth_payload_bytes);
-	stats["auth_compression_candidates"] = static_cast<int64_t>(stat_auth_compression_candidates);
-	stats["auth_build_usec"] = static_cast<int64_t>(stat_auth_build_usec);
+	last_consumed_authoritative_packet_stats.packets = stat_auth_packets;
+	last_consumed_authoritative_packet_stats.frames = stat_auth_frames;
+	last_consumed_authoritative_packet_stats.encoded_inputs = stat_auth_encoded_inputs;
+	last_consumed_authoritative_packet_stats.unchanged_inputs = stat_auth_unchanged_inputs;
+	last_consumed_authoritative_packet_stats.raw_bytes = stat_auth_raw_bytes;
+	last_consumed_authoritative_packet_stats.payload_bytes = stat_auth_payload_bytes;
+	last_consumed_authoritative_packet_stats.compression_candidates = stat_auth_compression_candidates;
+	last_consumed_authoritative_packet_stats.build_usec = stat_auth_build_usec;
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;
@@ -63,8 +62,16 @@ godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
 	stat_auth_payload_bytes = 0;
 	stat_auth_compression_candidates = 0;
 	stat_auth_build_usec = 0;
-	return stats;
 }
+
+int64_t NetcodeSession::get_authoritative_stat_packets() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.packets); }
+int64_t NetcodeSession::get_authoritative_stat_frames() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.frames); }
+int64_t NetcodeSession::get_authoritative_stat_encoded_inputs() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.encoded_inputs); }
+int64_t NetcodeSession::get_authoritative_stat_unchanged_inputs() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.unchanged_inputs); }
+int64_t NetcodeSession::get_authoritative_stat_raw_bytes() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.raw_bytes); }
+int64_t NetcodeSession::get_authoritative_stat_payload_bytes() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.payload_bytes); }
+int64_t NetcodeSession::get_authoritative_stat_compression_candidates() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.compression_candidates); }
+int64_t NetcodeSession::get_authoritative_stat_build_usec() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.build_usec); }
 
 godot::Dictionary NetcodeSession::get_input_frame_debug(int tick) const
 {

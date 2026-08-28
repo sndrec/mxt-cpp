@@ -82,10 +82,10 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 			expected[[tick, id]] = bytes
 
 	var packet: PackedByteArray = server.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
-	var build_stats := server.consume_authoritative_packet_stats()
-	var candidate_count := int(build_stats.get("auth_compression_candidates", -1))
+	server.consume_authoritative_packet_stats()
+	var candidate_count := server.get_authoritative_stat_compression_candidates()
 	if candidate_count <= 0 or candidate_count > 3:
-		push_error("MXT_AUTH_INPUT_ROUNDTRIP candidate budget exceeded mode=%s candidates=%d stats=%s" % [mode, candidate_count, build_stats])
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP candidate budget exceeded mode=%s candidates=%d" % [mode, candidate_count])
 		return false
 	if expected_packet_mode >= 0 and packet.size() > 0 and (int(packet[0]) & 0x07) != expected_packet_mode:
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP wrong packet mode=%s got=%d want=%d packet=%d" % [mode, int(packet[0]) & 0x07, expected_packet_mode, packet.size()])
