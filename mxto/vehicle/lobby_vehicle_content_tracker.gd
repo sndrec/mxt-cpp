@@ -78,6 +78,14 @@ func request_vehicle_content(settings: Dictionary) -> bool:
 	return false
 
 
+func track_temporary_item(workshop_id: int) -> bool:
+	if workshop_id <= 0 or steam_service == null or !steam_service.is_initialized():
+		return false
+	if !subscribed_workshop_items.has(workshop_id):
+		session_item_ids[workshop_id] = true
+	return steam_service.track_workshop_item(workshop_id)
+
+
 func end_lobby_lifetime() -> void:
 	if steam_service != null and steam_service.is_initialized():
 		var changed := false

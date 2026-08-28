@@ -22,6 +22,7 @@
 [ext_resource type="PackedScene" uid="uid://bjbc8l0xmtg0t" path="res://ui/race_communication_overlay.tscn" id="30_communication_overlay"]
 [ext_resource type="Script" uid="uid://bpwto5bx2ouu7" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
 [ext_resource type="Script" path="res://vehicle/lobby_vehicle_content_tracker.gd" id="31_vehicle_lobby_content"]
+[ext_resource type="Script" path="res://content/race_content_acquisition_controller.gd" id="31_race_content"]
 [ext_resource type="Script" uid="uid://b1faew0my54vq" path="res://ui/lobby_controller.gd" id="32_lobby"]
 [ext_resource type="Script" uid="uid://bb56bbim32ckv" path="res://ui/spectator_controller.gd" id="33_spectator"]
 [ext_resource type="PackedScene" path="res://ui/spectator_roster.tscn" id="33_spectator_roster"]
@@ -225,6 +226,9 @@ script = ExtResource("31_vehicle_content")
 
 [node name="LobbyVehicleContentTracker" type="Node" parent="."]
 script = ExtResource("31_vehicle_lobby_content")
+
+[node name="RaceContentAcquisitionController" type="Node" parent="."]
+script = ExtResource("31_race_content")
 
 [node name="PlaytestLobbyProbe" type="Node" parent="." unique_id=2105027119]
 script = ExtResource("27_playtest_probe")

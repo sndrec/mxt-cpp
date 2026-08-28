@@ -34,6 +34,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass = $LobbyVehicleContentTracker
+@onready var race_content_acquisition_controller: RaceContentAcquisitionController = $RaceContentAcquisitionController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -83,7 +84,6 @@ const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_gh
 const SteamLeaderboardSnapshotClass = preload("res://backend/leaderboard_migration/steam_leaderboard_snapshot.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
-const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 const CAMERA_SETTINGS_PATH := "user://camera_settings.json"
 
 var player_scene := preload("res://player/player_controller.tscn")
@@ -181,6 +181,7 @@ func _ready() -> void:
 		vehicle_content_controller.content_catalog,
 		vehicle_content_controller,
 		network_manager)
+	race_content_acquisition_controller.initialize(steam_service, lobby_vehicle_content_tracker)
 	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
 	vehicle_content_controller.catalog_delta.connect(_on_vehicle_content_catalog_delta)
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -1007,101 +1008,6 @@ func _build_default_singleplayer_race_state() -> Dictionary:
 		"grand_prix_eliminated_ids": [],
 	}
 
-func _race_content_readiness(track_id: String, roster: MxtRaceRoster, track_evidence: MxtTrackContentEvidence) -> Dictionary:
-	var missing_workshop_ids: Array = []
-	var problems := PackedStringArray()
-	var irrecoverable_problems := PackedStringArray()
-	if track_evidence == null or track_evidence.count() == 0 or track_evidence.find_content_id(track_id) < 0:
-		var problem := "race track content records are malformed"
-		problems.append(problem)
-		irrecoverable_problems.append(problem)
-	else:
-		for i in range(track_evidence.count()):
-			if track_content_controller.track_content_evidence_matches(
-					track_evidence.get_content_id(i), track_evidence.get_gameplay_digest(i),
-					track_evidence.get_package_digest(i), track_evidence.get_workshop_id(i)):
-				continue
-			var workshop_id := track_evidence.get_workshop_id(i)
-			var problem := "missing exact track %s" % track_evidence.get_content_id(i)
-			if !_valid_workshop_id(workshop_id):
-				problem = "non-Workshop track %s does not match the host build" % track_evidence.get_content_id(i)
-				irrecoverable_problems.append(problem)
-			problems.append(problem)
-			_append_workshop_id(missing_workshop_ids, workshop_id)
-	for roster_index in roster.count():
-		var settings_value: Dictionary = roster.get_settings_dictionary(roster_index)
-		var player_settings := PlayerSettings.new()
-		player_settings.from_dict(settings_value)
-		if player_settings.spectator or vehicle_content_controller.evidence_matches(player_settings):
-			continue
-		var problem := "missing exact vehicle %s" % player_settings.vehicle_content_id
-		if !_valid_workshop_id(player_settings.vehicle_workshop_id):
-			problem = "non-Workshop vehicle %s does not match the host build" % player_settings.vehicle_content_id
-			irrecoverable_problems.append(problem)
-		problems.append(problem)
-		_append_workshop_id(missing_workshop_ids, player_settings.vehicle_workshop_id)
-	return {
-		"ready": problems.is_empty(),
-		"workshop_ids": missing_workshop_ids,
-		"detail": "; ".join(problems),
-		"downloadable": irrecoverable_problems.is_empty() and !missing_workshop_ids.is_empty(),
-	}
-
-func _valid_workshop_id(value: String) -> bool:
-	return value.is_valid_int() and value.to_int() > 0
-
-func _append_workshop_id(ids: Array, value: String) -> void:
-	if _valid_workshop_id(value):
-		var published_file_id := value.to_int()
-		if !ids.has(published_file_id):
-			ids.append(published_file_id)
-
-func _acquire_race_workshop_content(track_id: String, roster: MxtRaceRoster, track_evidence: MxtTrackContentEvidence) -> Dictionary:
-	var readiness := _race_content_readiness(track_id, roster, track_evidence)
-	if bool(readiness.get("ready", false)):
-		return readiness
-	var workshop_ids: Array = readiness.get("workshop_ids", [])
-	if !bool(readiness.get("downloadable", false)) or steam_service == null or !steam_service.is_initialized():
-		return readiness
-	var tracked_any := false
-	for published_file_id_value in workshop_ids:
-		tracked_any = steam_service.track_workshop_item(int(published_file_id_value)) or tracked_any
-	if tracked_any:
-		steam_service.refresh_workshop_items()
-		readiness = _race_content_readiness(track_id, roster, track_evidence)
-		if bool(readiness.get("ready", false)):
-			return readiness
-	var workshop_id_strings := PackedStringArray()
-	for published_file_id_value in workshop_ids:
-		workshop_id_strings.append(str(int(published_file_id_value)))
-	network_manager.race_admission.report(
-		network_manager.race_admission.LOADING,
-		"acquiring Workshop package%s %s" % [
-			"" if workshop_ids.size() == 1 else "s",
-			", ".join(workshop_id_strings),
-		])
-	var request_started := false
-	for published_file_id_value in workshop_ids:
-		var published_file_id := int(published_file_id_value)
-		var accepted := steam_service.download_workshop_item(published_file_id, true)
-		request_started = accepted or request_started
-	if !request_started:
-		return readiness
-	steam_service.refresh_workshop_items()
-	var deadline := Time.get_ticks_msec() + RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC
-	var next_refresh_msec := Time.get_ticks_msec() + 1000
-	while network_manager.race_active and Time.get_ticks_msec() < deadline:
-		await get_tree().create_timer(0.1).timeout
-		readiness = _race_content_readiness(track_id, roster, track_evidence)
-		if bool(readiness.get("ready", false)):
-			return readiness
-		var now := Time.get_ticks_msec()
-		if now >= next_refresh_msec:
-			steam_service.refresh_workshop_items()
-			next_refresh_msec = now + 1000
-	readiness["detail"] = "%s after Workshop download timeout" % String(readiness.get("detail", "content unavailable"))
-	return readiness
-
 func _open_singleplayer_race_options(as_spectator: bool) -> void:
 	_build_singleplayer_race_options_screen()
 	singleplayer_options_as_spectator = as_spectator
@@ -1388,11 +1294,12 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_e
 
 func _on_network_race_started(track_id: String, roster: MxtRaceRoster) -> void:
 	var admission_phase := network_manager.race_netplay_phase
-	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, roster, network_manager.race_track_evidence)
+	var readiness: RaceContentReadiness = await race_content_acquisition_controller.acquire(
+		track_id, roster, network_manager.race_track_evidence)
 	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
 		return
-	if !bool(readiness.get("ready", false)):
-		var evidence_message := String(readiness.get("detail", "Race content evidence mismatch for %s" % track_id))
+	if !readiness.ready:
+		var evidence_message := readiness.detail if !readiness.detail.is_empty() else "Race content evidence mismatch for %s" % track_id
 		network_manager.race_admission.report(network_manager.race_admission.FAILED, evidence_message)
 		push_error(evidence_message)
 		race_presentation_controller.show_notification(evidence_message, 5000)
