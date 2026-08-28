@@ -851,7 +851,9 @@ void GameSim::apply_render_multimeshes(float alpha)
 			float* const thruster_buffer = render_thruster_buffer_write_ptrs[archetype];
 			for (int t = 0; t < thruster_count; ++t) {
 				const int thruster_slot = thruster_visible_slot * thruster_count + t;
-				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				SimTransform thruster_transform;
+				thruster_transform.basis = visual_transform.basis;
+				thruster_transform.origin = visual_transform.xform(thruster_locals[t].origin);
 				if (!thruster_buffer) {
 					continue;
 				}

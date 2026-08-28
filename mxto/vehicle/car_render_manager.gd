@@ -318,7 +318,10 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 		var tick_phase := int(Time.get_ticks_msec() / 16)
 		for i in range(thruster_locals.size()):
 			var thruster_slot := slot * thruster_locals.size() + i
-			thruster_multimesh.set_instance_transform(thruster_slot, body_transform * thruster_locals[i])
+			var local_thruster: Transform3D = thruster_locals[i]
+			var thruster_transform := body_transform
+			thruster_transform.origin = body_transform * local_thruster.origin
+			thruster_multimesh.set_instance_transform(thruster_slot, thruster_transform)
 			thruster_multimesh.set_instance_color(thruster_slot, Color(thrust, thrust, thrust, thrust))
 			thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, visibility))
 		thruster_multimesh.visible_instance_count = max(thruster_multimesh.visible_instance_count, slot * thruster_locals.size() + thruster_locals.size())

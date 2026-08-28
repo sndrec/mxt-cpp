@@ -16,9 +16,12 @@ const float THRUSTER_REFERENCE_PROJECTION_Y = 1.3763819; // cot(72 degrees / 2)
 #include \"res://asset/shader/ordered_dither.gdshaderinc\"
 
 varying flat float instance_visibility;
+varying flat float camera_behind_vehicle;
 
 void vertex() {
 	instance_visibility = INSTANCE_CUSTOM.a;
+	vec3 vehicle_back = normalize(MODEL_MATRIX[2].xyz);
+	camera_behind_vehicle = step(0.0, dot(INV_VIEW_MATRIX[3].xyz - MODEL_MATRIX[3].xyz, vehicle_back));
 	float thrust_scale = max(INSTANCE_CUSTOM.x, 0.0);
 	VERTEX.x *= (sin(TIME * 120.0 + INSTANCE_CUSTOM.y) * 0.1 + 1.2) * thrust_scale;
 	VERTEX.y *= (cos(TIME * 90.0 + INSTANCE_CUSTOM.y) * 0.02 + 0.75) * thrust_scale;
@@ -58,6 +61,7 @@ void fragment() {
 		discard;
 	}
 	ALBEDO = vec3(outline * 0.5 + inline) * vec3(0.3, 0.7, 1.0) * 0.75;
+	DEPTH = mix(FRAGCOORD.z, FRAGCOORD.z * 1.1, camera_behind_vehicle);
 }
 "
 
