@@ -4,10 +4,6 @@ signal content_changed
 signal test_drive_requested(snapshot: MxtContentLoadResult)
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
-const LOCAL_LIBRARY_ROOT := "user://content/packages"
-const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
-const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
-const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 const MATERIAL_TEXTURE_MAX_BYTES := 20 * 1024 * 1024
 const MATERIAL_TEXTURE_MAX_DIMENSION := 2048
 const MATERIAL_TEXTURE_FILES := {
@@ -36,38 +32,23 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
 @onready var import_boost_sound_dialog: FileDialog = $ImportBoostSoundDialog
 @onready var import_material_texture_dialog: FileDialog = $ImportMaterialTextureDialog
-@onready var export_package_dialog: FileDialog = $ExportPackageDialog
 @onready var template_vehicle_dialog: ConfirmationDialog = $TemplateVehicleDialog
 @onready var template_vehicle_option: OptionButton = $TemplateVehicleDialog/Rows/VehicleOption
 @onready var official_vehicle_dialog: ConfirmationDialog = $OfficialVehicleDialog
 @onready var official_vehicle_option: OptionButton = $OfficialVehicleDialog/Rows/VehicleOption
-@onready var workshop_visibility: OptionButton = $Workshop/Visibility
-@onready var workshop_status: Label = $Workshop/Status
-@onready var workshop_page_button: Button = $Workshop/OpenPage
-@onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
 @onready var archive_draft_dialog: ConfirmationDialog = $ArchiveDraftDialog
 @onready var delete_draft_dialog: ConfirmationDialog = $DeleteDraftDialog
-@onready var workshop_capture_button: Button = $Workshop/CapturePreview
-@onready var publish_review_dialog: ConfirmationDialog = $PublishReviewDialog
-@onready var publish_review_summary: RichTextLabel = $PublishReviewDialog/Review/Summary
-@onready var publish_review_preview: TextureRect = $PublishReviewDialog/Review/Preview
-@onready var publish_changelog: TextEdit = $PublishReviewDialog/Review/Changelog
 @onready var preview_controller: VehicleEditorPreviewController = $PreviewController
 @onready var curve_controller: VehicleEditorCurveController = $CurveController
 @onready var document_controller: VehicleEditorDocumentController = $DocumentController
+@onready var package_controller: VehicleEditorPackageController = $PackageController
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
 var session := MxtCarAuthoringSession.new()
 var pending_material_texture := ""
-var workshop_request_id := 0
-var workshop_operation := ""
-var workshop_published_file_id := 0
-var workshop_pending_package: Dictionary = {}
-var workshop_progress_update_msec := 0
 var vector_controls: Dictionary = {}
 var updating_controls := false
-var workshop_preview_captured := false
 
 
 func _ready() -> void:
@@ -84,7 +65,12 @@ func _ready() -> void:
 	document_controller.diagnostics_requested.connect(_show_diagnostics)
 	document_controller.content_changed.connect(func(): content_changed.emit())
 	document_controller.draft_saved.connect(_refresh_draft_options)
-	_setup_options()
+	package_controller.initialize(self, game_manager, vehicle_content_controller, document_controller, preview_controller, curve_controller)
+	package_controller.diagnostics_requested.connect(_show_diagnostics)
+	package_controller.content_diagnostics_requested.connect(_show_content_diagnostics)
+	package_controller.content_changed.connect(func(): content_changed.emit())
+	package_controller.test_drive_requested.connect(func(snapshot): test_drive_requested.emit(snapshot))
+	package_controller.draft_list_changed.connect(_refresh_draft_options)
 	_setup_vector_controls()
 	preview_controller.initialize(self, session)
 	preview_controller.authoring_edit_committed.connect(_refresh_history_buttons)
@@ -96,13 +82,6 @@ func _ready() -> void:
 		_open_selected_draft()
 	else:
 		_new_draft()
-	call_deferred("_connect_steam_service")
-
-
-func _setup_options() -> void:
-	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
-		workshop_visibility.add_item(visibility)
-	workshop_visibility.selected = 1
 
 
 func _setup_vector_controls() -> void:
@@ -183,24 +162,16 @@ func _connect_controls() -> void:
 	$Toolbar/ImportBoostSound.pressed.connect(func(): import_boost_sound_dialog.popup_centered())
 	$Toolbar/ClearBoostSound.pressed.connect(_clear_boost_sound)
 	$Toolbar/SaveDraft.pressed.connect(_manual_save_draft)
-	$Toolbar/InstallVehicle.pressed.connect(_install_vehicle)
-	$Toolbar/ExportPackage.pressed.connect(func(): export_package_dialog.popup_centered())
-	$Toolbar/TestDrive.pressed.connect(_test_drive)
-	$Toolbar/PublishWorkshop.pressed.connect(_publish_workshop)
 	$Toolbar/DeleteDraft.pressed.connect(_prompt_delete_current_draft)
-	workshop_page_button.pressed.connect(_open_workshop_page)
 	$Toolbar/Undo.pressed.connect(_undo)
 	$Toolbar/Redo.pressed.connect(_redo)
 	import_model_dialog.file_selected.connect(_import_model)
 	import_boost_sound_dialog.file_selected.connect(_import_boost_sound)
 	import_material_texture_dialog.file_selected.connect(_import_material_texture)
-	export_package_dialog.file_selected.connect(_export_package)
 	template_vehicle_dialog.confirmed.connect(_import_selected_vehicle_template)
 	official_vehicle_dialog.confirmed.connect(_open_selected_official_vehicle)
 	archive_draft_dialog.confirmed.connect(_archive_current_draft)
 	delete_draft_dialog.confirmed.connect(_delete_current_draft)
-	workshop_capture_button.pressed.connect(_capture_workshop_preview)
-	publish_review_dialog.confirmed.connect(_confirm_publish_workshop)
 	diagnostics.meta_clicked.connect(_focus_diagnostic_category)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Add.pressed.connect(_add_thruster)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Remove.pressed.connect(_remove_thruster)
@@ -228,7 +199,7 @@ func _connect_controls() -> void:
 
 
 func _new_draft() -> bool:
-	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
+	if document_controller.has_editable_document() and !document_controller.flush(package_controller.workshop_published_file_id):
 		return false
 	var new_draft_id := "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
 	session = MxtCarAuthoringSession.new()
@@ -243,13 +214,11 @@ func _new_draft() -> bool:
 	author_input.text = steam_name if !steam_name.is_empty() else "Creator"
 	description_input.text = ""
 	updating_controls = false
-	workshop_published_file_id = 0
-	workshop_preview_captured = false
-	_refresh_workshop_controls()
+	package_controller.reset_publication()
 	_refresh_document_mode_controls()
 	_refresh_all()
 	visual_status.text = "New draft. Import a static GLB or glTF vehicle model."
-	if !document_controller.save(workshop_published_file_id):
+	if !document_controller.save(package_controller.workshop_published_file_id):
 		return false
 	return true
 
@@ -437,6 +406,7 @@ func _refresh_document_mode_controls() -> void:
 	$Toolbar/PublishWorkshop.disabled = editing_official
 	$Toolbar/SaveDraft.text = "Save Official" if editing_official else "Save Now"
 	$Workshop.visible = !editing_official
+	package_controller.set_editing_official(document_controller.editing_official_definition)
 	_refresh_boost_sound_controls()
 	preview_controller.set_editing_official(editing_official)
 	for tab in range(physical_tabs.get_tab_count()):
@@ -480,7 +450,7 @@ func _open_selected_draft() -> void:
 	var selected_id := String(draft_option.get_item_metadata(draft_option.selected))
 	if document_controller.draft_initialized and selected_id == document_controller.draft_id:
 		return
-	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
+	if document_controller.has_editable_document() and !document_controller.flush(package_controller.workshop_published_file_id):
 		return
 	var candidate := MxtCarAuthoringSession.new()
 	var result: Dictionary = document_controller.draft_store.load_draft(selected_id, candidate)
@@ -496,9 +466,7 @@ func _open_selected_draft() -> void:
 	description_input.text = String(result.get("description", ""))
 	author_input.text = String(result.get("author_name", "Creator"))
 	updating_controls = false
-	workshop_published_file_id = int(result.get("workshop_published_file_id", 0))
-	workshop_preview_captured = FileAccess.file_exists(_workshop_preview_path())
-	_refresh_workshop_controls()
+	package_controller.load_publication(int(result.get("workshop_published_file_id", 0)))
 	_refresh_document_mode_controls()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
@@ -506,7 +474,7 @@ func _open_selected_draft() -> void:
 
 
 func _duplicate_current_draft() -> void:
-	if !document_controller.draft_initialized or !document_controller.flush(workshop_published_file_id):
+	if !document_controller.draft_initialized or !document_controller.flush(package_controller.workshop_published_file_id):
 		return
 	var new_id := "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
 	var result: Dictionary = document_controller.draft_store.duplicate_draft(document_controller.draft_id, new_id, title_input.text + " Copy")
@@ -522,7 +490,7 @@ func _duplicate_current_draft() -> void:
 
 
 func _archive_current_draft() -> void:
-	if !document_controller.draft_initialized or !document_controller.flush(workshop_published_file_id):
+	if !document_controller.draft_initialized or !document_controller.flush(package_controller.workshop_published_file_id):
 		return
 	var archived_id := document_controller.draft_id
 	var result: Dictionary = document_controller.draft_store.archive_draft(archived_id)
@@ -617,7 +585,7 @@ func _open_selected_official_vehicle() -> void:
 			"warnings": PackedStringArray(),
 		})
 		return
-	if document_controller.has_editable_document() and !document_controller.flush(workshop_published_file_id):
+	if document_controller.has_editable_document() and !document_controller.flush(package_controller.workshop_published_file_id):
 		return
 	var candidate := MxtCarAuthoringSession.new()
 	var result: Dictionary = candidate.load_file(definition.properties_path)
@@ -633,9 +601,7 @@ func _open_selected_official_vehicle() -> void:
 	author_input.text = "Shipped Asset"
 	description_input.text = definition.properties_path
 	updating_controls = false
-	workshop_published_file_id = 0
-	workshop_preview_captured = false
-	_refresh_workshop_controls()
+	package_controller.reset_publication()
 	_refresh_document_mode_controls()
 	_refresh_all()
 	document_controller.update_status("Editing official %s" % definition.name)
@@ -821,209 +787,22 @@ func _first_surface_with_texture(surfaces: Array, key: String) -> int:
 	return -1
 
 
-func _connect_steam_service() -> void:
-	if game_manager == null or game_manager.steam_service == null:
-		return
-	var service := game_manager.steam_service
-	if !service.workshop_request_completed.is_connected(_on_workshop_request_completed):
-		service.workshop_request_completed.connect(_on_workshop_request_completed)
-	if !service.status_changed.is_connected(_on_steam_status_changed):
-		service.status_changed.connect(_on_steam_status_changed)
-	_on_steam_status_changed(service.get_status())
-
-
-func _on_steam_status_changed(status: Dictionary) -> void:
-	if bool(status.get("initialized", false)) and author_input.text == "Creator":
-		var persona_name := String(status.get("persona_name", ""))
-		if !persona_name.is_empty():
-			author_input.text = persona_name
-	_refresh_workshop_controls()
-
-
-func _refresh_workshop_controls() -> void:
-	if document_controller.editing_official_definition != null:
-		workshop_publish_button.disabled = true
-		workshop_page_button.disabled = true
-		workshop_capture_button.disabled = true
-		workshop_status.text = "Workshop publishing is unavailable while editing shipped assets"
-		return
-	var steam_available := game_manager != null \
-		and game_manager.steam_service != null \
-		and game_manager.steam_service.is_initialized()
-	workshop_publish_button.disabled = workshop_request_id != 0 or !steam_available
-	workshop_page_button.disabled = workshop_request_id != 0 or workshop_published_file_id <= 0
-	workshop_capture_button.disabled = workshop_request_id != 0
-	if workshop_request_id != 0:
-		return
-	if !steam_available:
-		workshop_status.text = "Steam Workshop is unavailable"
-		return
-	if workshop_published_file_id > 0:
-		workshop_status.text = "Workshop item %d · %s" % [workshop_published_file_id, "preview captured" if workshop_preview_captured else "capture preview before update"]
-	else:
-		workshop_status.text = "Not published · %s" % ("preview captured" if workshop_preview_captured else "capture preview before publishing")
-
-
-func _publish_workshop() -> void:
-	if workshop_request_id != 0:
-		return
-	if game_manager == null or game_manager.steam_service == null or !game_manager.steam_service.is_initialized():
-		workshop_status.text = "Steam Workshop is unavailable"
-		return
-	if !workshop_preview_captured or !FileAccess.file_exists(_workshop_preview_path()):
-		workshop_status.text = "Capture the Workshop preview after framing and painting the machine."
-		return
-	var built := _build_package(_workshop_preview_path())
-	if !bool(built.get("valid", false)):
-		return
-	var package_io := MxtContentPackageIO.new()
-	var archive_path := document_controller.draft_root() + "/workshop-upload.mxtpkg"
-	var exported: Dictionary = package_io.export_mxtpkg(String(built["package_path"]), archive_path)
-	if !bool(exported.get("valid", false)):
-		_show_diagnostics(exported)
-		return
-	var imported: Dictionary = package_io.import_mxtpkg(
-		archive_path,
-		ProjectSettings.globalize_path(WORKSHOP_STAGING_ROOT))
-	if !bool(imported.get("valid", false)):
-		_show_diagnostics(imported)
-		return
-	workshop_pending_package = imported
-	_show_publish_review(built)
-
-
-func _confirm_publish_workshop() -> void:
-	if workshop_pending_package.is_empty() or workshop_request_id != 0:
-		return
-	if workshop_published_file_id <= 0:
-		workshop_operation = "create_item"
-		workshop_status.text = "Creating Workshop item..."
-		workshop_request_id = game_manager.steam_service.create_workshop_item()
-		_refresh_workshop_controls()
-	else:
-		_submit_workshop_update()
-
-
-func _show_publish_review(validation: Dictionary) -> void:
-	var visibility: String = ["Public", "Friends Only", "Private", "Unlisted"][workshop_visibility.selected]
-	var intent_counts := _authoring_intent_counts()
-	var warnings_value = validation.get("warnings", [])
-	var warning_type := typeof(warnings_value)
-	var warning_count: int = warnings_value.size() if warning_type == TYPE_ARRAY or warning_type == TYPE_PACKED_STRING_ARRAY else 0
-	publish_review_summary.text = "%s Workshop item\n\nTitle: %s\nAuthor: %s\nVisibility: %s\nDescription:\n%s\n\nSpecial adjustments: %d Derived · %d Custom\nValidation: Ready%s" % [
-		"Update" if workshop_published_file_id > 0 else "New",
-		title_input.text,
-		author_input.text,
-		visibility,
-		description_input.text,
-		int(intent_counts.get("derived", 0)),
-		int(intent_counts.get("custom", 0)),
-		" · %d warning(s)" % warning_count if warning_count > 0 else "",
-	]
-	var image := Image.load_from_file(_workshop_preview_path())
-	publish_review_preview.texture = ImageTexture.create_from_image(image) if image != null and !image.is_empty() else null
-	publish_review_dialog.ok_button_text = "Update Workshop Item" if workshop_published_file_id > 0 else "Create Workshop Item"
-	publish_changelog.text = ""
-	publish_review_dialog.popup_centered(Vector2i(720, 650))
-
-
-func _authoring_intent_counts() -> Dictionary:
-	var derived := 0
-	var custom := 0
-	var layers: Array[String] = []
-	for layer in session.get_layer_names():
-		if String(layer) != "base":
-			layers.append(String(layer))
-	layers.append("s_boost")
-	for layer in layers:
-		for schema_value in curve_controller.stat_schema:
-			var schema: Dictionary = schema_value
-			if !bool(schema.get("supports_live_modifiers", false)):
-				continue
-			if session.is_special_derived(layer, String(schema.get("name", ""))):
-				derived += 1
-			else:
-				custom += 1
-	return {"derived": derived, "custom": custom}
-
-
-func _submit_workshop_update() -> void:
-	var metadata := JSON.stringify({
-		"content_type": "vehicle",
-		"format_revision": 1,
-		"gameplay_digest": String(workshop_pending_package.get("gameplay_digest", "")),
-	})
-	var visibility: String = ["public", "friends_only", "private", "unlisted"][workshop_visibility.selected]
-	workshop_operation = "submit_update"
-	workshop_status.text = "Preparing Workshop upload..."
-	workshop_request_id = game_manager.steam_service.submit_workshop_item_update(
-		workshop_published_file_id,
-		title_input.text,
-		description_input.text,
-		String(workshop_pending_package.get("package_path", "")),
-		String(workshop_pending_package.get("package_path", "")).path_join("preview.png"),
-		["Vehicle", "Format Revision 1"],
-		metadata,
-		visibility,
-		publish_changelog.text.strip_edges())
-	_refresh_workshop_controls()
-
-
-func _on_workshop_request_completed(request_id: int, operation: String, result: Dictionary) -> void:
-	if request_id != workshop_request_id or operation != workshop_operation:
-		return
-	workshop_request_id = 0
-	workshop_operation = ""
-	if !bool(result.get("success", false)):
-		_refresh_workshop_controls()
-		workshop_status.text = "Workshop failed: %s" % String(result.get("message", "Unknown error"))
-		return
-	if operation == "create_item":
-		workshop_published_file_id = int(result.get("published_file_id", 0))
-		_mark_dirty()
-		document_controller.flush(workshop_published_file_id)
-		_refresh_workshop_controls()
-		_submit_workshop_update()
-		return
-	_refresh_workshop_controls()
-	var agreement := " Accept the Steam Workshop agreement." if bool(result.get("legal_agreement_required", false)) else ""
-	workshop_status.text = "Workshop upload complete.%s" % agreement
-	if bool(result.get("legal_agreement_required", false)):
-		game_manager.steam_service.open_workshop_item_page(workshop_published_file_id)
-
-
-func _open_workshop_page() -> void:
-	if workshop_published_file_id > 0 and game_manager != null and game_manager.steam_service != null:
-		game_manager.steam_service.open_workshop_item_page(workshop_published_file_id)
-
-
 func _process(_delta: float) -> void:
-	var now := Time.get_ticks_msec()
-	document_controller.process_autosave(now, workshop_published_file_id)
-	if workshop_request_id != 0 and workshop_operation == "submit_update" \
-			and game_manager != null and game_manager.steam_service != null \
-			and now >= workshop_progress_update_msec + 200:
-		workshop_progress_update_msec = now
-		var progress: Dictionary = game_manager.steam_service.get_workshop_update_progress()
-		if bool(progress.get("active", false)):
-			var total := int(progress.get("total_bytes", 0))
-			var processed := int(progress.get("processed_bytes", 0))
-			var percent := 0.0 if total <= 0 else 100.0 * float(processed) / float(total)
-			workshop_status.text = "%s  %.1f%%" % [String(progress.get("status", "uploading")).replace("_", " ").capitalize(), percent]
+	document_controller.process_autosave(Time.get_ticks_msec(), package_controller.workshop_published_file_id)
 
 
 func _exit_tree() -> void:
 	if document_controller.has_editable_document():
-		document_controller.flush(workshop_published_file_id)
+		document_controller.flush(package_controller.workshop_published_file_id)
 
 
 func _on_visibility_changed() -> void:
 	if document_controller.has_editable_document() and !is_visible_in_tree():
-		document_controller.flush(workshop_published_file_id)
+		document_controller.flush(package_controller.workshop_published_file_id)
 
 
 func flush_pending_changes() -> bool:
-	return document_controller.flush(workshop_published_file_id)
+	return document_controller.flush(package_controller.workshop_published_file_id)
 
 
 func _import_model(path: String) -> void:
@@ -1126,119 +905,16 @@ func _show_model_import_failure(result: Dictionary) -> void:
 
 func _manual_save_draft() -> void:
 	if document_controller.editing_official_definition != null:
-		document_controller.save(workshop_published_file_id)
+		document_controller.save(package_controller.workshop_published_file_id)
 		return
-	if !document_controller.flush(workshop_published_file_id):
+	if !document_controller.flush(package_controller.workshop_published_file_id):
 		return
 	var thumbnail_path := document_controller.draft_root() + "/thumbnail.png"
-	if _save_preview_png(thumbnail_path):
+	if package_controller.save_preview_png(thumbnail_path):
 		_refresh_draft_options()
 		document_controller.update_status("Saved with thumbnail")
 	else:
 		document_controller.update_status("Saved; previous thumbnail kept")
-
-
-func _build_package(preview_override := "", validate_package := true) -> Dictionary:
-	if !document_controller.flush(workshop_published_file_id):
-		return {"valid": false, "errors": PackedStringArray([document_controller.autosave_error]), "warnings": PackedStringArray()}
-	var preview_path := String(preview_override)
-	var preview_ready := false
-	if preview_path.is_empty():
-		preview_path = document_controller.draft_root() + "/thumbnail.png"
-		preview_ready = _save_preview_png(preview_path)
-	else:
-		preview_ready = FileAccess.file_exists(preview_path)
-	if !preview_ready:
-		var failed := {"valid": false, "errors": PackedStringArray(["Could not capture the vehicle preview image"]), "warnings": PackedStringArray()}
-		_show_diagnostics(failed)
-		return failed
-	var result: Dictionary = session.build_vehicle_package(
-		document_controller.draft_root() + "/package",
-		preview_path,
-		title_input.text,
-		description_input.text,
-		author_input.text,
-		validate_package)
-	_show_diagnostics(result)
-	if bool(result.get("valid", false)):
-		_refresh_draft_options()
-	return result
-
-
-func _workshop_preview_path() -> String:
-	return document_controller.draft_root() + "/workshop-preview.png"
-
-
-func _capture_workshop_preview() -> void:
-	if !document_controller.draft_initialized:
-		return
-	workshop_preview_captured = _save_preview_png(_workshop_preview_path())
-	workshop_status.text = "Workshop preview captured from the current camera and paint." if workshop_preview_captured else "Workshop preview capture failed."
-	_refresh_workshop_controls()
-
-
-func _save_preview_png(preview_path: String) -> bool:
-	var preview_image := preview_controller.preview_viewport.get_texture().get_image()
-	if preview_image == null or preview_image.is_empty():
-		return false
-	while true:
-		if preview_image.save_png(preview_path) != OK:
-			return false
-		var preview_file := FileAccess.open(preview_path, FileAccess.READ)
-		if preview_file == null:
-			return false
-		var preview_bytes := preview_file.get_length()
-		preview_file.close()
-		if preview_bytes < WORKSHOP_PREVIEW_TARGET_MAX_BYTES:
-			return true
-		var longest_edge := maxi(preview_image.get_width(), preview_image.get_height())
-		if longest_edge <= WORKSHOP_PREVIEW_MIN_LONGEST_EDGE:
-			return false
-		var scale := maxf(0.75, float(WORKSHOP_PREVIEW_MIN_LONGEST_EDGE) / float(longest_edge))
-		preview_image.resize(
-			maxi(1, int(floor(float(preview_image.get_width()) * scale))),
-			maxi(1, int(floor(float(preview_image.get_height()) * scale))),
-			Image.INTERPOLATE_LANCZOS)
-	return false
-
-
-func _install_vehicle() -> String:
-	var built := _build_package()
-	if !bool(built.get("valid", false)):
-		return ""
-	var package_io := MxtContentPackageIO.new()
-	var archive_path := document_controller.draft_root() + "/%s.mxtpkg" % document_controller.draft_id
-	var exported: Dictionary = package_io.export_mxtpkg(document_controller.draft_root() + "/package", archive_path)
-	if !bool(exported.get("valid", false)):
-		_show_diagnostics(exported)
-		return ""
-	var imported: Dictionary = package_io.import_mxtpkg(archive_path, ProjectSettings.globalize_path(LOCAL_LIBRARY_ROOT))
-	_show_diagnostics(imported)
-	if !bool(imported.get("valid", false)):
-		return ""
-	var content_id := "mxt:vehicle:package:" + String(imported["package_digest"]).trim_prefix("sha256:")
-	content_changed.emit()
-	return content_id
-
-
-func _export_package(path: String) -> void:
-	var built := _build_package()
-	if !bool(built.get("valid", false)):
-		return
-	var destination := path if path.to_lower().ends_with(".mxtpkg") else path + ".mxtpkg"
-	_show_diagnostics(MxtContentPackageIO.new().export_mxtpkg(document_controller.draft_root() + "/package", destination))
-
-
-func _test_drive() -> void:
-	var built := _build_package("", false)
-	if !bool(built.get("valid", false)):
-		return
-	var snapshot: MxtContentLoadResult = vehicle_content_controller.create_test_drive_snapshot(
-		String(built.get("package_path", "")))
-	_show_content_diagnostics(snapshot)
-	if !snapshot.is_valid():
-		return
-	test_drive_requested.emit(snapshot)
 
 
 func _refresh_all() -> void:
@@ -1559,7 +1235,7 @@ func _focus_diagnostic_category(category_value) -> void:
 		"Model": import_model_dialog.popup_centered()
 		"Materials": _select_physical_tab("Materials")
 		"Geometry": _select_physical_tab("Corners")
-		"Publishing": workshop_visibility.grab_focus()
+		"Publishing": package_controller.focus_visibility()
 		_: curve_controller.focus_stat_selector()
 
 

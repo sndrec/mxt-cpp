@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://ui/vehicle_editor_preview_controller.gd" id="5_preview_controller"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_curve_controller.gd" id="6_curve_controller"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_document_controller.gd" id="7_document_controller"]
+[ext_resource type="Script" path="res://ui/vehicle_editor_package_controller.gd" id="8_package_controller"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_normal"]
 content_margin_left = 9.0
@@ -64,6 +65,9 @@ script = ExtResource("6_curve_controller")
 
 [node name="DocumentController" type="Node" parent="."]
 script = ExtResource("7_document_controller")
+
+[node name="PackageController" type="Node" parent="."]
+script = ExtResource("8_package_controller")
 
 [node name="Toolbar" type="HFlowContainer" parent="."]
 layout_mode = 2
