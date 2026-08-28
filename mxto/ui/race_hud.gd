@@ -503,7 +503,8 @@ func _configure_whole_course_minimap() -> void:
 
 func _configure_follow_minimap(car: VisualCar) -> void:
 	var car_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(focus_player_id)
-	var vehicle_up := car_transform.basis.y.normalized()
+	var physical_transform: Transform3D = car.game_manager.game_sim.get_player_physical_render_transform(focus_player_id)
+	var vehicle_up := physical_transform.basis.y.normalized()
 	var map_forward := -car_transform.basis.z.normalized()
 	var active_camera := get_viewport().get_camera_3d()
 	if active_camera != null:
