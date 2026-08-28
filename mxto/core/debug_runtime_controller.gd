@@ -39,6 +39,7 @@ var hide_track_visuals := false
 var disable_hud := false
 var hide_hud_only := false
 var disable_hud_process_only := false
+var replay_hud_hidden := false
 var disable_minimap := false
 var quit_after_frames := -1
 
@@ -168,12 +169,23 @@ func apply_race_render_options(car_render_manager: CarRenderManager, local_visua
 		frame_time_label.visible = false
 		rtt_label.visible = false
 
+func set_replay_hud_hidden(hidden: bool) -> void:
+	replay_hud_hidden = hidden
+	if replay_hud_hidden:
+		frame_time_label.visible = false
+		rtt_label.visible = false
+		version_label.visible = false
+
+func is_hud_hidden() -> bool:
+	return disable_hud or replay_hud_hidden
+
 func update_labels(in_lobby: bool) -> void:
 	frame_time_label.text = str(network_manager.input_transport.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.input_transport.rtt_s * 1000.0)) + "ms"
-	frame_time_label.visible = !in_lobby and !disable_hud
-	rtt_label.visible = !in_lobby and !disable_hud
-	version_label.visible = !in_lobby
+	var hud_hidden := is_hud_hidden()
+	frame_time_label.visible = !in_lobby and !hud_hidden
+	rtt_label.visible = !in_lobby and !hud_hidden
+	version_label.visible = !in_lobby and !hud_hidden
 
 func record_phase(phase: int, start_usec: int) -> void:
 	var elapsed := Time.get_ticks_usec() - start_usec

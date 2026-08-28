@@ -1657,7 +1657,7 @@ func _run_active_race_physics_frame(delta: float) -> void:
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.AUDIO_TICK, profile_audio_tick_start)
 	var profile_nametag_start := Time.get_ticks_usec() if profile_enabled else 0
-	race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, debug_runtime_controller.disable_hud)
+	race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, debug_runtime_controller.is_hud_hidden())
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.NAMETAG, profile_nametag_start)
 	var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0

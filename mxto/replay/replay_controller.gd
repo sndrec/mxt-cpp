@@ -134,6 +134,8 @@ var replay_input_display_panel: PanelContainer
 var replay_input_display: Control
 var replay_input_display_checkbox: CheckBox
 var replay_input_display_enabled := false
+var replay_hide_hud_checkbox: CheckBox
+var replay_hide_hud_enabled := false
 var replay_input_display_frame_inputs: Dictionary = {}
 var replay_timeline_markers: Dictionary = {}
 var replay_marker_last_laps: Dictionary = {}
@@ -295,6 +297,7 @@ func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	stop_recording(save_multiplayer_host_replay)
 	debug_replay_playback = false
 	replay_playback_active = false
+	_apply_replay_hud_visibility()
 	replay_playback_use_multiplayer_startup = false
 	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
@@ -324,6 +327,7 @@ func detach_playback_for_practice() -> bool:
 	if !replay_playback_active:
 		return false
 	replay_playback_active = false
+	_apply_replay_hud_visibility()
 	replay_playback_use_multiplayer_startup = false
 	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
@@ -950,6 +954,12 @@ func _build_replay_timeline_controls() -> void:
 	replay_input_display_checkbox.button_pressed = replay_input_display_enabled
 	replay_input_display_checkbox.toggled.connect(_on_replay_input_display_toggled)
 	controls.add_child(replay_input_display_checkbox)
+	replay_hide_hud_checkbox = CheckBox.new()
+	replay_hide_hud_checkbox.text = "Hide HUD"
+	replay_hide_hud_checkbox.focus_mode = Control.FOCUS_NONE
+	replay_hide_hud_checkbox.button_pressed = replay_hide_hud_enabled
+	replay_hide_hud_checkbox.toggled.connect(_on_replay_hide_hud_toggled)
+	controls.add_child(replay_hide_hud_checkbox)
 	replay_timeline_save_local_button = Button.new()
 	replay_timeline_save_local_button.text = "Save Replay Locally"
 	replay_timeline_save_local_button.focus_mode = Control.FOCUS_NONE
@@ -1349,6 +1359,21 @@ func _on_replay_timeline_faster_pressed() -> void:
 func _on_replay_input_display_toggled(enabled: bool) -> void:
 	replay_input_display_enabled = enabled
 	_refresh_replay_input_display()
+
+func _on_replay_hide_hud_toggled(enabled: bool) -> void:
+	replay_hide_hud_enabled = enabled
+	_apply_replay_hud_visibility()
+
+func _apply_replay_hud_visibility() -> void:
+	var hidden := replay_playback_active and replay_hide_hud_enabled
+	debug_runtime_controller.set_replay_hud_hidden(hidden)
+	var race_hud := race_presentation_controller.local_race_hud() as RaceHud
+	if race_hud == null:
+		return
+	if hidden or debug_runtime_controller.disable_hud or debug_runtime_controller.hide_hud_only:
+		race_hud.visible = false
+	else:
+		race_hud.visible = true
 
 func _refresh_replay_input_display() -> void:
 	if replay_input_display_panel == null or replay_input_display == null:
@@ -1839,8 +1864,7 @@ func _apply_replay_focus_to_local_visual() -> void:
 			car.player_settings = ps
 	if is_instance_valid(car.name_label):
 		car.name_label.text = race_presentation_controller.player_display_name(focus_id)
-	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.hide_hud_only:
-		car.race_hud.visible = true
+	_apply_replay_hud_visibility()
 	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.disable_hud_process_only:
 		car.race_hud.process_mode = Node.PROCESS_MODE_INHERIT
 
