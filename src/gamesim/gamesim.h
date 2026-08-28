@@ -23,6 +23,11 @@
 #include "core/heap_handler.h"
 #include "core/player_input.h"
 #include "car/car_properties.h"
+#include "gamesim/gamesim_events.h"
+#include "gamesim/gamesim_profile_state.h"
+#include "gamesim/gamesim_render_state.h"
+#include "gamesim/gamesim_save_state.h"
+#include "gamesim/gamesim_state.h"
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -50,112 +55,25 @@ namespace godot {
 		HeapHandler level_data;
 		HeapHandler gamestate_data;
 		static const int STATE_BUFFER_LEN = 45;
-		struct SavedVoiceTransform {
-			int32_t player_id = -1;
-			SimVec3 origin;
-		};
-		struct BumperState {
-			uint8_t active = 0;
-			uint32_t spawn_lap = 0;
-			uint32_t next_sequence = 0;
-			float target_lane = 0.0f;
-		};
-		static constexpr int BUMPER_POOL_SIZE = 60;
-		struct SavedState {
-			char* data;
-			int size;
-			int bumper_state_count;
-			uint32_t bumper_scheduler_lap;
-			uint32_t bumper_next_sequence;
-			BumperState bumper_states[BUMPER_POOL_SIZE];
-			int tick = -1;
-			int voice_transform_count = 0;
-			std::vector<SavedVoiceTransform> voice_transforms;
-			uint32_t car_local_state_size = 0;
-			uint32_t bumper_local_state_size = 0;
-			std::vector<uint8_t> vehicle_local_state;
-		};
+		using SavedVoiceTransform = GameSimSavedVoiceTransform;
+		using BumperState = GameSimBumperState;
+		using SavedState = GameSimSavedState;
+		static constexpr int BUMPER_POOL_SIZE = MXT_GAMESIM_BUMPER_POOL_SIZE;
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
-		struct NetworkStateSizeStats {
-			int total = 0;
-			int header = 0;
-			int bumper_meta = 0;
-			int sparks = 0;
-			int car_scalars = 0;
-			int bumper_scalars = 0;
-			int car_vec3 = 0;
-			int bumper_vec3 = 0;
-			int car_transform = 0;
-			int bumper_transform = 0;
-			int car_basis = 0;
-			int bumper_basis = 0;
-			int car_conditionals = 0;
-			int bumper_conditionals = 0;
-			int car_tilt = 0;
-			int bumper_tilt = 0;
-			int car_wall = 0;
-			int bumper_wall = 0;
-			int triggers = 0;
-			int car_restore_count = 0;
-			int bumper_restore_count = 0;
-			int active_bumper_count = 0;
-			int active_spark_count = 0;
-			int trigger_count = 0;
-			int car_count = 0;
-			int bumper_count = 0;
-		};
+		using NetworkStateSizeStats = GameSimNetworkStateSizeStats;
 		mutable NetworkStateSizeStats last_network_state_size_stats;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static constexpr int PLAYER_INDEX_LOOKUP_SIZE = 2048;
 		static constexpr int PLAYER_INDEX_LOOKUP_MASK = PLAYER_INDEX_LOOKUP_SIZE - 1;
 		static constexpr int32_t PLAYER_INDEX_LOOKUP_EMPTY = -2147483647 - 1;
-		struct VehicleTickSoA {
-			int capacity = 0;
-			PlayerInput* inputs = nullptr;
-			float* pre_distances = nullptr;
-			float* placement_distances = nullptr;
-			int* placement_indices = nullptr;
-			bool placement_order_valid = false;
-			uint8_t* pending_s_boost_sparks = nullptr;
-			int* collision_indices = nullptr;
-			int collision_order_count = 0;
-			float* collision_min_x = nullptr;
-			float* collision_max_x = nullptr;
-			float* collision_min_y = nullptr;
-			float* collision_max_y = nullptr;
-			float* collision_min_z = nullptr;
-			float* collision_max_z = nullptr;
-			float* position_current_x = nullptr;
-			float* position_current_y = nullptr;
-			float* position_current_z = nullptr;
-			float* position_old_x = nullptr;
-			float* position_old_y = nullptr;
-			float* position_old_z = nullptr;
-			float* speed_kmh = nullptr;
-			float* collectable_super_spark = nullptr;
-		};
+		using VehicleTickSoA = GameSimVehicleTickSoA;
 		VehicleTickSoA vehicle_tick_soa;
-		static const int SUPER_SPARK_CAPACITY = 256;
+		static const int SUPER_SPARK_CAPACITY = MXT_GAMESIM_SUPER_SPARK_CAPACITY;
 		static constexpr float SUPER_SPARK_COLLECT_RADIUS = 8.0f;
-		struct SuperSpark {
-			uint8_t active = 0;
-			uint8_t collectable = 0;
-			uint16_t animation_frame = 0;
-			uint16_t checkpoint = 0;
-			SimVec3 position;
-			SimVec3 prev_position;
-			SimVec3 start_position;
-			SimVec3 final_position;
-			SimVec3 plane_normal;
-		};
-		struct SuperSparkState {
-			SuperSpark sparks[SUPER_SPARK_CAPACITY];
-			uint16_t cursor;
-			uint32_t rng_state;
-			uint32_t placement_timer;
-		};
+		using SuperSpark = GameSimSuperSpark;
+		using SuperSparkState = GameSimSuperSparkState;
 		SuperSparkState* super_spark_state = nullptr;
 		SuperSpark* super_sparks = nullptr;
 		std::vector<uint64_t> super_spark_candidate_mask_lo;
@@ -166,19 +84,8 @@ namespace godot {
 		uint8_t* car_is_cpu = nullptr;
 		int32_t player_index_lookup_ids[PLAYER_INDEX_LOOKUP_SIZE] = {};
 		int16_t player_index_lookup_indices[PLAYER_INDEX_LOOKUP_SIZE] = {};
-		struct NativeCpuDriverState {
-			int32_t player_id = -1;
-			uint8_t active = 0;
-			int32_t last_generated_tick = -1;
-			godot::PackedByteArray pending_input;
-		};
-		struct RaceEvent {
-			uint8_t type = 0;
-			int32_t actor_id = -1;
-			int32_t target_id = -1;
-			int32_t tick = 0;
-			int32_t value = 0;
-		};
+		using NativeCpuDriverState = GameSimNativeCpuDriverState;
+		using RaceEvent = GameSimRaceEvent;
 		std::vector<RaceEvent> race_events;
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
 		BumperState bumper_states[BUMPER_POOL_SIZE];
@@ -336,11 +243,7 @@ namespace godot {
 		godot::Node3D* car_node_container = nullptr;
 		godot::Node3D* spark_node_container = nullptr;
 		godot::Object* car_render_manager = nullptr;
-		struct RenderDashplateVisual {
-			Dashplate* trigger = nullptr;
-			godot::Ref<godot::ShaderMaterial> projection_material;
-			float boost_time = 0.0f;
-		};
+		using RenderDashplateVisual = GameSimRenderDashplateVisual;
 		std::vector<RenderDashplateVisual> render_dashplate_visuals;
 		void update_dashplate_visuals(float process_delta);
 		void clear_trigger_visuals();
@@ -351,18 +254,7 @@ namespace godot {
 		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_stamp_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_thruster_multimeshes;
-		struct RenderBodyMultimeshBuffers {
-			godot::PackedFloat32Array main;
-			godot::PackedFloat32Array outline;
-			godot::PackedFloat32Array outline_main;
-			godot::PackedFloat32Array shadow;
-			godot::PackedFloat32Array stamp;
-			float* main_write = nullptr;
-			float* outline_write = nullptr;
-			float* outline_main_write = nullptr;
-			float* shadow_write = nullptr;
-			float* stamp_write = nullptr;
-		};
+		using RenderBodyMultimeshBuffers = GameSimRenderBodyMultimeshBuffers;
 		std::vector<RenderBodyMultimeshBuffers> render_body_buffers;
 		std::vector<godot::PackedFloat32Array> render_thruster_buffers;
 		std::vector<float*> render_thruster_buffer_write_ptrs;
@@ -394,44 +286,16 @@ namespace godot {
 			std::vector<uint8_t> render_rollback_correction_active;
 			std::vector<SimTransform> render_rollback_capture_transforms;
 			bool render_rollback_capture_pending = false;
-			struct RenderVehicleVisualState {
-				float startup_wobble = 0.0f;
-				float turn_reaction_effect = 0.0f;
-				float height_adjust_from_boost = 0.0f;
-				int strafe_visual_roll = 0;
-				SimQuat visual_quat;
-			};
+			using RenderVehicleVisualState = GameSimRenderVehicleVisualState;
 			std::vector<RenderVehicleVisualState> render_vehicle_visual_state;
-			struct RenderVehicleEffectRefs {
-				uint32_t terrain_state_old = 0;
-				uint32_t machine_state_old = 0;
-				uint8_t full_effect_active = 0;
-				float impact_flash = 0.0f;
-				godot::Color overlay = godot::Color(0, 0, 0, 1);
-				godot::Color energy_overlay = godot::Color(0, 0, 0, 1);
-			};
+			using RenderVehicleEffectRefs = GameSimRenderVehicleEffectRefs;
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			CollisionSparkRuntime* collision_spark_runtime = nullptr;
 			DriftPlasmaRuntime* drift_plasma_runtime = nullptr;
 			std::vector<uint8_t> render_effect_full_flags;
-			struct RenderEffectPoolSlot {
-				godot::Node* node = nullptr;
-				godot::Node3D* car_transform = nullptr;
-				godot::GPUParticles3D* recharge_particles = nullptr;
-				godot::GPUParticles3D* attack_particles = nullptr;
-				godot::GPUParticles3D* landing_particles = nullptr;
-				godot::GPUParticles3D* damage_electricity = nullptr;
-				godot::GPUParticles3D* damage_smoke = nullptr;
-				godot::Ref<godot::Material> damage_electricity_material;
-				godot::Object* boost_electricity = nullptr;
-				int car_index = -1;
-				uint8_t fixed_local = 0;
-			};
+			using RenderEffectPoolSlot = GameSimRenderEffectPoolSlot;
 			std::vector<RenderEffectPoolSlot> render_effect_pool_slots;
-			struct RenderThrusterLightRID {
-				godot::RID light;
-				godot::RID instance;
-			};
+			using RenderThrusterLightRID = GameSimRenderThrusterLightRID;
 			std::vector<RenderThrusterLightRID> render_thruster_lights;
 			godot::RID render_thruster_light_scenario;
 			int render_thruster_light_visible_count = 0;
@@ -457,91 +321,7 @@ namespace godot {
 			MxtSpatialAudioManager* spatial_audio_manager = nullptr;
 			int spatial_audio_last_assignment_tick = -1;
 			uint64_t spatial_audio_last_update_frame = UINT64_MAX;
-			bool render_profile_enabled = false;
-			bool phase_profile_enabled = false;
-			uint64_t phase_profile_frames = 0;
-			uint64_t phase_profile_total_us = 0;
-			uint64_t phase_profile_total_max_us = 0;
-			uint64_t phase_profile_pre_us = 0;
-			uint64_t phase_profile_pre_max_us = 0;
-			uint64_t phase_profile_input_us = 0;
-			uint64_t phase_profile_input_max_us = 0;
-			uint64_t phase_profile_vehicle_us = 0;
-			uint64_t phase_profile_vehicle_max_us = 0;
-			uint64_t phase_profile_vehicle_begin_us = 0;
-			uint64_t phase_profile_vehicle_apply_input_us = 0;
-			uint64_t phase_profile_vehicle_floor_us = 0;
-			uint64_t phase_profile_vehicle_prepare_frame_us = 0;
-			uint64_t phase_profile_vehicle_floor_corner_analytic_surface_us = 0;
-			uint64_t phase_profile_vehicle_floor_mesh_candidate_collect_us = 0;
-			uint64_t phase_profile_vehicle_floor_mesh_cast4_us = 0;
-			uint64_t phase_profile_vehicle_floor_mesh_sample_us = 0;
-			uint64_t phase_profile_vehicle_find_floor_us = 0;
-			uint64_t phase_profile_vehicle_find_floor_cast_us = 0;
-			uint64_t phase_profile_vehicle_find_floor_mesh_us = 0;
-			uint64_t phase_profile_vehicle_find_floor_analytic_us = 0;
-			uint64_t phase_profile_vehicle_terrain_us = 0;
-			uint64_t phase_profile_vehicle_trigger_us = 0;
-			uint64_t phase_profile_vehicle_motion_us = 0;
-			uint64_t phase_profile_vehicle_finish_tick_us = 0;
-			uint64_t phase_profile_vehicle_collision_us = 0;
-			uint64_t phase_profile_vehicle_post_tick_us = 0;
-			uint64_t phase_profile_vehicle_corner_update_us = 0;
-			uint64_t phase_profile_vehicle_corner_old_analytic_us = 0;
-			uint64_t phase_profile_vehicle_corner_new_checkpoint_us = 0;
-			uint64_t phase_profile_vehicle_corner_new_analytic_us = 0;
-			uint64_t phase_profile_vehicle_corner_mesh_us = 0;
-			uint64_t phase_profile_vehicle_tail_us = 0;
-			uint64_t phase_profile_vehicle_checkpoint_us = 0;
-			uint64_t phase_profile_vehicle_spark_collect_us = 0;
-			uint64_t phase_profile_post_vehicle_us = 0;
-			uint64_t phase_profile_post_vehicle_max_us = 0;
-			uint64_t phase_profile_placement_us = 0;
-			uint64_t phase_profile_placement_max_us = 0;
-			uint64_t phase_profile_post_us = 0;
-			uint64_t phase_profile_post_max_us = 0;
-			uint64_t phase_profile_save_us = 0;
-			uint64_t phase_profile_save_max_us = 0;
-			uint64_t phase_profile_save_bumper_us = 0;
-			uint64_t phase_profile_save_voice_us = 0;
-			uint64_t phase_profile_save_memcpy_us = 0;
-			uint64_t phase_profile_last_total_us = 0;
-			uint64_t phase_profile_last_pre_us = 0;
-			uint64_t phase_profile_last_input_us = 0;
-			uint64_t phase_profile_last_vehicle_us = 0;
-			uint64_t phase_profile_last_vehicle_collision_us = 0;
-			uint64_t phase_profile_last_post_vehicle_us = 0;
-			uint64_t phase_profile_last_placement_us = 0;
-			uint64_t phase_profile_last_post_us = 0;
-			uint64_t phase_profile_last_save_us = 0;
-			uint64_t render_profile_frames = 0;
-			uint64_t render_profile_total_us = 0;
-			uint64_t render_profile_total_max_us = 0;
-			uint64_t render_profile_get_children_us = 0;
-			uint64_t render_profile_cache_us = 0;
-			uint64_t render_profile_snapshots_us = 0;
-			uint64_t render_profile_snapshots_max_us = 0;
-			uint64_t render_profile_effects_us = 0;
-			uint64_t render_profile_effects_max_us = 0;
-			uint64_t render_profile_multimesh_us = 0;
-			uint64_t render_profile_multimesh_max_us = 0;
-			uint64_t render_profile_body_instances = 0;
-			uint64_t render_profile_thruster_instances = 0;
-			uint64_t render_profile_camera_us = 0;
-			uint64_t render_profile_local_visual_us = 0;
-			uint64_t render_profile_cpu_driver_us = 0;
-			uint64_t render_profile_cpu_driver_max_us = 0;
-			uint64_t render_profile_spark_us = 0;
-			uint64_t render_profile_visuals_only_frames = 0;
-			uint64_t render_profile_visuals_only_total_us = 0;
-			uint64_t render_profile_visuals_only_total_max_us = 0;
-			uint64_t render_profile_visuals_only_effects_us = 0;
-			uint64_t render_profile_visuals_only_effects_max_us = 0;
-			uint64_t render_profile_visuals_only_multimesh_us = 0;
-			uint64_t render_profile_visuals_only_multimesh_max_us = 0;
-			uint64_t render_profile_visuals_only_body_instances = 0;
-			uint64_t render_profile_visuals_only_thruster_instances = 0;
-			uint64_t render_profile_visuals_only_camera_us = 0;
+			GameSimProfileState profile;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
 		int gameplay_camera_zoom_mode = 1;

@@ -129,7 +129,7 @@ Dictionary GameSim::evaluate_car_properties(
 
 String GameSim::get_phase_profile_string() const
 {
-	if (!phase_profile_enabled || phase_profile_frames == 0) {
+	if (!profile.phase_enabled || profile.phase_frames == 0) {
 		return "MXT_PHASE_PROFILE_DISABLED";
 	}
 	auto avg = [](uint64_t total, uint64_t frames) -> godot::String {
@@ -138,52 +138,52 @@ String GameSim::get_phase_profile_string() const
 		}
 		return godot::String::num_int64(static_cast<int64_t>(total / frames));
 	};
-	godot::String out = "MXT_PHASE_PROFILE frames=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_frames));
-	out += " total_us=" + avg(phase_profile_total_us, phase_profile_frames);
-	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_total_max_us));
-	out += " pre_us=" + avg(phase_profile_pre_us, phase_profile_frames);
-	out += " pre_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_pre_max_us));
-	out += " input_us=" + avg(phase_profile_input_us, phase_profile_frames);
-	out += " input_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_input_max_us));
-	out += " vehicle_us=" + avg(phase_profile_vehicle_us, phase_profile_frames);
-	out += " vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_vehicle_max_us));
-	out += " v_begin_us=" + avg(phase_profile_vehicle_begin_us, phase_profile_frames);
-	out += " v_apply_input_us=" + avg(phase_profile_vehicle_apply_input_us, phase_profile_frames);
-	out += " v_floor_us=" + avg(phase_profile_vehicle_floor_us, phase_profile_frames);
-	out += " v_prepare_frame_us=" + avg(phase_profile_vehicle_prepare_frame_us, phase_profile_frames);
-	out += " v_floor_corner_analytic_surface_us=" + avg(phase_profile_vehicle_floor_corner_analytic_surface_us, phase_profile_frames);
-	out += " v_floor_mesh_candidate_collect_us=" + avg(phase_profile_vehicle_floor_mesh_candidate_collect_us, phase_profile_frames);
-	out += " v_floor_mesh_cast4_us=" + avg(phase_profile_vehicle_floor_mesh_cast4_us, phase_profile_frames);
-	out += " v_floor_mesh_sample_us=" + avg(phase_profile_vehicle_floor_mesh_sample_us, phase_profile_frames);
-	out += " v_find_floor_us=" + avg(phase_profile_vehicle_find_floor_us, phase_profile_frames);
-	out += " v_find_floor_cast_us=" + avg(phase_profile_vehicle_find_floor_cast_us, phase_profile_frames);
-	out += " v_find_floor_mesh_us=" + avg(phase_profile_vehicle_find_floor_mesh_us, phase_profile_frames);
-	out += " v_find_floor_analytic_us=" + avg(phase_profile_vehicle_find_floor_analytic_us, phase_profile_frames);
-	out += " v_terrain_us=" + avg(phase_profile_vehicle_terrain_us, phase_profile_frames);
-	out += " v_trigger_us=" + avg(phase_profile_vehicle_trigger_us, phase_profile_frames);
-	out += " v_motion_us=" + avg(phase_profile_vehicle_motion_us, phase_profile_frames);
-	out += " v_finish_tick_us=" + avg(phase_profile_vehicle_finish_tick_us, phase_profile_frames);
-	out += " v_collision_us=" + avg(phase_profile_vehicle_collision_us, phase_profile_frames);
-	out += " v_post_tick_us=" + avg(phase_profile_vehicle_post_tick_us, phase_profile_frames);
-	out += " v_corner_update_us=" + avg(phase_profile_vehicle_corner_update_us, phase_profile_frames);
-	out += " v_corner_old_analytic_us=" + avg(phase_profile_vehicle_corner_old_analytic_us, phase_profile_frames);
-	out += " v_corner_new_checkpoint_us=" + avg(phase_profile_vehicle_corner_new_checkpoint_us, phase_profile_frames);
-	out += " v_corner_new_analytic_us=" + avg(phase_profile_vehicle_corner_new_analytic_us, phase_profile_frames);
-	out += " v_corner_mesh_us=" + avg(phase_profile_vehicle_corner_mesh_us, phase_profile_frames);
-	out += " v_tail_us=" + avg(phase_profile_vehicle_tail_us, phase_profile_frames);
-	out += " v_checkpoint_us=" + avg(phase_profile_vehicle_checkpoint_us, phase_profile_frames);
-	out += " v_spark_collect_us=" + avg(phase_profile_vehicle_spark_collect_us, phase_profile_frames);
-	out += " post_vehicle_us=" + avg(phase_profile_post_vehicle_us, phase_profile_frames);
-	out += " post_vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_post_vehicle_max_us));
-	out += " placement_us=" + avg(phase_profile_placement_us, phase_profile_frames);
-	out += " placement_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_placement_max_us));
-	out += " post_us=" + avg(phase_profile_post_us, phase_profile_frames);
-	out += " post_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_post_max_us));
-	out += " save_us=" + avg(phase_profile_save_us, phase_profile_frames);
-	out += " save_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_save_max_us));
-	out += " save_bumper_us=" + avg(phase_profile_save_bumper_us, phase_profile_frames);
-	out += " save_voice_us=" + avg(phase_profile_save_voice_us, phase_profile_frames);
-	out += " save_memcpy_us=" + avg(phase_profile_save_memcpy_us, phase_profile_frames);
+	godot::String out = "MXT_PHASE_PROFILE frames=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_frames));
+	out += " total_us=" + avg(profile.phase_total_us, profile.phase_frames);
+	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_total_max_us));
+	out += " pre_us=" + avg(profile.phase_pre_us, profile.phase_frames);
+	out += " pre_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_pre_max_us));
+	out += " input_us=" + avg(profile.phase_input_us, profile.phase_frames);
+	out += " input_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_input_max_us));
+	out += " vehicle_us=" + avg(profile.phase_vehicle_us, profile.phase_frames);
+	out += " vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_vehicle_max_us));
+	out += " v_begin_us=" + avg(profile.phase_vehicle_begin_us, profile.phase_frames);
+	out += " v_apply_input_us=" + avg(profile.phase_vehicle_apply_input_us, profile.phase_frames);
+	out += " v_floor_us=" + avg(profile.phase_vehicle_floor_us, profile.phase_frames);
+	out += " v_prepare_frame_us=" + avg(profile.phase_vehicle_prepare_frame_us, profile.phase_frames);
+	out += " v_floor_corner_analytic_surface_us=" + avg(profile.phase_vehicle_floor_corner_analytic_surface_us, profile.phase_frames);
+	out += " v_floor_mesh_candidate_collect_us=" + avg(profile.phase_vehicle_floor_mesh_candidate_collect_us, profile.phase_frames);
+	out += " v_floor_mesh_cast4_us=" + avg(profile.phase_vehicle_floor_mesh_cast4_us, profile.phase_frames);
+	out += " v_floor_mesh_sample_us=" + avg(profile.phase_vehicle_floor_mesh_sample_us, profile.phase_frames);
+	out += " v_find_floor_us=" + avg(profile.phase_vehicle_find_floor_us, profile.phase_frames);
+	out += " v_find_floor_cast_us=" + avg(profile.phase_vehicle_find_floor_cast_us, profile.phase_frames);
+	out += " v_find_floor_mesh_us=" + avg(profile.phase_vehicle_find_floor_mesh_us, profile.phase_frames);
+	out += " v_find_floor_analytic_us=" + avg(profile.phase_vehicle_find_floor_analytic_us, profile.phase_frames);
+	out += " v_terrain_us=" + avg(profile.phase_vehicle_terrain_us, profile.phase_frames);
+	out += " v_trigger_us=" + avg(profile.phase_vehicle_trigger_us, profile.phase_frames);
+	out += " v_motion_us=" + avg(profile.phase_vehicle_motion_us, profile.phase_frames);
+	out += " v_finish_tick_us=" + avg(profile.phase_vehicle_finish_tick_us, profile.phase_frames);
+	out += " v_collision_us=" + avg(profile.phase_vehicle_collision_us, profile.phase_frames);
+	out += " v_post_tick_us=" + avg(profile.phase_vehicle_post_tick_us, profile.phase_frames);
+	out += " v_corner_update_us=" + avg(profile.phase_vehicle_corner_update_us, profile.phase_frames);
+	out += " v_corner_old_analytic_us=" + avg(profile.phase_vehicle_corner_old_analytic_us, profile.phase_frames);
+	out += " v_corner_new_checkpoint_us=" + avg(profile.phase_vehicle_corner_new_checkpoint_us, profile.phase_frames);
+	out += " v_corner_new_analytic_us=" + avg(profile.phase_vehicle_corner_new_analytic_us, profile.phase_frames);
+	out += " v_corner_mesh_us=" + avg(profile.phase_vehicle_corner_mesh_us, profile.phase_frames);
+	out += " v_tail_us=" + avg(profile.phase_vehicle_tail_us, profile.phase_frames);
+	out += " v_checkpoint_us=" + avg(profile.phase_vehicle_checkpoint_us, profile.phase_frames);
+	out += " v_spark_collect_us=" + avg(profile.phase_vehicle_spark_collect_us, profile.phase_frames);
+	out += " post_vehicle_us=" + avg(profile.phase_post_vehicle_us, profile.phase_frames);
+	out += " post_vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_post_vehicle_max_us));
+	out += " placement_us=" + avg(profile.phase_placement_us, profile.phase_frames);
+	out += " placement_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_placement_max_us));
+	out += " post_us=" + avg(profile.phase_post_us, profile.phase_frames);
+	out += " post_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_post_max_us));
+	out += " save_us=" + avg(profile.phase_save_us, profile.phase_frames);
+	out += " save_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.phase_save_max_us));
+	out += " save_bumper_us=" + avg(profile.phase_save_bumper_us, profile.phase_frames);
+	out += " save_voice_us=" + avg(profile.phase_save_voice_us, profile.phase_frames);
+	out += " save_memcpy_us=" + avg(profile.phase_save_memcpy_us, profile.phase_frames);
 	return out;
 }
 
@@ -191,15 +191,15 @@ godot::PackedInt64Array GameSim::get_phase_profile_last_sample() const
 {
 	godot::PackedInt64Array sample;
 	sample.resize(9);
-	sample.set(0, static_cast<int64_t>(phase_profile_last_total_us));
-	sample.set(1, static_cast<int64_t>(phase_profile_last_pre_us));
-	sample.set(2, static_cast<int64_t>(phase_profile_last_input_us));
-	sample.set(3, static_cast<int64_t>(phase_profile_last_vehicle_us));
-	sample.set(4, static_cast<int64_t>(phase_profile_last_vehicle_collision_us));
-	sample.set(5, static_cast<int64_t>(phase_profile_last_post_vehicle_us));
-	sample.set(6, static_cast<int64_t>(phase_profile_last_placement_us));
-	sample.set(7, static_cast<int64_t>(phase_profile_last_post_us));
-	sample.set(8, static_cast<int64_t>(phase_profile_last_save_us));
+	sample.set(0, static_cast<int64_t>(profile.phase_last_total_us));
+	sample.set(1, static_cast<int64_t>(profile.phase_last_pre_us));
+	sample.set(2, static_cast<int64_t>(profile.phase_last_input_us));
+	sample.set(3, static_cast<int64_t>(profile.phase_last_vehicle_us));
+	sample.set(4, static_cast<int64_t>(profile.phase_last_vehicle_collision_us));
+	sample.set(5, static_cast<int64_t>(profile.phase_last_post_vehicle_us));
+	sample.set(6, static_cast<int64_t>(profile.phase_last_placement_us));
+	sample.set(7, static_cast<int64_t>(profile.phase_last_post_us));
+	sample.set(8, static_cast<int64_t>(profile.phase_last_save_us));
 	return sample;
 }
 
@@ -242,7 +242,7 @@ uint64_t GameSim::render_profile_now_us() const
 
 String GameSim::get_render_profile_string() const
 {
-	if (!render_profile_enabled || render_profile_frames == 0) {
+	if (!profile.render_enabled || profile.render_frames == 0) {
 		return "MXT_RENDER_PROFILE_DISABLED";
 	}
 	auto avg = [](uint64_t total, uint64_t frames) -> godot::String {
@@ -251,34 +251,34 @@ String GameSim::get_render_profile_string() const
 		}
 		return godot::String::num_int64(static_cast<int64_t>(total / frames));
 	};
-	godot::String out = "MXT_RENDER_PROFILE_CPP frames=" + godot::String::num_int64(static_cast<int64_t>(render_profile_frames));
-	out += " total_us=" + avg(render_profile_total_us, render_profile_frames);
-	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_total_max_us));
-	out += " get_children_us=" + avg(render_profile_get_children_us, render_profile_frames);
-	out += " cache_us=" + avg(render_profile_cache_us, render_profile_frames);
-	out += " snapshots_us=" + avg(render_profile_snapshots_us, render_profile_frames);
-	out += " snapshots_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_snapshots_max_us));
-	out += " effects_us=" + avg(render_profile_effects_us, render_profile_frames);
-	out += " effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_effects_max_us));
-	out += " multimesh_us=" + avg(render_profile_multimesh_us, render_profile_frames);
-	out += " multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_multimesh_max_us));
-	out += " body_instances=" + avg(render_profile_body_instances, render_profile_frames);
-	out += " thruster_instances=" + avg(render_profile_thruster_instances, render_profile_frames);
-	out += " camera_us=" + avg(render_profile_camera_us, render_profile_frames);
-	out += " local_visual_us=" + avg(render_profile_local_visual_us, render_profile_frames);
-	out += " cpu_driver_us=" + avg(render_profile_cpu_driver_us, render_profile_frames);
-	out += " cpu_driver_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_cpu_driver_max_us));
-	out += " spark_us=" + avg(render_profile_spark_us, render_profile_frames);
-	out += " visuals_only_frames=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_frames));
-	out += " visuals_only_total_us=" + avg(render_profile_visuals_only_total_us, render_profile_visuals_only_frames);
-	out += " visuals_only_total_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_total_max_us));
-	out += " visuals_only_effects_us=" + avg(render_profile_visuals_only_effects_us, render_profile_visuals_only_frames);
-	out += " visuals_only_effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_effects_max_us));
-	out += " visuals_only_multimesh_us=" + avg(render_profile_visuals_only_multimesh_us, render_profile_visuals_only_frames);
-	out += " visuals_only_multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_multimesh_max_us));
-	out += " visuals_only_body_instances=" + avg(render_profile_visuals_only_body_instances, render_profile_visuals_only_frames);
-	out += " visuals_only_thruster_instances=" + avg(render_profile_visuals_only_thruster_instances, render_profile_visuals_only_frames);
-	out += " visuals_only_camera_us=" + avg(render_profile_visuals_only_camera_us, render_profile_visuals_only_frames);
+	godot::String out = "MXT_RENDER_PROFILE_CPP frames=" + godot::String::num_int64(static_cast<int64_t>(profile.render_frames));
+	out += " total_us=" + avg(profile.render_total_us, profile.render_frames);
+	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_total_max_us));
+	out += " get_children_us=" + avg(profile.render_get_children_us, profile.render_frames);
+	out += " cache_us=" + avg(profile.render_cache_us, profile.render_frames);
+	out += " snapshots_us=" + avg(profile.render_snapshots_us, profile.render_frames);
+	out += " snapshots_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_snapshots_max_us));
+	out += " effects_us=" + avg(profile.render_effects_us, profile.render_frames);
+	out += " effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_effects_max_us));
+	out += " multimesh_us=" + avg(profile.render_multimesh_us, profile.render_frames);
+	out += " multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_multimesh_max_us));
+	out += " body_instances=" + avg(profile.render_body_instances, profile.render_frames);
+	out += " thruster_instances=" + avg(profile.render_thruster_instances, profile.render_frames);
+	out += " camera_us=" + avg(profile.render_camera_us, profile.render_frames);
+	out += " local_visual_us=" + avg(profile.render_local_visual_us, profile.render_frames);
+	out += " cpu_driver_us=" + avg(profile.render_cpu_driver_us, profile.render_frames);
+	out += " cpu_driver_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_cpu_driver_max_us));
+	out += " spark_us=" + avg(profile.render_spark_us, profile.render_frames);
+	out += " visuals_only_frames=" + godot::String::num_int64(static_cast<int64_t>(profile.render_visuals_only_frames));
+	out += " visuals_only_total_us=" + avg(profile.render_visuals_only_total_us, profile.render_visuals_only_frames);
+	out += " visuals_only_total_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_visuals_only_total_max_us));
+	out += " visuals_only_effects_us=" + avg(profile.render_visuals_only_effects_us, profile.render_visuals_only_frames);
+	out += " visuals_only_effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_visuals_only_effects_max_us));
+	out += " visuals_only_multimesh_us=" + avg(profile.render_visuals_only_multimesh_us, profile.render_visuals_only_frames);
+	out += " visuals_only_multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(profile.render_visuals_only_multimesh_max_us));
+	out += " visuals_only_body_instances=" + avg(profile.render_visuals_only_body_instances, profile.render_visuals_only_frames);
+	out += " visuals_only_thruster_instances=" + avg(profile.render_visuals_only_thruster_instances, profile.render_visuals_only_frames);
+	out += " visuals_only_camera_us=" + avg(profile.render_visuals_only_camera_us, profile.render_visuals_only_frames);
 	return out;
 }
 
@@ -293,95 +293,95 @@ godot::PackedInt64Array GameSim::get_render_profile_last_sample() const
 
 void GameSim::set_phase_profile_enabled(bool enabled)
 {
-	phase_profile_enabled = enabled;
-	phase_profile_frames = 0;
-	phase_profile_total_us = 0;
-	phase_profile_total_max_us = 0;
-	phase_profile_pre_us = 0;
-	phase_profile_pre_max_us = 0;
-	phase_profile_input_us = 0;
-	phase_profile_input_max_us = 0;
-	phase_profile_vehicle_us = 0;
-	phase_profile_vehicle_max_us = 0;
-	phase_profile_vehicle_begin_us = 0;
-	phase_profile_vehicle_apply_input_us = 0;
-	phase_profile_vehicle_floor_us = 0;
-	phase_profile_vehicle_prepare_frame_us = 0;
-	phase_profile_vehicle_floor_corner_analytic_surface_us = 0;
-	phase_profile_vehicle_floor_mesh_candidate_collect_us = 0;
-	phase_profile_vehicle_floor_mesh_cast4_us = 0;
-	phase_profile_vehicle_floor_mesh_sample_us = 0;
-	phase_profile_vehicle_find_floor_us = 0;
-	phase_profile_vehicle_find_floor_cast_us = 0;
-	phase_profile_vehicle_find_floor_mesh_us = 0;
-	phase_profile_vehicle_find_floor_analytic_us = 0;
-	phase_profile_vehicle_terrain_us = 0;
-	phase_profile_vehicle_trigger_us = 0;
-	phase_profile_vehicle_motion_us = 0;
-	phase_profile_vehicle_finish_tick_us = 0;
-	phase_profile_vehicle_collision_us = 0;
-	phase_profile_vehicle_post_tick_us = 0;
-	phase_profile_vehicle_corner_update_us = 0;
-	phase_profile_vehicle_corner_old_analytic_us = 0;
-	phase_profile_vehicle_corner_new_checkpoint_us = 0;
-	phase_profile_vehicle_corner_new_analytic_us = 0;
-	phase_profile_vehicle_corner_mesh_us = 0;
-	phase_profile_vehicle_tail_us = 0;
-	phase_profile_vehicle_checkpoint_us = 0;
-	phase_profile_vehicle_spark_collect_us = 0;
-	phase_profile_post_vehicle_us = 0;
-	phase_profile_post_vehicle_max_us = 0;
-	phase_profile_placement_us = 0;
-	phase_profile_placement_max_us = 0;
-	phase_profile_post_us = 0;
-	phase_profile_post_max_us = 0;
-	phase_profile_save_us = 0;
-	phase_profile_save_max_us = 0;
-	phase_profile_save_bumper_us = 0;
-	phase_profile_save_voice_us = 0;
-	phase_profile_save_memcpy_us = 0;
-	phase_profile_last_total_us = 0;
-	phase_profile_last_pre_us = 0;
-	phase_profile_last_input_us = 0;
-	phase_profile_last_vehicle_us = 0;
-	phase_profile_last_vehicle_collision_us = 0;
-	phase_profile_last_post_vehicle_us = 0;
-	phase_profile_last_placement_us = 0;
-	phase_profile_last_post_us = 0;
-	phase_profile_last_save_us = 0;
+	profile.phase_enabled = enabled;
+	profile.phase_frames = 0;
+	profile.phase_total_us = 0;
+	profile.phase_total_max_us = 0;
+	profile.phase_pre_us = 0;
+	profile.phase_pre_max_us = 0;
+	profile.phase_input_us = 0;
+	profile.phase_input_max_us = 0;
+	profile.phase_vehicle_us = 0;
+	profile.phase_vehicle_max_us = 0;
+	profile.phase_vehicle_begin_us = 0;
+	profile.phase_vehicle_apply_input_us = 0;
+	profile.phase_vehicle_floor_us = 0;
+	profile.phase_vehicle_prepare_frame_us = 0;
+	profile.phase_vehicle_floor_corner_analytic_surface_us = 0;
+	profile.phase_vehicle_floor_mesh_candidate_collect_us = 0;
+	profile.phase_vehicle_floor_mesh_cast4_us = 0;
+	profile.phase_vehicle_floor_mesh_sample_us = 0;
+	profile.phase_vehicle_find_floor_us = 0;
+	profile.phase_vehicle_find_floor_cast_us = 0;
+	profile.phase_vehicle_find_floor_mesh_us = 0;
+	profile.phase_vehicle_find_floor_analytic_us = 0;
+	profile.phase_vehicle_terrain_us = 0;
+	profile.phase_vehicle_trigger_us = 0;
+	profile.phase_vehicle_motion_us = 0;
+	profile.phase_vehicle_finish_tick_us = 0;
+	profile.phase_vehicle_collision_us = 0;
+	profile.phase_vehicle_post_tick_us = 0;
+	profile.phase_vehicle_corner_update_us = 0;
+	profile.phase_vehicle_corner_old_analytic_us = 0;
+	profile.phase_vehicle_corner_new_checkpoint_us = 0;
+	profile.phase_vehicle_corner_new_analytic_us = 0;
+	profile.phase_vehicle_corner_mesh_us = 0;
+	profile.phase_vehicle_tail_us = 0;
+	profile.phase_vehicle_checkpoint_us = 0;
+	profile.phase_vehicle_spark_collect_us = 0;
+	profile.phase_post_vehicle_us = 0;
+	profile.phase_post_vehicle_max_us = 0;
+	profile.phase_placement_us = 0;
+	profile.phase_placement_max_us = 0;
+	profile.phase_post_us = 0;
+	profile.phase_post_max_us = 0;
+	profile.phase_save_us = 0;
+	profile.phase_save_max_us = 0;
+	profile.phase_save_bumper_us = 0;
+	profile.phase_save_voice_us = 0;
+	profile.phase_save_memcpy_us = 0;
+	profile.phase_last_total_us = 0;
+	profile.phase_last_pre_us = 0;
+	profile.phase_last_input_us = 0;
+	profile.phase_last_vehicle_us = 0;
+	profile.phase_last_vehicle_collision_us = 0;
+	profile.phase_last_post_vehicle_us = 0;
+	profile.phase_last_placement_us = 0;
+	profile.phase_last_post_us = 0;
+	profile.phase_last_save_us = 0;
 }
 
 void GameSim::set_render_profile_enabled(bool enabled)
 {
-	render_profile_enabled = enabled;
-	render_profile_frames = 0;
-	render_profile_total_us = 0;
-	render_profile_total_max_us = 0;
-	render_profile_get_children_us = 0;
-	render_profile_cache_us = 0;
-	render_profile_snapshots_us = 0;
-	render_profile_snapshots_max_us = 0;
-	render_profile_effects_us = 0;
-	render_profile_effects_max_us = 0;
-	render_profile_multimesh_us = 0;
-	render_profile_multimesh_max_us = 0;
-	render_profile_body_instances = 0;
-	render_profile_thruster_instances = 0;
-	render_profile_camera_us = 0;
-	render_profile_local_visual_us = 0;
-	render_profile_cpu_driver_us = 0;
-	render_profile_cpu_driver_max_us = 0;
-	render_profile_spark_us = 0;
-	render_profile_visuals_only_frames = 0;
-	render_profile_visuals_only_total_us = 0;
-	render_profile_visuals_only_total_max_us = 0;
-	render_profile_visuals_only_effects_us = 0;
-	render_profile_visuals_only_effects_max_us = 0;
-	render_profile_visuals_only_multimesh_us = 0;
-	render_profile_visuals_only_multimesh_max_us = 0;
-	render_profile_visuals_only_body_instances = 0;
-	render_profile_visuals_only_thruster_instances = 0;
-	render_profile_visuals_only_camera_us = 0;
+	profile.render_enabled = enabled;
+	profile.render_frames = 0;
+	profile.render_total_us = 0;
+	profile.render_total_max_us = 0;
+	profile.render_get_children_us = 0;
+	profile.render_cache_us = 0;
+	profile.render_snapshots_us = 0;
+	profile.render_snapshots_max_us = 0;
+	profile.render_effects_us = 0;
+	profile.render_effects_max_us = 0;
+	profile.render_multimesh_us = 0;
+	profile.render_multimesh_max_us = 0;
+	profile.render_body_instances = 0;
+	profile.render_thruster_instances = 0;
+	profile.render_camera_us = 0;
+	profile.render_local_visual_us = 0;
+	profile.render_cpu_driver_us = 0;
+	profile.render_cpu_driver_max_us = 0;
+	profile.render_spark_us = 0;
+	profile.render_visuals_only_frames = 0;
+	profile.render_visuals_only_total_us = 0;
+	profile.render_visuals_only_total_max_us = 0;
+	profile.render_visuals_only_effects_us = 0;
+	profile.render_visuals_only_effects_max_us = 0;
+	profile.render_visuals_only_multimesh_us = 0;
+	profile.render_visuals_only_multimesh_max_us = 0;
+	profile.render_visuals_only_body_instances = 0;
+	profile.render_visuals_only_thruster_instances = 0;
+	profile.render_visuals_only_camera_us = 0;
 }
 
 void GameSim::set_render_node_effects_enabled(bool enabled)

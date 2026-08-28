@@ -1625,41 +1625,41 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 	if (!sim_started || !cars) {
 		return;
 	}
-	const uint64_t profile_start = render_profile_enabled ? render_profile_now_us() : 0;
+	const uint64_t profile_start = profile.render_enabled ? render_profile_now_us() : 0;
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	const float effect_delta = std::max(0.0f, std::min(0.1f, static_cast<float>(process_delta)));
 	update_dashplate_visuals(effect_delta);
-	uint64_t profile_step = render_profile_enabled ? render_profile_now_us() : 0;
+	uint64_t profile_step = profile.render_enabled ? render_profile_now_us() : 0;
 	update_native_visual_effects(std::min(num_cars, static_cast<int>(render_final_current_transforms.size())), alpha, false, effect_delta, true);
-	if (render_profile_enabled) {
+	if (profile.render_enabled) {
 		const uint64_t now = render_profile_now_us();
 		const uint64_t elapsed = now - profile_step;
-		render_profile_visuals_only_effects_us += elapsed;
-		render_profile_visuals_only_effects_max_us = std::max(render_profile_visuals_only_effects_max_us, elapsed);
+		profile.render_visuals_only_effects_us += elapsed;
+		profile.render_visuals_only_effects_max_us = std::max(profile.render_visuals_only_effects_max_us, elapsed);
 		profile_step = now;
 	}
 	apply_render_multimeshes(alpha);
-	if (render_profile_enabled) {
+	if (profile.render_enabled) {
 		const uint64_t now = render_profile_now_us();
 		const uint64_t elapsed = now - profile_step;
-		render_profile_visuals_only_multimesh_us += elapsed;
-		render_profile_visuals_only_multimesh_max_us = std::max(render_profile_visuals_only_multimesh_max_us, elapsed);
-		render_profile_visuals_only_body_instances += static_cast<uint64_t>(std::max(render_last_body_instances, 0));
-		render_profile_visuals_only_thruster_instances += static_cast<uint64_t>(std::max(render_last_thruster_instances, 0));
+		profile.render_visuals_only_multimesh_us += elapsed;
+		profile.render_visuals_only_multimesh_max_us = std::max(profile.render_visuals_only_multimesh_max_us, elapsed);
+		profile.render_visuals_only_body_instances += static_cast<uint64_t>(std::max(render_last_body_instances, 0));
+		profile.render_visuals_only_thruster_instances += static_cast<uint64_t>(std::max(render_last_thruster_instances, 0));
 		profile_step = now;
 	}
 	update_native_gameplay_camera(false);
 	render_collision_spark_effects(alpha);
 	render_drift_plasma_effects(alpha);
 	update_spatial_audio(effect_delta);
-	if (render_profile_enabled) {
+	if (profile.render_enabled) {
 		const uint64_t now = render_profile_now_us();
-		render_profile_visuals_only_camera_us += now - profile_step;
+		profile.render_visuals_only_camera_us += now - profile_step;
 		const uint64_t elapsed = now - profile_start;
-		render_profile_visuals_only_total_us += elapsed;
-		render_profile_visuals_only_total_max_us = std::max(render_profile_visuals_only_total_max_us, elapsed);
-		render_profile_visuals_only_frames += 1;
+		profile.render_visuals_only_total_us += elapsed;
+		profile.render_visuals_only_total_max_us = std::max(profile.render_visuals_only_total_max_us, elapsed);
+		profile.render_visuals_only_frames += 1;
 	}
 }
 
@@ -1767,12 +1767,12 @@ void GameSim::update_super_spark_visuals()
 			return;
 		}
 
-		const uint64_t profile_start = render_profile_enabled ? render_profile_now_us() : 0;
+		const uint64_t profile_start = profile.render_enabled ? render_profile_now_us() : 0;
 		uint64_t profile_step = profile_start;
 		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
-			render_profile_get_children_us += now - profile_step;
+			profile.render_get_children_us += now - profile_step;
 			profile_step = now;
 		}
 		const int vis_car_count = std::max(0, num_cars);
@@ -1782,35 +1782,35 @@ void GameSim::update_super_spark_visuals()
 				render_effect_pool_slots.empty()) {
 			cache_native_visual_effect_nodes();
 		}
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
-			render_profile_cache_us += now - profile_step;
+			profile.render_cache_us += now - profile_step;
 			profile_step = now;
 		}
 		update_render_visual_snapshots(native_visual_count);
 		step_collision_spark_effects();
 		step_drift_plasma_effects();
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
 			const uint64_t elapsed = now - profile_step;
-			render_profile_snapshots_us += elapsed;
-			render_profile_snapshots_max_us = std::max(render_profile_snapshots_max_us, elapsed);
+			profile.render_snapshots_us += elapsed;
+			profile.render_snapshots_max_us = std::max(profile.render_snapshots_max_us, elapsed);
 			profile_step = now;
 		}
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 		update_native_visual_effects(vis_car_count, alpha, true, 1.0f / 60.0f, false);
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
 			const uint64_t elapsed = now - profile_step;
-			render_profile_effects_us += elapsed;
-			render_profile_effects_max_us = std::max(render_profile_effects_max_us, elapsed);
+			profile.render_effects_us += elapsed;
+			profile.render_effects_max_us = std::max(profile.render_effects_max_us, elapsed);
 			profile_step = now;
 		}
 		update_native_gameplay_camera(true);
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
-			render_profile_camera_us += now - profile_step;
+			profile.render_camera_us += now - profile_step;
 			profile_step = now;
 		}
 		godot::Array local_visual_args;
@@ -1833,29 +1833,29 @@ void GameSim::update_super_spark_visuals()
 				vis_car->callv("apply_sim_state", local_visual_args);
 			}
 		}
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
-			render_profile_local_visual_us += now - profile_step;
+			profile.render_local_visual_us += now - profile_step;
 			profile_step = now;
 		}
 		if (car_player_ids && car_is_cpu) {
 			update_native_cpu_drivers();
 		}
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
 			const uint64_t elapsed = now - profile_step;
-			render_profile_cpu_driver_us += elapsed;
-			render_profile_cpu_driver_max_us = std::max(render_profile_cpu_driver_max_us, elapsed);
+			profile.render_cpu_driver_us += elapsed;
+			profile.render_cpu_driver_max_us = std::max(profile.render_cpu_driver_max_us, elapsed);
 			profile_step = now;
 		}
 		update_super_spark_visuals();
-		if (render_profile_enabled) {
+		if (profile.render_enabled) {
 			const uint64_t now = render_profile_now_us();
-			render_profile_spark_us += now - profile_step;
+			profile.render_spark_us += now - profile_step;
 			const uint64_t elapsed = now - profile_start;
-			render_profile_total_us += elapsed;
-			render_profile_total_max_us = std::max(render_profile_total_max_us, elapsed);
-			render_profile_frames += 1;
+			profile.render_total_us += elapsed;
+			profile.render_total_max_us = std::max(profile.render_total_max_us, elapsed);
+			profile.render_frames += 1;
 		}
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{

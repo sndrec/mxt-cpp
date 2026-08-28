@@ -1385,7 +1385,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	std::fesetround(FE_TONEAREST);
-	const bool profile_phase = phase_profile_enabled;
+	const bool profile_phase = profile.phase_enabled;
 	const uint64_t phase_start = profile_phase ? render_profile_now_us() : 0;
 	uint64_t phase_step = phase_start;
 	auto phase_mark = [&](uint64_t& bucket, uint64_t& max_bucket) -> uint64_t {
@@ -1399,7 +1399,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		phase_step = now;
 		return elapsed;
 	};
-	phase_profile_last_vehicle_collision_us = 0;
+	profile.phase_last_vehicle_collision_us = 0;
 
 	if (num_cars <= 0 || !cars)
 	{
@@ -1441,7 +1441,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			gamesim_dashplate_heat_reward_scale(lead_distance - soa.pre_distances[i]);
 	}
 	update_bumpers(lead_distance, leader_lap);
-	phase_profile_last_pre_us = phase_mark(phase_profile_pre_us, phase_profile_pre_max_us);
+	profile.phase_last_pre_us = phase_mark(profile.phase_pre_us, profile.phase_pre_max_us);
 
 	const NativeCpuTickContext cpu_tick_context = native_cpu_make_tick_context(tick);
 	for (int i = 0; i < num_cars; i++) {
@@ -1514,7 +1514,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.inputs[i] = PlayerInput::from_neutral();
 		soa.pending_s_boost_sparks[i] = 0;
 	}
-	phase_profile_last_input_us = phase_mark(phase_profile_input_us, phase_profile_input_max_us);
+	profile.phase_last_input_us = phase_mark(profile.phase_input_us, profile.phase_input_max_us);
 
 	struct RacerVehicleLaneContext {
 		GameSim* sim;
@@ -1549,30 +1549,30 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		begin_vehicle_tick_soa(car_soa, sim.cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(sim.tick), car_soa.count,
 			sim.vehicle_restore_enabled, sim.s_boost_enabled, sim.boost_unlocked_from_start);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_begin_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_begin_us);
 
 		apply_vehicle_motion_inputs_soa(car_soa, soa.inputs + global_start, car_soa.count);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_apply_input_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_apply_input_us);
 
 		PhysicsCarFloorProfile floor_profile;
 		if (profile_phase && lane == 0) {
-			floor_profile.corner_analytic_surface_us = &sim.phase_profile_vehicle_floor_corner_analytic_surface_us;
-			floor_profile.mesh_candidate_collect_us = &sim.phase_profile_vehicle_floor_mesh_candidate_collect_us;
-			floor_profile.mesh_cast4_us = &sim.phase_profile_vehicle_floor_mesh_cast4_us;
-			floor_profile.mesh_floor_sample_us = &sim.phase_profile_vehicle_floor_mesh_sample_us;
-			floor_profile.find_floor_cast_us = &sim.phase_profile_vehicle_find_floor_cast_us;
-			floor_profile.find_floor_mesh_us = &sim.phase_profile_vehicle_find_floor_mesh_us;
-			floor_profile.find_floor_analytic_us = &sim.phase_profile_vehicle_find_floor_analytic_us;
+			floor_profile.corner_analytic_surface_us = &sim.profile.phase_vehicle_floor_corner_analytic_surface_us;
+			floor_profile.mesh_candidate_collect_us = &sim.profile.phase_vehicle_floor_mesh_candidate_collect_us;
+			floor_profile.mesh_cast4_us = &sim.profile.phase_vehicle_floor_mesh_cast4_us;
+			floor_profile.mesh_floor_sample_us = &sim.profile.phase_vehicle_floor_mesh_sample_us;
+			floor_profile.find_floor_cast_us = &sim.profile.phase_vehicle_find_floor_cast_us;
+			floor_profile.find_floor_mesh_us = &sim.profile.phase_vehicle_find_floor_mesh_us;
+			floor_profile.find_floor_analytic_us = &sim.profile.phase_vehicle_find_floor_analytic_us;
 		}
 		prepare_vehicle_floor_phase(car_soa, sim.cars + global_start, car_soa.count, track_scratch,
-			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_prepare_frame_us : nullptr,
+			profile_phase && lane == 0 ? &sim.profile.phase_vehicle_prepare_frame_us : nullptr,
 			profile_phase && lane == 0 ? &floor_profile : nullptr,
-			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_find_floor_us : nullptr,
-			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_terrain_us : nullptr);
+			profile_phase && lane == 0 ? &sim.profile.phase_vehicle_find_floor_us : nullptr,
+			profile_phase && lane == 0 ? &sim.profile.phase_vehicle_terrain_us : nullptr);
 		if (context.track_has_triggers) {
 			group.sync();
 		}
-		vehicle_subphase_mark(sim.phase_profile_vehicle_floor_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_floor_us);
 
 		if (context.track_has_triggers) {
 			if (lane == 0) {
@@ -1580,14 +1580,14 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			}
 			group.sync();
 		}
-		vehicle_subphase_mark(sim.phase_profile_vehicle_trigger_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_trigger_us);
 
 		finish_vehicle_motion_phased_soa(car_soa, sim.cars + global_start,
 			car_soa.count, sim.performance_benchmark_mode);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_motion_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_motion_us);
 
 		group.sync();
-		vehicle_subphase_mark(sim.phase_profile_vehicle_finish_tick_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_finish_tick_us);
 
 		if (lane == 0) {
 			collide_vehicles_broadphase(sim, sim.cars, sim.num_cars,
@@ -1597,34 +1597,34 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 				soa.collision_min_z, soa.collision_max_z);
 		}
 		group.sync();
-		const uint64_t collision_elapsed = vehicle_subphase_mark(sim.phase_profile_vehicle_collision_us);
+		const uint64_t collision_elapsed = vehicle_subphase_mark(sim.profile.phase_vehicle_collision_us);
 		if (profile_phase && lane == 0) {
-			sim.phase_profile_last_vehicle_collision_us = collision_elapsed;
+			sim.profile.phase_last_vehicle_collision_us = collision_elapsed;
 		}
 
 		const uint64_t post_tick_start = vehicle_subphase_step;
 		PhysicsCarCornerProfile corner_profile;
 		if (profile_phase && lane == 0) {
-			corner_profile.old_analytic_us = &sim.phase_profile_vehicle_corner_old_analytic_us;
-			corner_profile.new_checkpoint_us = &sim.phase_profile_vehicle_corner_new_checkpoint_us;
-			corner_profile.new_analytic_us = &sim.phase_profile_vehicle_corner_new_analytic_us;
-			corner_profile.mesh_us = &sim.phase_profile_vehicle_corner_mesh_us;
+			corner_profile.old_analytic_us = &sim.profile.phase_vehicle_corner_old_analytic_us;
+			corner_profile.new_checkpoint_us = &sim.profile.phase_vehicle_corner_new_checkpoint_us;
+			corner_profile.new_analytic_us = &sim.profile.phase_vehicle_corner_new_analytic_us;
+			corner_profile.mesh_us = &sim.profile.phase_vehicle_corner_mesh_us;
 		}
 		update_machine_corners_soa(car_soa, sim.cars + global_start, car_soa.count, track_scratch,
 			profile_phase && lane == 0 ? &corner_profile : nullptr);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_corner_update_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_corner_update_us);
 		finish_vehicle_tail_soa(car_soa, sim.cars + global_start, car_soa.count);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_tail_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_tail_us);
 		handle_vehicle_checkpoints_soa(car_soa, sim.cars + global_start, car_soa.count, track_scratch);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_checkpoint_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_checkpoint_us);
 		collect_pending_s_boost_sparks_soa(car_soa,
 			soa.pending_s_boost_sparks + global_start, car_soa.count, sim.s_boost_enabled);
-		vehicle_subphase_mark(sim.phase_profile_vehicle_spark_collect_us);
+		vehicle_subphase_mark(sim.profile.phase_vehicle_spark_collect_us);
 		if (profile_phase && lane == 0) {
-			sim.phase_profile_vehicle_post_tick_us += vehicle_subphase_step - post_tick_start;
+			sim.profile.phase_vehicle_post_tick_us += vehicle_subphase_step - post_tick_start;
 		}
 	});
-	phase_profile_last_vehicle_us = phase_mark(phase_profile_vehicle_us, phase_profile_vehicle_max_us);
+	profile.phase_last_vehicle_us = phase_mark(profile.phase_vehicle_us, profile.phase_vehicle_max_us);
 	for (int i = 0; i < num_cars; i++) {
 		if (s_boost_enabled && soa.pending_s_boost_sparks[i] > 0) {
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
@@ -1632,7 +1632,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	}
 	update_bumper_vehicles();
 	collide_racers_with_bumpers();
-	phase_profile_last_post_vehicle_us = phase_mark(phase_profile_post_vehicle_us, phase_profile_post_vehicle_max_us);
+	profile.phase_last_post_vehicle_us = phase_mark(profile.phase_post_vehicle_us, profile.phase_post_vehicle_max_us);
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
@@ -1644,7 +1644,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		return soa.placement_distances[a] > soa.placement_distances[b];
 	});
 	soa.placement_order_valid = true;
-	phase_profile_last_placement_us = phase_mark(phase_profile_placement_us, phase_profile_placement_max_us);
+	profile.phase_last_placement_us = phase_mark(profile.phase_placement_us, profile.phase_placement_max_us);
 
 	if (s_boost_enabled && super_spark_state) {
 		super_spark_state->placement_timer += 1;
@@ -1674,7 +1674,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	if (s_boost_enabled) {
 		update_super_sparks();
 	}
-	phase_profile_last_post_us = phase_mark(phase_profile_post_us, phase_profile_post_max_us);
+	profile.phase_last_post_us = phase_mark(profile.phase_post_us, profile.phase_post_max_us);
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -1692,14 +1692,14 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	if (!performance_benchmark_mode) {
 		save_state();
 	}
-	phase_profile_last_save_us = phase_mark(phase_profile_save_us, phase_profile_save_max_us);
+	profile.phase_last_save_us = phase_mark(profile.phase_save_us, profile.phase_save_max_us);
 	if (profile_phase) {
 		const uint64_t now = render_profile_now_us();
 		const uint64_t elapsed = now - phase_start;
-		phase_profile_total_us += elapsed;
-		phase_profile_total_max_us = std::max(phase_profile_total_max_us, elapsed);
-		phase_profile_last_total_us = elapsed;
-		phase_profile_frames += 1;
+		profile.phase_total_us += elapsed;
+		profile.phase_total_max_us = std::max(profile.phase_total_max_us, elapsed);
+		profile.phase_last_total_us = elapsed;
+		profile.phase_frames += 1;
 	}
 	
 	
@@ -1748,16 +1748,16 @@ void GameSim::save_state()
 	int size = gamestate_data.get_size();
 	state_buffer[index].size = size;
 	state_buffer[index].tick = tick;
-	uint64_t profile_step = phase_profile_enabled ? render_profile_now_us() : 0;
+	uint64_t profile_step = profile.phase_enabled ? render_profile_now_us() : 0;
 	save_bumper_states_to_saved_state(state_buffer[index]);
-	profile_mark(phase_profile_enabled ? &phase_profile_save_bumper_us : nullptr, profile_step);
+	profile_mark(profile.phase_enabled ? &profile.phase_save_bumper_us : nullptr, profile_step);
 	update_saved_voice_transforms(state_buffer[index]);
-	profile_mark(phase_profile_enabled ? &phase_profile_save_voice_us : nullptr, profile_step);
+	profile_mark(profile.phase_enabled ? &profile.phase_save_voice_us : nullptr, profile_step);
 	if (state_buffer[index].data)
 	{
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 	}
-	profile_mark(phase_profile_enabled ? &phase_profile_save_memcpy_us : nullptr, profile_step);
+	profile_mark(profile.phase_enabled ? &profile.phase_save_memcpy_us : nullptr, profile_step);
 }
 
 bool GameSim::has_saved_state(int target_tick) const
