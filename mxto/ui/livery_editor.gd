@@ -8,18 +8,10 @@ const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd"
 const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
-const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
-const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
-const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
-
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
-const PREVIEW_TARGET_HEIGHT := 0.5
 
 @onready var owner_ui: Control = get_parent() as Control
 @onready var car_preview_space: ColorRect = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace")
-@onready var camera_realign_x: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/X")
-@onready var camera_realign_y: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Y")
-@onready var camera_realign_z: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/CameraRealignControls/Z")
 @onready var primary_colour_picker: ColorPickerButton = owner_ui.get_node("Container/SettingsTabs/Garage/GaragePanel/PaintGrid/PrimaryColourPicker")
 @onready var secondary_colour_picker: ColorPickerButton = owner_ui.get_node("Container/SettingsTabs/Garage/GaragePanel/PaintGrid/SecondaryColourPicker")
 @onready var accent_colour_picker: ColorPickerButton = owner_ui.get_node("Container/SettingsTabs/Garage/GaragePanel/PaintGrid/AccentColourPicker")
@@ -47,6 +39,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var stamp_library: CustomStampLibraryController = $CustomStampLibraryController
 @onready var stamp_painter: CustomStampPainterController = $CustomStampPainterController
 @onready var atlas_controller: LiveryAtlasController = $LiveryAtlasController
+@onready var preview_controller: LiveryPreviewController = $LiveryPreviewController
 @onready var stamp_edit_overlay: Control = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay")
 @onready var stamp_edit_square: Panel = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare")
 @onready var stamp_edit_confirm_button: Button = owner_ui.get_node("Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm")
@@ -72,20 +65,6 @@ var updating_stamp_properties := false
 var stamp_layer_rows: Array[Control] = []
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
-var preview_container: SubViewportContainer
-var preview_viewport: SubViewport
-var preview_root: Node3D
-var preview_camera: Camera3D
-var preview_vehicle: Node3D
-var preview_vehicle_base_transform := Transform3D.IDENTITY
-var preview_render_manager: CarRenderManager
-var preview_edit_render_manager: CarRenderManager
-var preview_above_render_manager: CarRenderManager
-var preview_camera_controller := GaragePreviewCameraControllerClass.new()
-var preview_has_transform_override := false
-var preview_transform_override := Transform3D.IDENTITY
-var preview_has_camera_override := false
-var preview_camera_override := Transform3D.IDENTITY
 enum StampUiMode { IDLE, CHOOSING, EDITING }
 var stamp_ui_mode := StampUiMode.IDLE
 var pending_stamp_layer := -1
@@ -107,7 +86,10 @@ func initialize(in_game_manager: GameManager, in_player_settings: PlayerSettings
 	game_manager = in_game_manager
 	player_settings = in_player_settings
 	_build_stamp_layer_buttons()
-	_setup_garage_preview()
+	preview_controller.initialize(owner_ui)
+	preview_controller.camera_changed.connect(_on_preview_camera_changed)
+	preview_controller.set_active(owner_ui.visible)
+	_setup_stamp_edit_overlay()
 	_setup_stamp_menus()
 	_setup_stamp_properties_popup()
 	stamp_library.initialize(owner_ui)
@@ -147,7 +129,7 @@ func update_lock_state() -> void:
 	_update_livery_lock_state()
 
 func set_active(active: bool) -> void:
-	_set_garage_preview_active(active)
+	preview_controller.set_active(active)
 
 
 func _build_stamp_layer_buttons() -> void:
@@ -358,67 +340,7 @@ func _authored_outline_colour(trail: bool) -> Color:
 	return fallback
 
 func _apply_preview_livery_colours() -> void:
-	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
-		if manager != null and manager.has_method("update_livery_colours"):
-			manager.update_livery_colours(current_livery)
-
-func _setup_garage_preview() -> void:
-	car_preview_space.mouse_filter = Control.MOUSE_FILTER_STOP
-	preview_container = SubViewportContainer.new()
-	preview_container.name = "GaragePreviewViewport"
-	preview_container.stretch = true
-	preview_container.mouse_filter = Control.MOUSE_FILTER_STOP
-	preview_container.tooltip_text = "Left drag: orbit. Hold Ctrl to snap rotation to world 5° increments. Right, middle, or Shift+left drag: pan. Wheel: zoom. Double-click: reset view."
-	preview_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	car_preview_space.add_child(preview_container)
-	car_preview_space.move_child(preview_container, 0)
-	preview_container.gui_input.connect(_on_preview_gui_input)
-	car_preview_space.resized.connect(_on_preview_resized)
-
-	preview_viewport = SubViewport.new()
-	preview_viewport.own_world_3d = true
-	preview_viewport.transparent_bg = true
-	preview_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	preview_viewport.size = Vector2i(maxi(1, int(car_preview_space.size.x)), maxi(1, int(car_preview_space.size.y)))
-	preview_container.add_child(preview_viewport)
-
-	preview_root = GARAGE_PREVIEW_WORLD_SCENE.instantiate()
-	preview_root.name = "GaragePreviewWorld"
-	preview_viewport.add_child(preview_root)
-
-	preview_render_manager = CarRenderManager.new()
-	preview_render_manager.name = "GaragePreviewRenderManager"
-	preview_render_manager.stamp_render_priority = 2
-	preview_root.add_child(preview_render_manager)
-
-	preview_edit_render_manager = CarRenderManager.new()
-	preview_edit_render_manager.name = "GaragePreviewEditRenderManager"
-	preview_edit_render_manager.stamp_only_mode = true
-	preview_edit_render_manager.stamp_render_priority = 3
-	preview_root.add_child(preview_edit_render_manager)
-
-	preview_above_render_manager = CarRenderManager.new()
-	preview_above_render_manager.name = "GaragePreviewAboveRenderManager"
-	preview_above_render_manager.stamp_only_mode = true
-	preview_above_render_manager.stamp_render_priority = 4
-	preview_root.add_child(preview_above_render_manager)
-
-	preview_camera = Camera3D.new()
-	preview_camera.current = true
-	preview_viewport.add_child(preview_camera)
-	preview_camera.fov = 38.0
-	preview_camera_controller.configure_frame(Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0), 22.0, true)
-	camera_realign_x.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_X))
-	camera_realign_y.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_Y))
-	camera_realign_z.pressed.connect(_realign_preview_camera.bind(Vector3.AXIS_Z))
-	_setup_stamp_edit_overlay()
-	_apply_preview_camera()
-	_set_garage_preview_active(owner_ui.visible)
-
-func _set_garage_preview_active(active: bool) -> void:
-	if preview_viewport == null:
-		return
-	preview_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
+	preview_controller.apply_livery_colours(current_livery)
 
 func _setup_stamp_edit_overlay() -> void:
 	stamp_edit_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -437,111 +359,19 @@ func _setup_stamp_edit_overlay() -> void:
 	stamp_edit_overlay.gui_input.connect(_on_stamp_edit_overlay_gui_input)
 	stamp_edit_overlay.resized.connect(_layout_stamp_edit_overlay)
 
-func _on_preview_resized() -> void:
-	if preview_viewport == null:
-		return
-	if preview_container != null and preview_container.stretch:
-		return
-	preview_viewport.size = Vector2i(maxi(1, int(car_preview_space.size.x)), maxi(1, int(car_preview_space.size.y)))
-
 func _rebuild_preview_vehicle() -> void:
-	if preview_root == null:
-		return
-	var definition := _selected_car_definition()
-	if preview_vehicle != null and is_instance_valid(preview_vehicle):
-		preview_vehicle.queue_free()
-	preview_vehicle = null
-	if preview_render_manager != null:
-		preview_render_manager.clear_renderer()
-	if preview_edit_render_manager != null:
-		preview_edit_render_manager.clear_renderer()
-	if preview_above_render_manager != null:
-		preview_above_render_manager.clear_renderer()
-	if definition == null or !definition.has_visual():
-		return
-	if definition.car_scene != null:
-		preview_vehicle = definition.car_scene.instantiate()
-	else:
-		preview_vehicle = Node3D.new()
-		var mesh_instance := MeshInstance3D.new()
-		mesh_instance.mesh = definition.runtime_mesh
-		mesh_instance.material_override = definition.runtime_material
-		mesh_instance.transform = definition.runtime_transform
-		preview_vehicle.add_child(mesh_instance)
-	preview_vehicle_base_transform = preview_vehicle.transform
-	preview_root.add_child(preview_vehicle)
-	_hide_preview_raycast_scene(preview_vehicle)
 	atlas_controller.refresh(current_livery)
-	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery_below())]
-	preview_render_manager.stamp_visibility_masks_enabled = true
-	preview_render_manager.stamp_visibility_mask_skip_layer = -1
-	preview_render_manager.stamp_only_mode = false
-	preview_render_manager.stamp_render_priority = 2
-	preview_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
-	preview_render_manager.configure_manual([definition], render_settings)
+	preview_controller.set_editing(stamp_ui_mode == StampUiMode.EDITING)
+	preview_controller.rebuild_vehicle(selected_definition, _preview_render_settings(_preview_confirmed_livery_below()), atlas_controller.atlas_texture)
 	if stamp_ui_mode == StampUiMode.EDITING:
-		_rebuild_edit_stamp_preview(false)
-		_rebuild_above_stamp_preview(false)
-	_apply_preview_camera()
+		_rebuild_edit_stamp_preview()
+		_rebuild_above_stamp_preview()
 
-func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
-	if preview_edit_render_manager == null:
-		return
-	preview_edit_render_manager.clear_renderer()
-	var definition := _selected_car_definition()
-	if definition == null or !definition.has_visual() or stamp_ui_mode != StampUiMode.EDITING:
-		if apply_camera:
-			_apply_preview_camera()
-		return
-	preview_edit_render_manager.stamp_visibility_masks_enabled = false
-	preview_edit_render_manager.stamp_visibility_mask_skip_layer = -1
-	preview_edit_render_manager.stamp_only_mode = true
-	preview_edit_render_manager.stamp_render_priority = 3
-	preview_edit_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
-	preview_edit_render_manager.configure_manual([definition], [_preview_render_settings(_preview_edit_livery())])
-	if apply_camera:
-		_apply_preview_camera()
+func _rebuild_edit_stamp_preview() -> void:
+	preview_controller.rebuild_edit_layer(selected_definition, _preview_render_settings(_preview_edit_livery()), atlas_controller.atlas_texture)
 
-func _rebuild_above_stamp_preview(apply_camera := true) -> void:
-	if preview_above_render_manager == null:
-		return
-	preview_above_render_manager.clear_renderer()
-	var definition := _selected_car_definition()
-	if definition == null or !definition.has_visual() or stamp_ui_mode != StampUiMode.EDITING:
-		if apply_camera:
-			_apply_preview_camera()
-		return
-	preview_above_render_manager.stamp_visibility_masks_enabled = true
-	preview_above_render_manager.stamp_visibility_mask_skip_layer = -1
-	preview_above_render_manager.stamp_only_mode = true
-	preview_above_render_manager.stamp_render_priority = 4
-	preview_above_render_manager.set_custom_stamp_atlas(atlas_controller.atlas_texture)
-	preview_above_render_manager.configure_manual([definition], [_preview_render_settings(_preview_confirmed_livery_above())])
-	if apply_camera:
-		_apply_preview_camera()
-
-func _hide_preview_raycast_scene(root: Node) -> void:
-	for child in root.get_children():
-		_hide_preview_raycast_scene(child)
-	var mesh := root as MeshInstance3D
-	if mesh == null:
-		return
-	mesh.visible = false
-
-func _preview_vehicle_transform() -> Transform3D:
-	if preview_has_transform_override:
-		return preview_transform_override
-	return Transform3D.IDENTITY
-
-func _preview_vehicle_scene_transform() -> Transform3D:
-	return _preview_vehicle_transform() * preview_vehicle_base_transform
-
-func _submit_preview_render() -> void:
-	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
-		if manager == null or manager.archetypes.is_empty():
-			continue
-		manager.begin_manual_submit()
-		manager.submit_manual_car(0, _preview_vehicle_transform(), Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
+func _rebuild_above_stamp_preview() -> void:
+	preview_controller.rebuild_above_layers(selected_definition, _preview_render_settings(_preview_confirmed_livery_above()), atlas_controller.atlas_texture)
 
 func _preview_render_settings(livery: CarLivery) -> Dictionary:
 	var settings := player_settings.to_dict()
@@ -553,9 +383,7 @@ func _preview_render_settings(livery: CarLivery) -> Dictionary:
 	return settings
 
 func _on_preview_atlas_texture_changed(texture: Texture2D) -> void:
-	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
-		if manager != null:
-			manager.set_custom_stamp_atlas(texture)
+	preview_controller.set_custom_stamp_atlas(texture)
 
 func _preview_confirmed_livery_below() -> CarLivery:
 	if !current_livery_enabled:
@@ -658,12 +486,7 @@ func _on_stamp_colour_changed(colour: Color, layer: int) -> void:
 		return
 	stamp.colour = colour
 	_mark_livery_dirty()
-	if preview_render_manager != null:
-		preview_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
-	if preview_edit_render_manager != null:
-		preview_edit_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
-	if preview_above_render_manager != null:
-		preview_above_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
+	preview_controller.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
 
 func _on_stamp_colour_popup_closed(layer: int) -> void:
 	if updating_stamp_controls or _livery_editing_locked():
@@ -1075,38 +898,16 @@ func _begin_stamp_edit(layer: int, stamp: CarLiveryStamp, is_new: bool) -> void:
 	current_livery_enabled = true
 	stamp_ui_mode = StampUiMode.EDITING
 	stamp_edit_roll = -stamp.rotation
-	preview_has_transform_override = false
-	preview_has_camera_override = false
+	preview_controller.set_editing(true)
 	if is_new:
 		stamp_edit_rect_size = Vector2(160.0, 160.0)
 	else:
-		_focus_preview_on_stamp(stamp)
-		stamp_edit_rect_size = _edit_rect_size_from_stamp(stamp)
+		preview_controller.focus_stamp(stamp)
+		stamp_edit_rect_size = preview_controller.edit_rect_size(stamp)
 	stamp_edit_overlay.show()
 	_layout_stamp_edit_overlay()
 	_rebuild_preview_vehicle()
 	_apply_edit_stamp_from_camera()
-
-func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
-	if preview_camera == null or preview_vehicle == null:
-		return
-	if absf(stamp.local_basis.determinant()) <= 0.00001:
-		return
-	preview_vehicle.transform = _preview_vehicle_scene_transform()
-	var projector := preview_vehicle.global_transform * Transform3D(stamp.local_basis, stamp.local_origin)
-	var view_direction := projector.basis.z.normalized()
-	preview_camera_controller.yaw = atan2(view_direction.x, view_direction.z)
-	var stamp_elevation := asin(clampf(view_direction.y, -1.0, 1.0))
-	preview_camera_controller.pitch = clampf(-stamp_elevation, deg_to_rad(-90.0), deg_to_rad(55.0))
-	var plane_basis := preview_camera_controller.view_plane_basis(preview_camera_controller.camera_offset())
-	var relative_origin := projector.origin - Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0)
-	preview_camera_controller.pan = Vector3(
-		clampf(relative_origin.dot(plane_basis.x), -GaragePreviewCameraControllerClass.PAN_LIMIT, GaragePreviewCameraControllerClass.PAN_LIMIT),
-		clampf(relative_origin.dot(plane_basis.y), -GaragePreviewCameraControllerClass.PAN_LIMIT, GaragePreviewCameraControllerClass.PAN_LIMIT),
-		0.0
-	)
-	preview_has_camera_override = false
-	_apply_preview_camera()
 
 func _layout_stamp_edit_overlay() -> void:
 	if stamp_edit_overlay == null or stamp_edit_square == null:
@@ -1180,25 +981,19 @@ func _on_stamp_edit_overlay_gui_input(event: InputEvent) -> void:
 		return
 	var mouse_button := event as InputEventMouseButton
 	if mouse_button != null:
-		var is_camera_release := !mouse_button.pressed and preview_camera_controller.drag_button == mouse_button.button_index
+		var is_camera_release := !mouse_button.pressed and preview_controller.overlay_drag_button() == mouse_button.button_index
 		if !is_camera_release and !_stamp_edit_allows_camera_input(mouse_button.position):
 			return
-		preview_has_camera_override = false
-		_handle_preview_mouse_button(mouse_button, true)
+		preview_controller.handle_overlay_mouse_button(mouse_button)
 		if mouse_button.pressed and (mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_button.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 			_apply_edit_stamp_from_camera()
 		stamp_edit_overlay.accept_event()
 		return
 	var motion := event as InputEventMouseMotion
 	if motion != null:
-		if preview_camera_controller.drag_button == 0 and !_stamp_edit_allows_camera_input(motion.position):
+		if preview_controller.overlay_drag_button() == 0 and !_stamp_edit_allows_camera_input(motion.position):
 			return
-		preview_has_camera_override = false
-		var before_yaw := preview_camera_controller.yaw
-		var before_pitch := preview_camera_controller.pitch
-		var before_pan := preview_camera_controller.pan
-		_handle_preview_mouse_motion(motion, true)
-		if !is_equal_approx(before_yaw, preview_camera_controller.yaw) or !is_equal_approx(before_pitch, preview_camera_controller.pitch) or !before_pan.is_equal_approx(preview_camera_controller.pan):
+		if preview_controller.handle_overlay_mouse_motion(motion):
 			_apply_edit_stamp_from_camera()
 		stamp_edit_overlay.accept_event()
 
@@ -1212,49 +1007,8 @@ func _stamp_edit_allows_camera_input(position: Vector2) -> bool:
 	return true
 
 func _apply_edit_stamp_from_camera() -> void:
-	if editing_stamp == null or preview_camera == null or preview_vehicle == null:
-		return
-	var center := car_preview_space.size * 0.5
-	var hit := _raycast_preview_body(center)
-	if hit.is_empty():
-		return
-	var ray_dir := preview_camera.project_ray_normal(center).normalized()
-	var car_inv := preview_vehicle.global_transform.affine_inverse()
-	editing_stamp.local_origin = car_inv * hit["position"]
-	var z_axis := (car_inv.basis * -ray_dir).normalized()
-	var x_axis := (car_inv.basis * preview_camera.global_transform.basis.x).normalized()
-	x_axis = (x_axis - z_axis * x_axis.dot(z_axis)).normalized()
-	var y_axis := z_axis.cross(x_axis).normalized()
-	var projection_roll := -stamp_edit_roll
-	var roll_basis := Basis(z_axis, projection_roll)
-	x_axis = roll_basis * x_axis
-	y_axis = roll_basis * y_axis
-	editing_stamp.local_basis = Basis(x_axis, y_axis, z_axis)
-	editing_stamp.rotation = projection_roll
-	editing_stamp.size = _stamp_world_size_from_edit_rect(hit["position"])
-	editing_stamp.projection_depth = maxf(0.75, maxf(editing_stamp.size.x, editing_stamp.size.y) * 1.35)
-	_rebuild_edit_stamp_preview()
-
-func _stamp_world_size_from_edit_rect(hit_position: Vector3) -> Vector2:
-	var viewport_size := car_preview_space.size
-	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0 or preview_camera == null:
-		return Vector2.ONE
-	var distance := preview_camera.global_position.distance_to(hit_position)
-	var world_height := 2.0 * distance * tan(deg_to_rad(preview_camera.fov) * 0.5)
-	var world_width := world_height * viewport_size.x / viewport_size.y
-	return Vector2(world_width * stamp_edit_rect_size.x / viewport_size.x, world_height * stamp_edit_rect_size.y / viewport_size.y)
-
-func _edit_rect_size_from_stamp(stamp: CarLiveryStamp) -> Vector2:
-	if preview_camera == null or preview_vehicle == null:
-		return Vector2(160.0, 160.0)
-	var viewport_size := car_preview_space.size
-	var world_pos := preview_vehicle.global_transform * stamp.local_origin
-	var distance := preview_camera.global_position.distance_to(world_pos)
-	if distance <= 0.01 or viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
-		return Vector2(160.0, 160.0)
-	var world_height := 2.0 * distance * tan(deg_to_rad(preview_camera.fov) * 0.5)
-	var world_width := world_height * viewport_size.x / viewport_size.y
-	return Vector2(maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp.size.x / world_width * viewport_size.x), maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp.size.y / world_height * viewport_size.y))
+	if preview_controller.apply_stamp_projection(editing_stamp, stamp_edit_rect_size, stamp_edit_roll):
+		_rebuild_edit_stamp_preview()
 
 func _on_stamp_edit_confirm_pressed() -> void:
 	_end_stamp_edit(true)
@@ -1271,8 +1025,7 @@ func _end_stamp_edit(confirm: bool) -> void:
 		current_livery_enabled = editing_previous_livery_enabled
 	stamp_edit_overlay.hide()
 	stamp_ui_mode = StampUiMode.IDLE
-	preview_has_transform_override = false
-	preview_has_camera_override = false
+	preview_controller.set_editing(false)
 	editing_stamp_layer = -1
 	editing_stamp = null
 	editing_original_stamp = null
@@ -1283,132 +1036,6 @@ func _end_stamp_edit(confirm: bool) -> void:
 	else:
 		_rebuild_preview_vehicle()
 
-func _on_preview_gui_input(event: InputEvent) -> void:
-	var mouse_event := event as InputEventMouseButton
-	if mouse_event != null:
-		_handle_preview_mouse_button(mouse_event)
-		return
-	var motion_event := event as InputEventMouseMotion
-	if motion_event != null:
-		_handle_preview_mouse_motion(motion_event)
-
-func _handle_preview_mouse_button(event: InputEventMouseButton, allow_edit_camera := false) -> void:
-	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
-		return
-	if preview_camera_controller.handle_mouse_button(event):
-		_apply_preview_camera()
-		preview_container.accept_event()
-
-func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camera := false) -> void:
-	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
-		return
-	if preview_camera_controller.handle_mouse_motion(event):
-		_apply_preview_camera()
-		preview_container.accept_event()
-
-
-func _realign_preview_camera(axis: int) -> void:
-	preview_has_camera_override = false
-	preview_camera_controller.realign_pivot_axis(axis)
-	_apply_preview_camera()
+func _on_preview_camera_changed() -> void:
 	if stamp_ui_mode == StampUiMode.EDITING:
 		_apply_edit_stamp_from_camera()
-
-func _apply_preview_camera() -> void:
-	if preview_vehicle != null:
-		preview_vehicle.transform = _preview_vehicle_scene_transform()
-	if preview_camera == null:
-		return
-	if preview_has_camera_override:
-		preview_camera.global_transform = preview_camera_override
-	else:
-		preview_camera_controller.apply(preview_camera)
-	_submit_preview_render()
-
-func _place_stamp_at_preview_pos(viewport_pos: Vector2) -> void:
-	return
-
-func _raycast_preview_body(viewport_pos: Vector2) -> Dictionary:
-	if preview_camera == null or preview_vehicle == null:
-		return {}
-	var body := preview_vehicle.get_node_or_null("VEHICLE_MAIN") as MeshInstance3D
-	if body == null or body.mesh == null:
-		return {}
-	var ray_origin := preview_camera.project_ray_origin(viewport_pos)
-	var ray_dir := preview_camera.project_ray_normal(viewport_pos).normalized()
-	var best_t := INF
-	var best_hit := {}
-	for surface_index in range(body.mesh.get_surface_count()):
-		var arrays := body.mesh.surface_get_arrays(surface_index)
-		var vertices := _surface_vertices(arrays)
-		if vertices.is_empty():
-			continue
-		var indices := _surface_indices(arrays)
-		if indices.is_empty():
-			var tri_count := int(vertices.size() / 3)
-			for tri in range(tri_count):
-				var hit := _raycast_triangle(ray_origin, ray_dir, body.global_transform * vertices[tri * 3], body.global_transform * vertices[tri * 3 + 1], body.global_transform * vertices[tri * 3 + 2])
-				if !hit.is_empty() and hit["t"] < best_t:
-					best_t = hit["t"]
-					best_hit = hit
-		else:
-			var tri_count := int(indices.size() / 3)
-			for tri in range(tri_count):
-				var i0 := indices[tri * 3]
-				var i1 := indices[tri * 3 + 1]
-				var i2 := indices[tri * 3 + 2]
-				if i0 < 0 or i1 < 0 or i2 < 0 or i0 >= vertices.size() or i1 >= vertices.size() or i2 >= vertices.size():
-					continue
-				var hit := _raycast_triangle(ray_origin, ray_dir, body.global_transform * vertices[i0], body.global_transform * vertices[i1], body.global_transform * vertices[i2])
-				if !hit.is_empty() and hit["t"] < best_t:
-					best_t = hit["t"]
-					best_hit = hit
-	return best_hit
-
-func _raycast_triangle(origin: Vector3, direction: Vector3, a: Vector3, b: Vector3, c: Vector3) -> Dictionary:
-	var edge_1 := b - a
-	var edge_2 := c - a
-	var h := direction.cross(edge_2)
-	var det := edge_1.dot(h)
-	if absf(det) < 0.00001:
-		return {}
-	var inv_det := 1.0 / det
-	var s := origin - a
-	var u := inv_det * s.dot(h)
-	if u < 0.0 or u > 1.0:
-		return {}
-	var q := s.cross(edge_1)
-	var v := inv_det * direction.dot(q)
-	if v < 0.0 or u + v > 1.0:
-		return {}
-	var t := inv_det * edge_2.dot(q)
-	if t <= 0.0001:
-		return {}
-	var normal := edge_1.cross(edge_2).normalized()
-	if normal.dot(direction) > 0.0:
-		normal = -normal
-	return {"t": t, "position": origin + direction * t, "normal": normal}
-
-func _set_stamp_basis_from_normal(stamp: CarLiveryStamp, normal: Vector3) -> void:
-	if normal.length_squared() <= 0.0001:
-		normal = Vector3.UP
-	normal = normal.normalized()
-	var reference := Vector3.UP
-	if absf(normal.dot(reference)) > 0.9:
-		reference = Vector3.RIGHT
-	var x_axis := reference.cross(normal).normalized()
-	var y_axis := normal.cross(x_axis).normalized()
-	var rotation_basis := Basis(normal, stamp.rotation)
-	x_axis = rotation_basis * x_axis
-	y_axis = rotation_basis * y_axis
-	stamp.local_basis = Basis(x_axis, y_axis, normal)
-
-func _surface_vertices(arrays: Array) -> PackedVector3Array:
-	if arrays.size() <= Mesh.ARRAY_VERTEX or typeof(arrays[Mesh.ARRAY_VERTEX]) != TYPE_PACKED_VECTOR3_ARRAY:
-		return PackedVector3Array()
-	return arrays[Mesh.ARRAY_VERTEX]
-
-func _surface_indices(arrays: Array) -> PackedInt32Array:
-	if arrays.size() <= Mesh.ARRAY_INDEX or typeof(arrays[Mesh.ARRAY_INDEX]) != TYPE_PACKED_INT32_ARRAY:
-		return PackedInt32Array()
-	return arrays[Mesh.ARRAY_INDEX]

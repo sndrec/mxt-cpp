@@ -32,30 +32,31 @@ func _init() -> void:
 			quit(1)
 			return
 
-	var camera_controller = livery_editor.preview_camera_controller
+	var preview_controller: LiveryPreviewController = livery_editor.preview_controller
+	var camera_controller = preview_controller.camera_controller
 	var start_yaw: float = camera_controller.yaw
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
 	press.position = Vector2(100.0, 100.0)
-	livery_editor.call("_handle_preview_mouse_button", press)
+	preview_controller.handle_overlay_mouse_button(press)
 	var motion := InputEventMouseMotion.new()
 	motion.position = Vector2(150.0, 110.0)
-	livery_editor.call("_handle_preview_mouse_motion", motion)
+	preview_controller.handle_overlay_mouse_motion(motion)
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	release.position = Vector2(150.0, 110.0)
-	livery_editor.call("_handle_preview_mouse_button", release)
+	preview_controller.handle_overlay_mouse_button(release)
 	if is_equal_approx(start_yaw, camera_controller.yaw):
 		push_error("car settings preview drag did not rotate the camera orbit")
 		quit(1)
 		return
 	camera_controller.yaw = deg_to_rad(90.0)
 	camera_controller.pitch = deg_to_rad(20.0)
-	livery_editor.call("_apply_preview_camera")
-	var transform: Transform3D = livery_editor.call("_preview_vehicle_transform")
-	if transform.basis.x.distance_to(Vector3.RIGHT) > 0.001 or transform.basis.y.distance_to(Vector3.UP) > 0.001 or transform.basis.z.distance_to(Vector3.BACK) > 0.001:
+	preview_controller.call("_apply_camera")
+	var transform: Transform3D = preview_controller.preview_vehicle.transform
+	if transform != preview_controller.preview_vehicle_base_transform:
 		push_error("car settings preview orbit is rotating the car instead of the camera")
 		quit(1)
 		return
@@ -63,7 +64,7 @@ func _init() -> void:
 	var pitch_basis := Basis(yaw_basis.x.normalized(), camera_controller.pitch)
 	var camera_offset: Vector3 = pitch_basis * (yaw_basis * Vector3(0.0, 0.0, camera_controller.distance))
 	var expected_camera_pos: Vector3 = camera_controller.pan_target(camera_offset) + camera_offset
-	if livery_editor.preview_camera.position.distance_to(expected_camera_pos) > 0.001:
+	if preview_controller.preview_camera.position.distance_to(expected_camera_pos) > 0.001:
 		push_error("car settings preview pitch is not moving the camera orbit")
 		quit(1)
 		return
@@ -73,21 +74,21 @@ func _init() -> void:
 	press.button_index = MOUSE_BUTTON_RIGHT
 	press.pressed = true
 	press.position = Vector2(100.0, 100.0)
-	livery_editor.call("_handle_preview_mouse_button", press)
+	preview_controller.handle_overlay_mouse_button(press)
 	motion = InputEventMouseMotion.new()
 	motion.position = Vector2(130.0, 140.0)
-	livery_editor.call("_handle_preview_mouse_motion", motion)
+	preview_controller.handle_overlay_mouse_motion(motion)
 	release = InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_RIGHT
 	release.pressed = false
 	release.position = Vector2(130.0, 140.0)
-	livery_editor.call("_handle_preview_mouse_button", release)
+	preview_controller.handle_overlay_mouse_button(release)
 	if start_pan.is_equal_approx(camera_controller.pan):
 		push_error("car settings preview drag did not pan the car")
 		quit(1)
 		return
-	var panned_transform: Transform3D = livery_editor.call("_preview_vehicle_transform")
-	if panned_transform.origin.length() > 0.001:
+	var panned_transform: Transform3D = preview_controller.preview_vehicle.transform
+	if panned_transform != preview_controller.preview_vehicle_base_transform:
 		push_error("car settings preview pan moved the car instead of only the camera target")
 		quit(1)
 		return
@@ -97,18 +98,18 @@ func _init() -> void:
 	var pitch_basis_after_pan := Basis(yaw_basis_after_pan.x.normalized(), pitch_after_pan)
 	var panned_camera_offset: Vector3 = pitch_basis_after_pan * (yaw_basis_after_pan * Vector3(0.0, 0.0, camera_controller.distance))
 	var expected_panned_camera: Vector3 = camera_controller.pan_target(panned_camera_offset) + panned_camera_offset
-	if livery_editor.preview_camera.position.distance_to(expected_panned_camera) > 0.001:
+	if preview_controller.preview_camera.position.distance_to(expected_panned_camera) > 0.001:
 		push_error("car settings preview pan did not move the camera orbit target")
 		quit(1)
 		return
-	var panned_target: Vector3 = livery_editor.preview_camera.position - panned_camera_offset
+	var panned_target: Vector3 = preview_controller.preview_camera.position - panned_camera_offset
 	var view_back := panned_camera_offset.normalized()
 	if absf((panned_target - Vector3(0.0, 0.5, 0.0)).dot(view_back)) > 0.001:
 		push_error("car settings preview pan target is not on the camera-facing plane through the vehicle target")
 		quit(1)
 		return
 	camera_controller.pan = Vector3(99.0, -99.0, 12.0)
-	livery_editor.call("_apply_preview_camera")
+	preview_controller.call("_apply_camera")
 	if camera_controller.pan.x > 4.001 or camera_controller.pan.y < -4.001 or absf(camera_controller.pan.z) > 0.001:
 		push_error("car settings preview pan was not clamped to the camera plane limits")
 		quit(1)
@@ -116,11 +117,11 @@ func _init() -> void:
 	camera_controller.pan = Vector3(2.0, -1.5, 0.0)
 	camera_controller.yaw += 1.2
 	camera_controller.pitch = deg_to_rad(-18.0)
-	livery_editor.call("_apply_preview_camera")
+	preview_controller.call("_apply_camera")
 	camera_controller.pan = Vector3.ZERO
-	livery_editor.call("_apply_preview_camera")
-	var camera_back: Vector3 = livery_editor.preview_camera.global_transform.basis.z.normalized()
-	var expected_back: Vector3 = (livery_editor.preview_camera.global_position - Vector3(0.0, 0.5, 0.0)).normalized()
+	preview_controller.call("_apply_camera")
+	var camera_back: Vector3 = preview_controller.preview_camera.global_transform.basis.z.normalized()
+	var expected_back: Vector3 = (preview_controller.preview_camera.global_position - Vector3(0.0, 0.5, 0.0)).normalized()
 	if camera_back.distance_to(expected_back) > 0.001:
 		push_error("zeroing preview pan did not recenter the camera on the vehicle target")
 		quit(1)
@@ -128,8 +129,8 @@ func _init() -> void:
 	camera_controller.pan = Vector3.ZERO
 	camera_controller.yaw = deg_to_rad(25.0)
 	camera_controller.pitch = 0.0
-	livery_editor.call("_apply_preview_camera")
-	var render_manager: CarRenderManager = livery_editor.preview_render_manager
+	preview_controller.call("_apply_camera")
+	var render_manager: CarRenderManager = preview_controller.render_manager
 	if render_manager == null or render_manager.archetypes.is_empty():
 		push_error("car settings preview did not build render manager")
 		quit(1)
@@ -188,8 +189,8 @@ func _init() -> void:
 			return
 		livery_editor.stamp_edit_roll = 0.35
 		livery_editor.call("_layout_stamp_edit_overlay")
-		var edit_projection_hit: Dictionary = livery_editor.call(
-			"_raycast_preview_body", livery_editor.car_preview_space.size * 0.5)
+		var edit_projection_hit: Dictionary = preview_controller.call(
+			"_raycast_body", livery_editor.car_preview_space.size * 0.5)
 		if edit_projection_hit.is_empty():
 			push_error("stamp edit projection could not hit the selected preview vehicle")
 			quit(1)
@@ -199,12 +200,7 @@ func _init() -> void:
 			push_error("stamp projection rotation does not match the edit box direction: got %.3f expected -0.350" % edit_stamp.rotation)
 			quit(1)
 			return
-		livery_editor.preview_has_camera_override = true
-		livery_editor.call("_focus_preview_on_stamp", edit_stamp)
-		if livery_editor.preview_has_camera_override:
-			push_error("editing an existing stamp left the preview camera in temporary override mode")
-			quit(1)
-			return
+		preview_controller.focus_stamp(edit_stamp)
 		var edit_yaw: float = camera_controller.yaw
 		press = InputEventMouseButton.new()
 		press.button_index = MOUSE_BUTTON_LEFT
