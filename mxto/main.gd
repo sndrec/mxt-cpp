@@ -35,6 +35,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass = $LobbyVehicleContentTracker
 @onready var race_content_acquisition_controller: RaceContentAcquisitionController = $RaceContentAcquisitionController
+@onready var time_attack_session_controller: TimeAttackSessionController = $TimeAttackSessionController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -77,7 +78,6 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const TimeAttackRulesClass = preload("res://leaderboards/time_attack_rules.gd")
-const LeaderboardEligibilityClass = preload("res://leaderboards/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://leaderboards/leaderboard_client.gd")
 const LeaderboardReplayCacheClass = preload("res://leaderboards/leaderboard_replay_cache.gd")
 const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_ghost_controller.gd")
@@ -100,12 +100,6 @@ var vehicle_test_drive_saved_cpu_count := 0
 var vehicle_test_drive_last_track := 0
 var vehicle_test_drive_picker: ConfirmationDialog
 var vehicle_test_drive_track_option: OptionButton
-var time_attack_eligibility: Dictionary = {}
-var time_attack_finalized := false
-var time_attack_previous_best_milliseconds := 0
-var time_attack_last_replay_path := ""
-var time_attack_rank_refresh_board := ""
-var time_attack_rank_refresh_global := ""
 var gameplay_camera_zoom_mode := 1
 var base_vehicle_render_view_distance := 360.0
 var launch_cpu_driver_count: int = -1
@@ -172,9 +166,6 @@ func _ready() -> void:
 	leaderboard_client.name = "LeaderboardClient"
 	add_child(leaderboard_client)
 	leaderboard_client.initialize(steam_service)
-	leaderboard_client.submission_status_changed.connect(_on_leaderboard_status_changed)
-	leaderboard_client.submission_completed.connect(_on_leaderboard_submission_completed)
-	leaderboard_client.entries_received.connect(_on_time_attack_rank_entries_received)
 	vehicle_content_controller.initialize(steam_service, network_manager.custom_stamp_network)
 	lobby_vehicle_content_tracker.initialize(
 		steam_service,
@@ -213,11 +204,17 @@ func _ready() -> void:
 		track_content_controller,
 		car_node_container,
 		car_settings)
-	race_presentation_controller.results_overlay.time_attack_race_again_requested.connect(_on_time_attack_race_again_requested)
-	race_presentation_controller.results_overlay.time_attack_save_replay_requested.connect(_on_time_attack_save_replay_requested)
-	race_presentation_controller.results_overlay.time_attack_watch_replay_requested.connect(_on_time_attack_watch_replay_requested)
-	race_presentation_controller.results_overlay.time_attack_leaderboard_requested.connect(_on_time_attack_results_leaderboard_requested)
-	race_presentation_controller.results_overlay.time_attack_main_menu_requested.connect(_on_time_attack_main_menu_requested)
+	time_attack_session_controller.initialize(
+		self,
+		network_manager,
+		replay_controller,
+		race_presentation_controller,
+		practice_controller,
+		leaderboard_client,
+		steam_service)
+	time_attack_session_controller.race_again_requested.connect(_on_time_attack_session_race_again_requested)
+	time_attack_session_controller.leaderboard_requested.connect(_on_time_attack_session_leaderboard_requested)
+	time_attack_session_controller.main_menu_requested.connect(_return_to_menu)
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -476,7 +473,7 @@ func _on_singleplayer_button_pressed() -> void:
 
 
 func _on_time_attack_ranked_start_requested(context: Dictionary) -> void:
-	time_attack_previous_best_milliseconds = int(context.get("personal_best_milliseconds", 0))
+	time_attack_session_controller.set_previous_best(int(context.get("personal_best_milliseconds", 0)))
 	var descriptor_value = context.get("ghost_descriptors", [])
 	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
 	var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
@@ -504,7 +501,7 @@ func _on_practice_start_requested(configuration: MxtRaceConfiguration, context: 
 	if vehicle_test_drive_active:
 		configuration.leaderboard_ineligible_reason = "draft_vehicle"
 		configuration.custom_content = true
-	time_attack_previous_best_milliseconds = 0
+	time_attack_session_controller.set_previous_best(0)
 	var descriptor_value = context.get("ghost_descriptors", [])
 	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
 	var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
@@ -645,15 +642,7 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 	if ps.vehicle_content_id == "" and vehicle_content_controller.definitions.size() > 0:
 		ps.vehicle_content_id = vehicle_content_controller.definitions[0].content_id
 	vehicle_content_controller.apply_evidence(ps)
-	time_attack_last_replay_path = ""
-	if configuration.is_time_attack():
-		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, configuration, track_evidence, ps)
-		time_attack_finalized = false
-		configuration.leaderboard_eligible = bool(time_attack_eligibility.get("eligible", false))
-		configuration.leaderboard_ineligible_reason = String(time_attack_eligibility.get("reason", ""))
-	else:
-		time_attack_eligibility.clear()
-		time_attack_finalized = false
+	time_attack_session_controller.begin_run(configuration, track_evidence, ps)
 	network_manager.race_configuration = configuration
 	network_manager.race_track_evidence = track_evidence
 	network_manager.race_state = race_state
@@ -793,9 +782,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		var player_settings: Dictionary = (settings[index] as Dictionary).duplicate(true)
 		network_manager.lobby_settings.set_player_settings(player_id, player_settings, index != focus_index)
 	singleplayer_cpu_count = cpu_ids.size()
-	time_attack_eligibility.clear()
-	time_attack_finalized = false
-	time_attack_last_replay_path = ""
+	time_attack_session_controller.reset()
 	practice_controller.arm_local_player_override(focused_player_id)
 	if !race_session_controller.reconfigure_practice_control(focused_player_id, practice_cpu_flags):
 		practice_controller.end_session()
@@ -1606,8 +1593,7 @@ func _return_to_menu(preserve_practice_speed_for_retry: bool = false) -> void:
 	race_dnf_low_speed_ticks.clear()
 	singleplayer_mode = false
 	_singleplayer_tick = 0
-	time_attack_eligibility.clear()
-	time_attack_finalized = false
+	time_attack_session_controller.reset()
 	$Control.visible = true
 	lobby_control.visible = false
 	if singleplayer_options_root != null:
@@ -1988,137 +1974,21 @@ func _check_race_finished() -> void:
 				network_manager.race_results.net_race_finish_time = Time.get_ticks_msec()
 				race_presentation_controller.show_results()
 				if configuration.is_time_attack():
-					_finalize_time_attack()
+					time_attack_session_controller.finalize_ranked(_local_player_id())
 				elif configuration.is_practice():
-					_finalize_practice()
+					time_attack_session_controller.finalize_practice(_local_player_id())
 
-func _finalize_time_attack() -> void:
-	if time_attack_finalized or !network_manager.race_configuration.is_time_attack():
-		return
-	time_attack_finalized = true
-	var local_id := _local_player_id()
-	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
-	var start_tick := race_presentation_controller.race_results_start_tick()
-	race_presentation_controller.update_time_attack_submission_status("Preparing verification replay…")
-	var replay_path := replay_controller.stage_completed_time_attack_replay(true)
-	time_attack_last_replay_path = replay_path
-	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
-		time_attack_eligibility,
-		finish_tick,
-		start_tick,
-		replay_path)
-	var board: Dictionary = time_attack_eligibility.get("board", {})
-	time_attack_eligibility["board_name"] = String(board.get("steam_name", ""))
-	time_attack_eligibility["friendly_reason"] = TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "")))
-	time_attack_eligibility["replay_can_save"] = replay_controller.can_save_staged_replay_locally(replay_path)
-	race_presentation_controller.show_time_attack_result(
-		time_attack_eligibility,
-		time_attack_previous_best_milliseconds,
-		"Preparing trusted submission…")
-	if bool(time_attack_eligibility.get("eligible", false)):
-		if leaderboard_client.enqueue_submission(time_attack_eligibility):
-			race_presentation_controller.show_notification("Time Attack queued for trusted verification", 5000)
-			race_presentation_controller.update_time_attack_submission_status(
-				"%s The queue is persisted; it is safe to close the game." % String(leaderboard_client.status().get("message", "Queued for verification.")))
-		else:
-			race_presentation_controller.show_notification("Time Attack replay could not be queued", 5000)
-			race_presentation_controller.update_time_attack_submission_status("The verification replay could not be added to the submission queue.")
-	else:
-		var reason := TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "ineligible")))
-		race_presentation_controller.show_notification("Unranked: %s" % reason, 5000)
-		race_presentation_controller.update_time_attack_submission_status("Unranked — %s" % reason)
-
-
-func _finalize_practice() -> void:
-	if !practice_controller.session_active or practice_controller.session_completed:
-		return
-	practice_controller.mark_completed()
-	var local_id := _local_player_id()
-	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
-	var start_tick := race_presentation_controller.race_results_start_tick()
-	var practice_replay_path := replay_controller.stage_completed_time_attack_replay(false)
-	time_attack_last_replay_path = practice_replay_path
-	var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
-	var practice_board := {}
-	if network_manager.race_track_evidence.count() == 1:
-		practice_board = TimeAttackRulesClass.board_for_track_digest(
-			network_manager.race_track_evidence.get_gameplay_digest(0))
-	var practice_result := {
-		"eligible": false,
-		"reason": "practice_unranked",
-		"friendly_reason": "Practice Unranked",
-		"score_milliseconds": practice_score,
-		"board_name": String(practice_board.get("steam_name", "")),
-		"replay_path": practice_replay_path,
-		"replay_can_save": replay_controller.can_save_staged_replay_locally(practice_replay_path),
-	}
-	race_presentation_controller.show_time_attack_result(
-		practice_result, 0,
-		"Practice result only — use Save Replay to keep it locally.")
-
-
-func _on_leaderboard_status_changed(status: Dictionary) -> void:
-	if race_presentation_controller != null:
-		var message := String(status.get("message", ""))
-		if int(status.get("pending_count", 0)) > 0:
-			message += " The queue is persisted; it is safe to close the game."
-		race_presentation_controller.update_time_attack_submission_status(message)
-
-
-func _on_leaderboard_submission_completed(result: Dictionary) -> void:
-	if String(result.get("replay_path", "")) != time_attack_last_replay_path:
-		return
-	var message := "Verified replay archived as your vehicle best." if bool(result.get("is_vehicle_best", false)) else "Verified replay archived; your existing best is faster."
-	var rank := int(result.get("global_rank", 0))
-	if rank > 0:
-		message += " Global rank #%d." % rank
-	race_presentation_controller.update_time_attack_submission_status(message)
-	var board_name := String(result.get("board_name", ""))
-	if !board_name.is_empty():
-		time_attack_rank_refresh_board = board_name
-		time_attack_rank_refresh_global = ""
-		leaderboard_client.request_entries(board_name, "around_user")
-
-
-func _on_time_attack_rank_entries_received(board_name: String, request_type: String, response: MxtLeaderboardQueryResult) -> void:
-	if board_name != time_attack_rank_refresh_board or !response.is_ok():
-		return
-	var local_steam_id := steam_service.get_steam_id()
-	if request_type == "around_user":
-		for index in response.get_entry_count():
-			var entry := response.get_entry(index)
-			if entry != null and entry.steam_id == local_steam_id:
-				time_attack_rank_refresh_global = "Global rank #%d" % entry.rank
-				break
-	var parts: Array[String] = []
-	if !time_attack_rank_refresh_global.is_empty():
-		parts.append(time_attack_rank_refresh_global)
-	if !parts.is_empty():
-		race_presentation_controller.update_time_attack_submission_status(
-			"Verified replay archived. %s." % ", ".join(parts))
-
-
-func _on_time_attack_race_again_requested() -> void:
-	var practice := network_manager.race_configuration.is_practice()
-	var configuration := network_manager.race_configuration.copy() if practice else TimeAttackRulesClass.build_configuration()
-	var race_state := network_manager.race_state.duplicate(true) if practice else {}
-	var track_evidence := network_manager.race_track_evidence.copy() if practice else null
+func _on_time_attack_session_race_again_requested(
+		configuration: MxtRaceConfiguration,
+		race_state: Dictionary,
+		track_evidence: MxtTrackContentEvidence) -> void:
 	_return_to_menu()
 	call_deferred("_start_singleplayer_race", false, configuration, race_state, track_evidence)
 
 
-func _on_time_attack_save_replay_requested() -> void:
-	var saved_path := replay_controller.save_staged_replay_locally(time_attack_last_replay_path)
-	if saved_path.is_empty():
-		race_presentation_controller.show_notification("Replay could not be saved", 3000)
-		return
-	race_presentation_controller.results_overlay.set_time_attack_replay_saved(saved_path)
-	race_presentation_controller.show_notification("Replay Saved", 2200)
-
-
-func _on_time_attack_watch_replay_requested() -> void:
-	if !time_attack_last_replay_path.is_empty():
-		replay_controller.call_deferred("play_replay_file", time_attack_last_replay_path)
+func _on_time_attack_session_leaderboard_requested(board_name: String) -> void:
+	_return_to_menu()
+	car_settings.open_leaderboards(board_name)
 
 
 func _on_leaderboard_replay_watch_requested(board_name: String, entry: MxtLeaderboardEntry) -> void:
@@ -2145,14 +2015,6 @@ func _on_leaderboard_replay_cache_request_completed(token: int, result: Dictiona
 	if !cache_path.is_empty():
 		replay_controller.call_deferred("play_replay_file", cache_path)
 
-
-func _on_time_attack_results_leaderboard_requested(board_name: String) -> void:
-	_return_to_menu()
-	car_settings.open_leaderboards(board_name)
-
-
-func _on_time_attack_main_menu_requested() -> void:
-	_return_to_menu()
 
 func _load_gameplay_camera_settings() -> void:
 	if FileAccess.file_exists(CAMERA_SETTINGS_PATH):
