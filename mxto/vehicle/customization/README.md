@@ -1,116 +1,77 @@
-# Garage livery customization
+# Vehicle customization
 
-## Goal
+This directory owns vehicle liveries, built-in body stamps, custom stamp data,
+and the atlas inputs consumed by vehicle rendering. The livery editor and
+multiplayer content paths use these types as their shared representation.
 
-Add a garage where players can choose a car, edit its paint colours, and place up to 16 layered body stamps. Stamps are not the current emote stickers; they are persistent livery decals projected onto the 3D car body, saved per car, and visible in lobby/race rendering.
+## Responsibilities
 
-The runtime target is the 100-car case. Customization must not turn into 16 dynamic decal nodes or 16 shader projector checks per car. The preferred race representation is one additional generated stamp mesh per unique livery/archetype, rendered with one material.
+- `CarLivery` stores paint, outline, trail, and layered body-stamp choices for
+  one vehicle content ID. A livery contains up to 16 `CarLiveryStamp` resources.
+- `CarLiveryStore` persists liveries under `user://garage_liveries` and migrates
+  legacy livery data associated with a vehicle definition.
+- `CarStampCatalog` and `CarStampEntry` describe the built-in stamp atlas and
+  create the stamp render material.
+- `CustomStampBlob`, `CustomStampStore`, and `CustomStampPaletteCatalog` own
+  imported or painted custom stamp pixels and their persistent local library.
+- `CustomStampPacker` assigns custom stamp rectangles within a player's atlas
+  region.
+- `CustomStampAtlasBuilder` allocates player regions and assembles the shared
+  2048 by 2048 custom stamp image used by vehicle render passes.
 
-## Current constraints
+## Data model and persistence
 
-- Car selection and player settings live in `mxto/player/player_settings.gd` and `mxto/ui/car_settings.gd`.
-- Car assets are `CarDefinition` resources pointing to a scene with `VEHICLE_MAIN`, `VEHICLE_SHADOW`, `VEHICLE_OUTLINE`, `VEHICLE_OUTLINE_MAIN`, and `THRUSTERS`.
-- Race/lobby bodies are batched by `mxto/vehicle/car_render_manager.gd` into `MultiMeshInstance3D` archetypes.
-- Native render submission in `src/gamesim/gamesim.cpp` updates multimesh transforms/colours per visible car.
-- Existing emote sticker resources under `mxto/ui/emote_sticker/` are transient HUD/social effects and should stay unrelated to body stamps.
+`CarLivery` serializes a versioned dictionary containing the vehicle content
+ID, five configurable colours, customization flags for outline and trail
+colours, and stamps sorted by layer. Its livery hash identifies identical
+rendering data, while its livery key combines that hash with the vehicle content
+ID.
 
-## Saved data
+Each `CarLiveryStamp` records its catalog or custom source, layer, local-space
+projector transform, size, flips, projection depth, colour, and opacity. Custom
+stamps also carry their content hash, palette ID, and packed atlas rectangle.
 
-Save livery data per car definition, not as one global player setting. A simple layout is:
+`CarLiveryStore` writes one JSON document per safe vehicle content ID beneath
+`user://garage_liveries`. `CustomStampStore` writes content-addressed stamp
+documents and `library.json` beneath `user://custom_stamps`. Deleting a custom
+stamp also removes its references from saved liveries.
 
-- `user://garage_liveries/<safe_car_id>.json`
-- `vehicle_content_id`
-- `primary_colour`
-- `secondary_colour`
-- `accent_colour`
-- optional `outline_colour` override
-- optional `trail_colour` override
-- `stamps`, max 16
+## Built-in and custom stamp assets
 
-Each stamp stores a local-space projector:
+`stamp_catalog.tres` references `stamp_atlas.png` and assigns stable stamp IDs
+to atlas tiles. `CarStampCatalog` resolves those IDs for editor previews,
+projected mesh UVs, and stamp materials.
 
-- `stamp_id`: asset/catalog id
-- `enabled`
-- `layer`: lower renders first
-- `local_origin`: projector center in car local space
-- `local_basis`: projector orientation in car local space
-- `size`: projected width/height
-- `projection_depth`: box depth along projector forward
-- `colour`: modulation colour
-- `opacity`
+Custom stamps use palette-indexed, Zstandard-compressed `CustomStampBlob`
+resources identified by a SHA-256 content hash. The store imports PNG images,
+validates dimensions and byte budgets, creates previews, and produces manifests
+for rendering and multiplayer transfer. The livery editor also supports painted
+4-bit custom palettes through the same blob format.
 
-This format avoids UV dependence and survives mesh UV seams, mirrored UVs, and stretched islands.
+## Atlas and rendering boundary
 
-## Garage editing flow
+`CustomStampPacker` deduplicates hashes referenced by a livery and assigns each
+blob to a wide or tall player region. `CustomStampAtlasBuilder` combines those
+regions into the race, lobby, or garage atlas. Native
+`NativeCustomStampImageBuilder` code expands palette-indexed pixels into the
+atlas image.
 
-1. Instantiate the selected `CarDefinition.car_scene` in a garage preview world.
-2. Raycast from the garage camera against the visible car body mesh.
-3. Convert the hit point and normal into the car scene's local space.
-4. Create a projector basis from the hit normal plus a stable tangent.
-5. Let the player rotate, scale, recolour, reorder, duplicate, and delete the selected stamp.
-6. Preview the selected stamp with a temporary Godot `Decal` or helper gizmo if convenient.
-7. On save/apply, rebuild the generated livery render assets.
+`CarRenderManager` groups vehicles by vehicle and livery identity. Its native
+`NativeStampMeshBuilder` clips projected stamps to the vehicle body and creates
+the stamp mesh plus visibility mask. The resulting stamp pass uses the built-in
+catalog atlas and the shared custom atlas through one catalog material.
 
-## Race render representation
+## Primary consumers
 
-Use one combined stamp mesh per unique livery/car archetype:
-
-1. For each active stamp, transform candidate body triangles into projector space.
-2. Reject triangles outside the projector box.
-3. Clip remaining triangles against the projector box.
-4. Emit decal vertices with position offset along the source normal, projected UVs from projector-space x/y, vertex colour from stamp modulation/opacity, and layer-preserving append order.
-5. Combine all 16 stamps into one `ArrayMesh`.
-6. Render that mesh with one atlas material, ideally as another `MultiMeshInstance3D` pass beside the body pass.
-
-The renderer archetype key should include livery identity:
-
-```text
-vehicle_content_id + ":" + livery_hash
-```
-
-That keeps identical liveries batched. In the worst case of 100 unique liveries, there can be 100 extra stamp mesh draws, but there should not be 1600 decal draws or per-pixel loops over 16 projectors.
-
-## Stamp assets
-
-Create a separate catalog from emote stickers, for example:
-
-- `mxto/vehicle/customization/stamps/`
-- `mxto/vehicle/customization/stamp_catalog.tres`
-
-The catalog should map stable `stamp_id` strings to rectangles in a stamp atlas. Runtime stamp meshes use atlas UVs and one material, not separate materials per stamp.
-
-## Colour customization
-
-Colour editing uses the vehicle body shader's `in_paint_mask` texture. The shader treats the car's `in_albedo` as the grayscale/detail base, then recolours masked pixels from the saved livery:
-
-- Red channel: primary paint coverage
-- Green channel: secondary paint coverage
-- Blue channel: accent paint coverage
-- Black/no mask: leave the original `in_albedo` colour unchanged
-
-Author machine albedo textures as grayscale or close to grayscale when they should be player-tinted. Use the albedo value for baked panel detail, dirt, highlights, and shadows. Put paint-region selection in the mask texture, not in albedo brightness.
-
-For a fully primary body panel, the mask should be red `(1, 0, 0)`. For a secondary stripe, use green `(0, 1, 0)`. For accent trim, use blue `(0, 0, 1)`. Soft masks and blends are allowed; overlapping channels are normalized before colour selection, while the summed mask controls how strongly the painted result replaces the grayscale albedo.
-
-Existing materials without `in_paint_mask` fall back to using `in_albedo` as a mask when a livery is applied. That is only a compatibility path; new machine assets should set an explicit `shader_parameter/in_paint_mask`.
-
-Outline and motion-trail colours retain the vehicle material's authored defaults until the player changes them in the garage. This keeps existing liveries and older replay payloads visually unchanged while allowing each colour to be customized independently.
-
-## Implementation phases
-
-1. Add livery data resources and JSON serialization.
-2. Add a dedicated garage scene with car selection, colour controls, stamp catalog, layer list, and 3D placement gizmo.
-3. Add editor-time/runtime livery asset generation for one combined stamp mesh.
-4. Extend `CarRenderManager` archetypes with an optional stamp pass keyed by livery hash.
-5. Pass per-racer livery ids through player settings/network settings.
-6. Add paint masks and per-car material support.
-7. Add smoke tests for serialization, renderer archetype grouping, and generated stamp mesh bounds. The initial generated mesh bound check lives at `mxto/test/car_livery_stamp_mesh_smoke.gd`.
-
-## Performance rules
-
-- No per-car stamp `Decal` nodes in races.
-- No shader loop over all 16 stamp projectors in the main vehicle shader.
-- No per-frame stamp mesh rebuilds.
-- Rebuild livery assets only when the garage data changes or when a livery is first loaded.
-- Keep stamp draw state to one atlas material per stamp pass.
-- Pool/cached generated meshes by livery hash.
+- `mxto/ui/livery_editor.gd` edits paint and stamp placement.
+- `mxto/ui/custom_stamp_library_controller.gd` and
+  `custom_stamp_painter_controller.gd` manage the local custom stamp library.
+- `mxto/ui/livery_atlas_controller.gd` builds threaded garage previews and
+  reports the current custom-stamp budgets.
+- `mxto/netplay/custom_stamp_network_controller.gd` exchanges manifests and
+  missing blobs between peers.
+- `mxto/vehicle/vehicle_content_controller.gd` prepares racer-specific atlas
+  records for races and other vehicle presentation.
+- `mxto/vehicle/car_render_manager.gd` installs generated stamp meshes and atlas
+  textures into batched vehicle archetypes.
+- `mxto/ui/lobby_chibi_controller.gd` builds the corresponding lobby atlas.
