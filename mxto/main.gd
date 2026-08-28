@@ -36,6 +36,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var lobby_vehicle_content_tracker: LobbyVehicleContentTrackerClass = $LobbyVehicleContentTracker
 @onready var race_content_acquisition_controller: RaceContentAcquisitionController = $RaceContentAcquisitionController
 @onready var time_attack_session_controller: TimeAttackSessionController = $TimeAttackSessionController
+@onready var grand_prix_session_controller: GrandPrixSessionController = $GrandPrixSessionController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -215,6 +216,7 @@ func _ready() -> void:
 	time_attack_session_controller.race_again_requested.connect(_on_time_attack_session_race_again_requested)
 	time_attack_session_controller.leaderboard_requested.connect(_on_time_attack_session_leaderboard_requested)
 	time_attack_session_controller.main_menu_requested.connect(_return_to_menu)
+	grand_prix_session_controller.initialize(network_manager)
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -1060,19 +1062,6 @@ func _on_pause_lobby_pressed() -> void:
 func _on_pause_options_requested() -> void:
 	options_menu.call("open_settings")
 
-func _initialize_grand_prix_options(configuration: MxtRaceConfiguration, options: Dictionary, roster: Array) -> Dictionary:
-	var initialized := options.duplicate(true)
-	if configuration.game_mode != 1:
-		return initialized
-	var points := {}
-	for id in roster:
-		points[int(id)] = 0
-	initialized["grand_prix_current_track"] = 0
-	initialized["grand_prix_points"] = points
-	initialized["grand_prix_ko_energy_bonuses"] = {}
-	initialized["grand_prix_eliminated_ids"] = []
-	return initialized
-
 func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Dictionary:
 	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(id)
 	if settings.is_empty():
@@ -1273,7 +1262,8 @@ func _on_lobby_start_race_requested(configuration: MxtRaceConfiguration, track_e
 	var race_roster: MxtRaceRoster = network_manager.lobby_settings.build_race_roster(roster)
 	if race_roster == null:
 		return
-	var race_state := _initialize_grand_prix_options(configuration, requested_options, roster)
+	var race_state := grand_prix_session_controller.initialize_race_state(
+		configuration, requested_options, roster)
 	race_state = _apply_race_roster_options(race_state, human_ids, cpu_ids, network_manager.spectator_ids)
 	if track_evidence.count() == 0:
 		return
@@ -1642,199 +1632,9 @@ func _transition_to_next_grand_prix_race() -> void:
 	network_manager.race_configuration = next_configuration
 	network_manager.race_track_evidence = next_track_evidence
 	network_manager.race_state = next_options
-	_apply_grand_prix_eliminations(next_options)
+	grand_prix_session_controller.apply_eliminations(next_options)
 	if next_roster != null:
 		network_manager.start_race(next_track_id, next_roster.encode_wire(), next_configuration.encode_wire(), next_track_evidence.encode_wire(), next_options)
-
-func _apply_grand_prix_eliminations(options: Dictionary) -> void:
-	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	if eliminated_ids.is_empty():
-		return
-	for eliminated_id in eliminated_ids:
-		var id := int(eliminated_id)
-		if network_manager.player_ids.has(id):
-			network_manager.player_ids.erase(id)
-			if !network_manager.spectator_ids.has(id):
-				network_manager.spectator_ids.append(id)
-		if network_manager.lobby_settings.cpu_player_ids.has(id):
-			network_manager.lobby_settings.cpu_player_ids.erase(id)
-			network_manager.lobby_settings.remove_player(id)
-
-func _lookup_id_value(dict: Dictionary, id: int, fallback):
-	if dict.has(id):
-		return dict[id]
-	var id_string := str(id)
-	if dict.has(id_string):
-		return dict[id_string]
-	return fallback
-
-func _capture_grand_prix_ko_energy_bonuses(sim: GameSim) -> Dictionary:
-	var bonuses := {}
-	if sim == null or !sim.has_method("get_player_ko_energy_bonus"):
-		return bonuses
-	for id_value in network_manager.get_simulation_roster():
-		var id := int(id_value)
-		bonuses[id] = float(sim.get_player_ko_energy_bonus(id))
-	return bonuses
-
-func _record_grand_prix_race_results(sim: GameSim) -> void:
-	if !network_manager.is_server or !network_manager.is_grand_prix_enabled():
-		return
-	var options := network_manager.race_state.duplicate(true)
-	var current_track_index := int(options.get("grand_prix_current_track", 0))
-	if int(options.get("grand_prix_recorded_track", -1)) == current_track_index:
-		return
-	var points: Dictionary = options.get("grand_prix_points", {})
-	var race_racers := network_manager.get_simulation_roster()
-	var racer_count := race_racers.size()
-	var place_by_id := _build_final_race_place_map(sim, race_racers)
-	var finish_tick_by_id := _build_final_race_finish_tick_map(place_by_id)
-	network_manager.race_results.send_final_race_results(place_by_id, finish_tick_by_id)
-	for id_value in race_racers:
-		var id := int(id_value)
-		var total := int(_lookup_id_value(points, id, 0))
-		var place := int(_lookup_id_value(place_by_id, id, 0))
-		if place > 0:
-			total += maxi(0, racer_count - place + 1)
-		points[id] = total
-	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	if !network_manager.is_vehicle_restore_enabled():
-		for id_value in network_manager.race_results.player_eliminations.keys():
-			var id := int(id_value)
-			if !eliminated_ids.has(id):
-				eliminated_ids.append(id)
-	options["grand_prix_points"] = points
-	options["grand_prix_eliminated_ids"] = eliminated_ids
-	options["grand_prix_ko_energy_bonuses"] = _capture_grand_prix_ko_energy_bonuses(sim)
-	options["grand_prix_recorded_track"] = current_track_index
-	network_manager.race_state = options
-	network_manager.send_race_state(
-		network_manager.race_configuration, network_manager.race_track_evidence, options)
-
-func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
-	var place_by_id := {}
-	var placement_rows := []
-	for id_value in race_racers:
-		var id := int(id_value)
-		if network_manager.race_results.player_dnfs.has(id):
-			continue
-		var place := int(_lookup_id_value(network_manager.race_results.player_finish_placements, id, 0))
-		if place > 0:
-			var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, 0x7fffffff))
-			placement_rows.append([place, finish_tick, id])
-	placement_rows.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) < int(b[0])
-		if int(a[1]) != int(b[1]):
-			return int(a[1]) < int(b[1])
-		return int(a[2]) < int(b[2])
-	)
-	for row in placement_rows:
-		var id := int(row[2])
-		place_by_id[id] = place_by_id.size() + 1
-	var finish_rows := []
-	for id_value in race_racers:
-		var id := int(id_value)
-		if place_by_id.has(id) or network_manager.race_results.player_dnfs.has(id):
-			continue
-		var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, -1))
-		if finish_tick >= 0:
-			finish_rows.append([finish_tick, id])
-	finish_rows.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) < int(b[0])
-		return int(a[1]) < int(b[1])
-	)
-	for row in finish_rows:
-		var id := int(row[1])
-		place_by_id[id] = place_by_id.size() + 1
-	if sim == null or !sim.has_method("get_race_order"):
-		return place_by_id
-	var order: Array = sim.get_race_order()
-	for id_value in order:
-		var id := int(id_value)
-		if !race_racers.has(id) or place_by_id.has(id):
-			continue
-		if network_manager._disconnected_during_race.has(id) or network_manager.race_results.player_eliminations.has(id) or network_manager.race_results.player_dnfs.has(id):
-			continue
-		place_by_id[id] = place_by_id.size() + 1
-	return place_by_id
-
-func _build_final_race_finish_tick_map(place_by_id: Dictionary) -> Dictionary:
-	var finish_tick_by_id := {}
-	for id_value in place_by_id.keys():
-		var id := int(id_value)
-		var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, -1))
-		if finish_tick >= 0:
-			finish_tick_by_id[id] = finish_tick
-	return finish_tick_by_id
-
-func _build_next_grand_prix_roster(options: Dictionary) -> MxtRaceRoster:
-	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	var active_ids := network_manager.player_ids.duplicate(true)
-	active_ids.append_array(network_manager.lobby_settings.cpu_player_ids)
-	for index in range(active_ids.size() - 1, -1, -1):
-		if eliminated_ids.has(int(active_ids[index])):
-			active_ids.remove_at(index)
-	return network_manager.lobby_settings.build_race_roster(active_ids)
-
-func _build_next_grand_prix_rosters(options: Dictionary) -> Dictionary:
-	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	var human_ids := []
-	for id_value in network_manager.player_ids:
-		var id := int(id_value)
-		if !eliminated_ids.has(id):
-			human_ids.append(id)
-	var cpu_ids := []
-	for id_value in network_manager.lobby_settings.cpu_player_ids:
-		var id := int(id_value)
-		if !eliminated_ids.has(id):
-			cpu_ids.append(id)
-	var spectator_ids := network_manager.spectator_ids.duplicate(true)
-	for id_value in network_manager.waiting_peers:
-		var id := int(id_value)
-		if !spectator_ids.has(id):
-			spectator_ids.append(id)
-	return {
-		"human_ids": human_ids,
-		"cpu_ids": cpu_ids,
-		"spectator_ids": spectator_ids,
-	}
-
-func _has_active_human_grand_prix_racer(options: Dictionary) -> bool:
-	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
-	for id_value in network_manager.player_ids:
-		if !eliminated_ids.has(int(id_value)):
-			return true
-	return false
-
-func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
-	_record_grand_prix_race_results(finish_sim)
-	if !network_manager.is_grand_prix_enabled():
-		network_manager.send_end_race()
-		return
-	var options := network_manager.race_state.duplicate(true)
-	var current_index := int(options.get("grand_prix_current_track", 0))
-	var next_index := current_index + 1
-	if next_index >= network_manager.race_track_evidence.count() or !_has_active_human_grand_prix_racer(options):
-		network_manager.send_end_race()
-		return
-	options["grand_prix_current_track"] = next_index
-	var next_track_id := network_manager.race_track_evidence.get_content_id(next_index)
-	var next_roster: MxtRaceRoster = _build_next_grand_prix_roster(options)
-	if next_roster == null:
-		network_manager.send_end_race()
-		return
-	var next_rosters := _build_next_grand_prix_rosters(options)
-	options = _apply_race_roster_options(
-		options,
-		next_rosters["human_ids"],
-		next_rosters["cpu_ids"],
-		next_rosters["spectator_ids"])
-	options = network_manager.reserve_next_race_netplay_state(options)
-	var seed := randi()
-	options["spawn_seed"] = seed
-	network_manager.send_end_race(next_track_id, next_roster, network_manager.race_configuration, network_manager.race_track_evidence, options)
 
 func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:
@@ -1963,10 +1763,10 @@ func _check_race_finished() -> void:
 			if network_manager.race_results.net_race_finish_time == -1:
 				network_manager.race_results.net_race_finish_time = Time.get_ticks_msec()
 				network_manager.race_results.send_race_finish_time(network_manager.race_results.net_race_finish_time)
-				_record_grand_prix_race_results(finish_sim)
+				grand_prix_session_controller.record_race_results(finish_sim)
 				race_presentation_controller.show_results()
 			if Time.get_ticks_msec() > network_manager.race_results.net_race_finish_time + RacePresentationControllerClass.RESULTS_SCREEN_MSEC:
-				_finish_or_advance_grand_prix(finish_sim)
+				grand_prix_session_controller.finish_or_advance(finish_sim)
 				race_presentation_controller.hide_results()
 	else:
 		if singleplayer_mode and all_done and !infinite_practice:

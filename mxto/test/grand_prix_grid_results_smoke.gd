@@ -49,7 +49,7 @@ func _init() -> void:
 		"grand_prix_current_track": 2,
 		"grand_prix_points": {1: 0, 2: 0, 3: 0},
 	}
-	main.call("_record_grand_prix_race_results", main.game_sim)
+	main.grand_prix_session_controller.record_race_results(main.game_sim)
 	var points: Dictionary = main.network_manager.race_state.get("grand_prix_points", {})
 	if int(points.get(3, -1)) != 3 or int(points.get(1, -1)) != 2 or int(points.get(2, -1)) != 1:
 		push_error("Grand Prix points should use all racers, got %s" % [points])
@@ -92,7 +92,8 @@ func _init() -> void:
 		return
 	main.network_manager.race_results.player_finish_times = {1: 600, 2: 500}
 	main.network_manager.race_results.player_finish_placements = {1: 1, 2: 1}
-	var normalized_places: Dictionary = main.call("_build_final_race_place_map", main.game_sim, [1, 2, 3])
+	var normalized_places: Dictionary = main.grand_prix_session_controller.call(
+		"_build_final_race_place_map", main.game_sim, [1, 2, 3])
 	if int(normalized_places.get(2, -1)) != 1 or int(normalized_places.get(1, -1)) != 2:
 		push_error("final race place map should not preserve duplicate places, got %s" % [normalized_places])
 		quit(1)
