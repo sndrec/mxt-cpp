@@ -252,7 +252,7 @@ func _player_display_name(player_id: int) -> String:
 	if player_id < 0:
 		return "Bumper"
 	var player_name := str(player_id)
-	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
+	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		player_name = str(settings["username"])
 	if network_manager.lobby_settings.get_cpu_roster().has(player_id):

@@ -117,7 +117,7 @@ func refresh_controls() -> void:
 	bumpers_toggle.disabled = !can_edit
 	s_boost_toggle.disabled = !can_edit
 	workshop_vehicles_toggle.disabled = !can_edit
-	var local_settings = network_manager.lobby_settings.player_settings.get(multiplayer.get_unique_id(), {})
+	var local_settings: Dictionary = network_manager.lobby_settings.get_player_settings(multiplayer.get_unique_id())
 	var is_spectator := typeof(local_settings) == TYPE_DICTIONARY and bool(local_settings.get("spectator", false))
 	spectator_toggle.set_pressed_no_signal(is_spectator)
 	spectator_toggle.disabled = network_manager.race_active
@@ -266,7 +266,7 @@ func _on_kick_player_pressed(player_id: int) -> void:
 
 func _player_display_name(player_id: int) -> String:
 	var player_name := str(player_id)
-	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
+	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		player_name = str(settings["username"])
 	if network_manager.lobby_settings.get_cpu_roster().has(player_id):

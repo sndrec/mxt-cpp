@@ -97,7 +97,7 @@ func _start_cpu_race(track_index: int, racer_count: int, spawn_seed: int) -> boo
 	var settings: Array = []
 	for player_id_value in cpu_ids:
 		var player_id := int(player_id_value)
-		settings.append((game_manager.network_manager.lobby_settings.cpu_player_settings.get(player_id, {}) as Dictionary).duplicate(true))
+		settings.append(game_manager.network_manager.lobby_settings.get_player_settings(player_id))
 	return game_manager.race_session_controller.start_race(track_index, settings, true, true)
 
 

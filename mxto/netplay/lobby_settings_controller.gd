@@ -14,12 +14,10 @@ const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
 const ALL_ROUNDER_VEHICLE_ID := "mxt:vehicle:official:allrounder"
 
 var game_manager: GameManager
-var player_settings := {}
-var player_settings_revisions := {}
+var race_roster := MxtRaceRoster.new()
 var revision := 0
 var cpu_player_ids: Array = []
 var race_cpu_player_ids: Array = []
-var cpu_player_settings := {}
 var latency_rtt_s := {}
 var latency_pending_msec := {}
 var latency_last_sample_msec := 0
@@ -65,25 +63,26 @@ func reset_latency() -> void:
 	local_rtt_s = 0.0
 
 func reset_all() -> void:
-	player_settings.clear()
-	player_settings_revisions.clear()
+	race_roster.clear()
 	revision += 1
 	cpu_player_ids.clear()
 	race_cpu_player_ids.clear()
-	cpu_player_settings.clear()
 	reset_latency()
 	reset_interval_counters()
 
 func reset_settings(preserved_settings: Dictionary = {}) -> void:
-	player_settings.clear()
-	player_settings_revisions.clear()
+	var preserved_cpu_settings: Array = []
+	for player_id in cpu_player_ids:
+		preserved_cpu_settings.append(get_player_settings(player_id))
+	race_roster.clear()
 	revision += 1
 	for id_value in preserved_settings.keys():
 		var player_id := int(id_value)
-		player_settings[player_id] = preserved_settings[id_value]
-		player_settings_revisions[player_id] = 1
-	for player_id in cpu_player_ids:
-		player_settings[player_id] = cpu_player_settings.get(player_id, {})
+		_store_player_settings(player_id, preserved_settings[id_value])
+	for index in cpu_player_ids.size():
+		var player_id := int(cpu_player_ids[index])
+		var settings: Dictionary = preserved_cpu_settings[index] if index < preserved_cpu_settings.size() else game_manager.build_cpu_player_settings(index)
+		_store_player_settings(player_id, settings, true)
 
 func reset_interval_counters() -> void:
 	log_messages_in = 0
@@ -106,8 +105,7 @@ func set_cpu_driver_vehicle_pool(content_ids: Array) -> void:
 	for index in range(cpu_player_ids.size()):
 		var player_id := int(cpu_player_ids[index])
 		var settings := game_manager.build_cpu_player_settings(index, content_ids)
-		cpu_player_settings[player_id] = settings
-		player_settings[player_id] = settings
+		_store_player_settings(player_id, settings, true)
 	broadcast_cpu_roster()
 
 func add_cpu_driver() -> void:
@@ -137,8 +135,8 @@ func cpu_human_overlaps() -> Array:
 	return overlaps
 
 func username_for_player(player_id: int) -> String:
-	var settings = player_settings.get(player_id, null)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
+	var settings := get_player_settings(player_id)
+	if settings.has("username"):
 		return str(settings["username"])
 	return str(player_id)
 
@@ -169,7 +167,7 @@ func send_player_settings(settings: Dictionary) -> void:
 	settings = _normalize_vehicle_for_lobby(settings)
 	if is_server:
 		_apply_player_settings_update(settings, local_id, 0)
-		_send_player_settings_update(player_settings.get(local_id, settings), local_id)
+		_send_player_settings_update(get_player_settings(local_id), local_id)
 	else:
 		_send_player_settings_update(settings, -1, 1)
 		_store_player_settings(local_id, settings)
@@ -178,9 +176,9 @@ func send_player_settings_to_all(settings: Dictionary, player_id: int) -> void:
 	_send_player_settings_update(settings, player_id)
 
 func send_player_settings_snapshot_to_peer(peer_id: int) -> void:
-	if !is_server or race_active or player_settings.is_empty() or !_can_send_to_peer(peer_id):
+	if !is_server or race_active or race_roster.count() == 0 or !_can_send_to_peer(peer_id):
 		return
-	var roster := _build_settings_roster(player_settings.keys())
+	var roster := _build_settings_roster(get_player_settings_ids())
 	if roster == null:
 		return
 	var raw := roster.encode_wire()
@@ -205,7 +203,7 @@ func send_next_race_accel_setting(accel_setting: float) -> void:
 		update_next_race_accel_setting.rpc_id(1, accel_setting)
 
 func get_player_settings_revision(player_id: int) -> int:
-	return int(player_settings_revisions.get(player_id, 0))
+	return race_roster.get_revision(player_id)
 
 func get_local_player_settings_snapshot() -> Dictionary:
 	if game_manager != null and game_manager.car_settings != null:
@@ -213,13 +211,32 @@ func get_local_player_settings_snapshot() -> Dictionary:
 		if settings != null:
 			return settings.to_dict()
 	var local_id := multiplayer.get_unique_id()
-	var settings = player_settings.get(local_id, {})
-	return settings if typeof(settings) == TYPE_DICTIONARY else {}
+	return get_player_settings(local_id)
+
+func has_player_settings(player_id: int) -> bool:
+	return race_roster.has_player(player_id)
+
+func get_player_settings(player_id: int) -> Dictionary:
+	return race_roster.get_player_settings_dictionary(player_id)
+
+func get_player_settings_ids() -> Array:
+	var ids: Array = []
+	for index in race_roster.count():
+		ids.append(race_roster.get_player_id(index))
+	return ids
+
+func get_player_settings_count() -> int:
+	return race_roster.count()
+
+func set_player_settings(player_id: int, settings: Dictionary, cpu := false) -> bool:
+	return _store_player_settings(player_id, settings, cpu)
+
+func clear_player_settings() -> void:
+	race_roster.clear()
+	revision += 1
 
 func remove_player(player_id: int) -> void:
-	if player_settings.has(player_id):
-		player_settings.erase(player_id)
-		player_settings_revisions.erase(player_id)
+	if race_roster.remove_player(player_id):
 		revision += 1
 	latency_rtt_s.erase(player_id)
 	latency_pending_msec.erase(player_id)
@@ -366,7 +383,7 @@ func _apply_player_settings_update(settings: Dictionary, player_id: int, sender_
 	settings = _normalize_vehicle_for_lobby(settings)
 	if !_store_player_settings(player_id, settings):
 		return
-	settings = player_settings[player_id]
+	settings = get_player_settings(player_id)
 	if is_server and sender_id != 0:
 		_send_player_settings_update(settings, player_id)
 	if player_id == multiplayer.get_unique_id() and game_manager != null and game_manager.car_settings != null:
@@ -376,17 +393,13 @@ func _apply_player_settings_update(settings: Dictionary, player_id: int, sender_
 func enforce_official_vehicles() -> void:
 	if !is_server or race_active or _workshop_vehicles_allowed():
 		return
-	for player_id_value in player_settings.keys():
+	for player_id_value in get_player_settings_ids():
 		var player_id := int(player_id_value)
-		var existing = player_settings[player_id]
-		if typeof(existing) != TYPE_DICTIONARY:
-			continue
+		var existing := get_player_settings(player_id)
 		var normalized := _normalize_vehicle_for_lobby(existing)
 		if normalized == existing:
 			continue
-		_store_player_settings(player_id, normalized)
-		if cpu_player_ids.has(player_id):
-			cpu_player_settings[player_id] = normalized.duplicate(true)
+		_store_player_settings(player_id, normalized, cpu_player_ids.has(player_id))
 		_send_player_settings_update(normalized, player_id)
 		if player_id == multiplayer.get_unique_id() and game_manager != null and game_manager.car_settings != null:
 			game_manager.car_settings.apply_authoritative_vehicle_selection(normalized)
@@ -440,37 +453,35 @@ func _is_sha256_digest(value: String) -> bool:
 			return false
 	return true
 
-func _store_player_settings(player_id: int, settings: Dictionary) -> bool:
+func _store_player_settings(player_id: int, settings: Dictionary, cpu := false) -> bool:
 	if player_id <= 0:
 		return false
-	var existing = player_settings.get(player_id, null)
-	if typeof(existing) == TYPE_DICTIONARY and existing == settings:
+	if !race_roster.upsert_settings(player_id, player_id, cpu or cpu_player_ids.has(player_id), false, false, settings):
+		if !race_roster.get_last_error().is_empty():
+			push_warning("Rejected player settings: %s" % race_roster.get_last_error())
+			return false
 		log_deduped += 1
 		return false
-	player_settings[player_id] = settings.duplicate(true)
 	if game_manager != null and game_manager.vehicle_content_controller != null:
-		game_manager.vehicle_content_controller.request_lobby_vehicle_content(player_settings[player_id])
-	player_settings_revisions[player_id] = int(player_settings_revisions.get(player_id, 0)) + 1
+		game_manager.vehicle_content_controller.request_lobby_vehicle_content(get_player_settings(player_id))
 	revision += 1
 	log_accepted += 1
 	return true
 
 func _merge_existing_livery_settings(settings: Dictionary, player_id: int) -> Dictionary:
-	if settings.has("car_livery") or !player_settings.has(player_id):
+	if settings.has("car_livery") or !race_roster.has_player(player_id):
 		return settings
-	var existing = player_settings[player_id]
-	if typeof(existing) != TYPE_DICTIONARY or !(existing as Dictionary).has("car_livery"):
+	var existing := get_player_settings(player_id)
+	if !existing.has("car_livery"):
 		return settings
 	var merged := settings.duplicate(true)
-	merged["car_livery"] = (existing as Dictionary)["car_livery"]
+	merged["car_livery"] = existing["car_livery"]
 	return merged
 
 func _set_next_race_accel_setting(player_id: int, accel_setting: float) -> void:
 	accel_setting = clampf(accel_setting, 0.0, 1.0)
-	var settings = player_settings.get(player_id, {})
-	settings = (settings as Dictionary).duplicate(true) if typeof(settings) == TYPE_DICTIONARY else {}
-	settings["accel_setting"] = accel_setting
-	_store_player_settings(player_id, settings)
+	if race_roster.set_accel_setting(player_id, accel_setting):
+		revision += 1
 
 func _allocate_cpu_id() -> int:
 	for player_id in range(CPU_ID_MIN, CPU_ID_MAX + 1):
@@ -481,16 +492,14 @@ func _allocate_cpu_id() -> int:
 func _remap_cpu_id(old_id: int) -> int:
 	if !cpu_player_ids.has(old_id):
 		return old_id
-	var settings = cpu_player_settings.get(old_id, player_settings.get(old_id, {}))
+	var settings := get_player_settings(old_id)
 	cpu_player_ids.erase(old_id)
-	cpu_player_settings.erase(old_id)
-	player_settings.erase(old_id)
 	var new_id := _allocate_cpu_id()
 	if new_id < 0:
 		return -1
 	cpu_player_ids.append(new_id)
-	cpu_player_settings[new_id] = settings
-	player_settings[new_id] = settings
+	if !race_roster.replace_player_id(old_id, new_id, new_id):
+		_store_player_settings(new_id, settings, true)
 	if race_cpu_player_ids.has(old_id):
 		race_cpu_player_ids.erase(old_id)
 		race_cpu_player_ids.append(new_id)
@@ -502,15 +511,13 @@ func _add_cpu_driver() -> void:
 		return
 	cpu_player_ids.append(new_id)
 	var settings := game_manager.build_cpu_player_settings(cpu_player_ids.size() - 1)
-	cpu_player_settings[new_id] = settings
-	player_settings[new_id] = settings
+	_store_player_settings(new_id, settings, true)
 
 func _remove_cpu_driver() -> void:
 	if cpu_player_ids.is_empty():
 		return
 	var removed_id := int(cpu_player_ids.pop_back())
-	cpu_player_settings.erase(removed_id)
-	player_settings.erase(removed_id)
+	race_roster.remove_player(removed_id)
 	race_cpu_player_ids.erase(removed_id)
 	cpu_removed.emit(removed_id)
 
@@ -521,22 +528,20 @@ func _apply_cpu_roster(roster: MxtRaceRoster) -> void:
 		var player_id := roster.get_player_id(index)
 		if !cpu_player_ids.has(player_id):
 			cpu_player_ids.append(player_id)
-	cpu_player_settings.clear()
 	for old_id in previous:
 		if !cpu_player_ids.has(old_id):
-			player_settings.erase(old_id)
+			race_roster.remove_player(old_id)
 	for index in roster.count():
 		var player_id := roster.get_player_id(index)
 		var settings := roster.get_settings_dictionary(index)
-		cpu_player_settings[player_id] = settings
-		player_settings[player_id] = settings
+		_store_player_settings(player_id, settings, true)
 
 func _build_settings_roster(ids: Array) -> MxtRaceRoster:
 	var roster := MxtRaceRoster.new()
 	for id_value in ids:
 		var player_id := int(id_value)
-		var settings = player_settings.get(player_id, null)
-		if typeof(settings) != TYPE_DICTIONARY:
+		var settings := get_player_settings(player_id)
+		if settings.is_empty():
 			continue
 		if !roster.append_settings(player_id, player_id, cpu_player_ids.has(player_id), false, false, settings):
 			push_warning("Lobby roster rejected before send: %s" % roster.get_last_error())

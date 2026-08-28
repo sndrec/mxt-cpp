@@ -137,13 +137,18 @@ void MxtRaceRoster::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("append_settings", "player_id", "network_peer_id", "cpu", "bumper", "disconnected", "settings"), &MxtRaceRoster::append_settings);
 	ClassDB::bind_method(D_METHOD("upsert_settings", "player_id", "network_peer_id", "cpu", "bumper", "disconnected", "settings"), &MxtRaceRoster::upsert_settings);
 	ClassDB::bind_method(D_METHOD("remove_player", "player_id"), &MxtRaceRoster::remove_player);
+	ClassDB::bind_method(D_METHOD("replace_player_id", "old_player_id", "new_player_id", "network_peer_id"), &MxtRaceRoster::replace_player_id);
 	ClassDB::bind_method(D_METHOD("find_player", "player_id"), &MxtRaceRoster::find_player);
+	ClassDB::bind_method(D_METHOD("has_player", "player_id"), &MxtRaceRoster::has_player);
+	ClassDB::bind_method(D_METHOD("get_player_ids"), &MxtRaceRoster::get_player_ids);
 	ClassDB::bind_method(D_METHOD("get_player_id", "index"), &MxtRaceRoster::get_player_id);
 	ClassDB::bind_method(D_METHOD("get_network_peer_id", "index"), &MxtRaceRoster::get_network_peer_id);
 	ClassDB::bind_method(D_METHOD("is_cpu", "index"), &MxtRaceRoster::is_cpu);
 	ClassDB::bind_method(D_METHOD("is_bumper", "index"), &MxtRaceRoster::is_bumper);
 	ClassDB::bind_method(D_METHOD("is_spectator", "index"), &MxtRaceRoster::is_spectator);
 	ClassDB::bind_method(D_METHOD("is_disconnected", "index"), &MxtRaceRoster::is_disconnected);
+	ClassDB::bind_method(D_METHOD("get_revision", "player_id"), &MxtRaceRoster::get_revision);
+	ClassDB::bind_method(D_METHOD("set_accel_setting", "player_id", "value"), &MxtRaceRoster::set_accel_setting);
 	ClassDB::bind_method(D_METHOD("get_settings_dictionary", "index"), &MxtRaceRoster::get_settings_dictionary);
 	ClassDB::bind_method(D_METHOD("get_player_settings_dictionary", "player_id"), &MxtRaceRoster::get_player_settings_dictionary);
 	ClassDB::bind_method(D_METHOD("get_last_error"), &MxtRaceRoster::get_last_error);
@@ -260,6 +265,29 @@ bool MxtRaceRoster::parse_entry(int64_t player_id, int64_t network_peer_id, uint
 	return true;
 }
 
+bool MxtRaceRoster::entries_equal(const Entry &a, const Entry &b) const {
+	if (a.player_id != b.player_id || a.network_peer_id != b.network_peer_id || a.username != b.username ||
+			a.vehicle_content_id != b.vehicle_content_id || a.vehicle_gameplay_digest != b.vehicle_gameplay_digest ||
+			a.vehicle_package_digest != b.vehicle_package_digest || a.vehicle_workshop_id != b.vehicle_workshop_id ||
+			a.accel_setting != b.accel_setting || a.flags != b.flags || a.livery.vehicle_content_id != b.livery.vehicle_content_id ||
+			a.livery.primary_colour != b.livery.primary_colour || a.livery.secondary_colour != b.livery.secondary_colour ||
+			a.livery.accent_colour != b.livery.accent_colour || a.livery.outline_colour != b.livery.outline_colour ||
+			a.livery.trail_colour != b.livery.trail_colour ||
+			a.livery.outline_colour_customized != b.livery.outline_colour_customized ||
+			a.livery.trail_colour_customized != b.livery.trail_colour_customized ||
+			a.livery.stamps.size() != b.livery.stamps.size()) return false;
+	for (int index = 0; index < 4; ++index) if (a.stickers[index] != b.stickers[index]) return false;
+	for (size_t index = 0; index < a.livery.stamps.size(); ++index) {
+		const Stamp &x = a.livery.stamps[index];
+		const Stamp &y = b.livery.stamps[index];
+		if (x.stamp_id != y.stamp_id || x.custom_hash != y.custom_hash || x.palette_id != y.palette_id ||
+				x.layer != y.layer || x.custom_rect != y.custom_rect || x.local_origin != y.local_origin ||
+				x.local_basis != y.local_basis || x.rotation != y.rotation || x.size != y.size ||
+				x.projection_depth != y.projection_depth || x.colour != y.colour || x.opacity != y.opacity || x.flags != y.flags) return false;
+	}
+	return true;
+}
+
 bool MxtRaceRoster::append_settings(int64_t player_id, int64_t network_peer_id, bool cpu, bool bumper, bool disconnected, const Dictionary &settings) {
 	if (entries.size() >= MAX_RACERS || find_player(player_id) >= 0) {
 		last_error = entries.size() >= MAX_RACERS ? "Roster exceeds the 1024-racer limit." : "Roster already contains this player ID.";
@@ -278,7 +306,15 @@ bool MxtRaceRoster::upsert_settings(int64_t player_id, int64_t network_peer_id, 
 	const uint8_t flags = (cpu ? FLAG_CPU : 0) | (bumper ? FLAG_BUMPER : 0) | (disconnected ? FLAG_DISCONNECTED : 0);
 	if (!parse_entry(player_id, network_peer_id, flags, settings, entry)) return false;
 	const int32_t index = find_player(player_id);
-	if (index >= 0) entries[static_cast<size_t>(index)] = std::move(entry);
+	if (index >= 0) {
+		Entry &existing = entries[static_cast<size_t>(index)];
+		if (entries_equal(existing, entry)) {
+			last_error = String();
+			return false;
+		}
+		entry.revision = existing.revision + 1;
+		existing = std::move(entry);
+	}
 	else {
 		if (entries.size() >= MAX_RACERS) {
 			last_error = "Roster exceeds the 1024-racer limit.";
@@ -297,9 +333,26 @@ bool MxtRaceRoster::remove_player(int64_t player_id) {
 	return true;
 }
 
+bool MxtRaceRoster::replace_player_id(int64_t old_player_id, int64_t new_player_id, int64_t network_peer_id) {
+	const int32_t old_index = find_player(old_player_id);
+	if (old_index < 0 || new_player_id <= 0 || (old_player_id != new_player_id && has_player(new_player_id))) return false;
+	Entry &entry = entries[static_cast<size_t>(old_index)];
+	entry.player_id = new_player_id;
+	entry.network_peer_id = network_peer_id > 0 ? network_peer_id : new_player_id;
+	++entry.revision;
+	return true;
+}
+
 int32_t MxtRaceRoster::find_player(int64_t player_id) const {
 	for (size_t i = 0; i < entries.size(); ++i) if (entries[i].player_id == player_id) return static_cast<int32_t>(i);
 	return -1;
+}
+
+PackedInt64Array MxtRaceRoster::get_player_ids() const {
+	PackedInt64Array out;
+	out.resize(entries.size());
+	for (size_t index = 0; index < entries.size(); ++index) out.set(index, entries[index].player_id);
+	return out;
 }
 
 int64_t MxtRaceRoster::get_player_id(int32_t index) const {
@@ -314,6 +367,22 @@ bool MxtRaceRoster::is_cpu(int32_t index) const { return index >= 0 && static_ca
 bool MxtRaceRoster::is_bumper(int32_t index) const { return index >= 0 && static_cast<size_t>(index) < entries.size() && (entries[index].flags & FLAG_BUMPER); }
 bool MxtRaceRoster::is_spectator(int32_t index) const { return index >= 0 && static_cast<size_t>(index) < entries.size() && (entries[index].flags & FLAG_SPECTATOR); }
 bool MxtRaceRoster::is_disconnected(int32_t index) const { return index >= 0 && static_cast<size_t>(index) < entries.size() && (entries[index].flags & FLAG_DISCONNECTED); }
+
+int32_t MxtRaceRoster::get_revision(int64_t player_id) const {
+	const int32_t index = find_player(player_id);
+	return index >= 0 ? static_cast<int32_t>(entries[static_cast<size_t>(index)].revision) : 0;
+}
+
+bool MxtRaceRoster::set_accel_setting(int64_t player_id, float value) {
+	const int32_t index = find_player(player_id);
+	if (index < 0 || !std::isfinite(value)) return false;
+	Entry &entry = entries[static_cast<size_t>(index)];
+	value = std::clamp(value, 0.0f, 1.0f);
+	if (entry.accel_setting == value) return false;
+	entry.accel_setting = value;
+	++entry.revision;
+	return true;
+}
 
 Dictionary MxtRaceRoster::entry_dictionary(const Entry &entry) const {
 	Dictionary out;

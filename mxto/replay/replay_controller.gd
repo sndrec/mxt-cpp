@@ -554,8 +554,8 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		var raw_settings: Dictionary = {}
 		if i < settings.size() and typeof(settings[i]) == TYPE_DICTIONARY:
 			raw_settings = (settings[i] as Dictionary).duplicate(true)
-		elif game_manager.network_manager.lobby_settings.player_settings.has(id) and typeof(game_manager.network_manager.lobby_settings.player_settings[id]) == TYPE_DICTIONARY:
-			raw_settings = (game_manager.network_manager.lobby_settings.player_settings[id] as Dictionary).duplicate(true)
+		elif game_manager.network_manager.lobby_settings.has_player_settings(id):
+			raw_settings = game_manager.network_manager.lobby_settings.get_player_settings(id)
 		raw_settings = _settings_with_vehicle_content_evidence(raw_settings)
 		player_records.append({
 			"id": id,
@@ -1668,7 +1668,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 		else:
 			game_manager.network_manager.player_ids.append(id)
 		if i < (settings as Array).size() and typeof(settings[i]) == TYPE_DICTIONARY:
-			game_manager.network_manager.lobby_settings.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
+			game_manager.network_manager.lobby_settings.set_player_settings(id, settings[i], is_cpu)
 	var profile_setup_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us - profile_frames_duplicate_us
 	var profile_race_start_us := Time.get_ticks_usec()
 	game_manager._close_settings_menus_for_race_start()
@@ -1950,8 +1950,8 @@ func _apply_replay_focus_to_local_visual() -> void:
 	var car := game_manager.car_node_container.local_visual_car
 	car.owning_id = focus_id
 	car.race_hud.focus_player_id = focus_id
-	var settings = game_manager.network_manager.lobby_settings.player_settings.get(focus_id, null)
-	if settings != null:
+	var settings: Dictionary = game_manager.network_manager.lobby_settings.get_player_settings(focus_id)
+	if !settings.is_empty():
 		var ps := vehicle_content_controller.player_settings_for_stamp_render(settings)
 		if ps != null:
 			car.player_settings = ps
@@ -2609,11 +2609,11 @@ func _load_and_start_debug_replay(path: String) -> void:
 	game_manager.network_manager.spectator_ids = []
 	game_manager.singleplayer_cpu_count = maxi(0, settings.size() - 1)
 	game_manager.network_manager.lobby_settings.set_cpu_driver_count(game_manager.singleplayer_cpu_count)
-	game_manager.network_manager.lobby_settings.player_settings[local_id] = settings[0]
+	game_manager.network_manager.lobby_settings.set_player_settings(local_id, settings[0])
 	var cpu_ids := game_manager.network_manager.lobby_settings.get_cpu_roster()
 	for i in range(cpu_ids.size()):
 		if i + 1 < settings.size():
-			game_manager.network_manager.lobby_settings.player_settings[cpu_ids[i]] = settings[i + 1]
+			game_manager.network_manager.lobby_settings.set_player_settings(cpu_ids[i], settings[i + 1], true)
 
 	game_manager._close_settings_menus_for_race_start()
 	game_manager.race_dnf_low_speed_ticks.clear()

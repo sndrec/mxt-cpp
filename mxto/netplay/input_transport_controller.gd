@@ -544,7 +544,7 @@ func _input_forward_window(last_tick: int) -> Vector2i:
 func collect_client_inputs() -> bool:
 	if game_sim != null and !game_sim.sim_started:
 		return false
-	var my_settings = lobby_settings.player_settings.get(multiplayer.get_unique_id(), {})
+	var my_settings: Dictionary = lobby_settings.get_player_settings(multiplayer.get_unique_id())
 	var is_spec = typeof(my_settings) == TYPE_DICTIONARY and my_settings.get("spectator", false)
 	if is_spec:
 		if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:

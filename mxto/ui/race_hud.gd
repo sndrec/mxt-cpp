@@ -96,14 +96,12 @@ func _player_name_for_id(nm: NetworkManager, id: int) -> String:
 	if id < 0:
 		return ""
 	var name := str(id)
-	var settings = nm.lobby_settings.player_settings.get(id, null)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
+	var settings: Dictionary = nm.lobby_settings.get_player_settings(id)
+	if settings.has("username"):
 		name = str(settings["username"])
-	var is_cpu := nm.lobby_settings.cpu_player_settings.has(id)
-	if !is_cpu and typeof(settings) == TYPE_DICTIONARY:
+	var is_cpu := nm.lobby_settings.cpu_player_ids.has(id)
+	if !is_cpu:
 		is_cpu = bool(settings.get("_race_is_cpu", false))
-	if !is_cpu and nm.lobby_settings.cpu_player_settings.is_empty():
-		is_cpu = nm.lobby_settings.cpu_player_ids.has(id)
 	if is_cpu:
 		name = "[CPU] " + name
 	return name

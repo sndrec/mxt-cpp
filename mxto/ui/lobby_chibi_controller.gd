@@ -172,7 +172,7 @@ func process_lobby(_delta: float) -> void:
 		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	var roster := _human_roster()
 	for id in roster:
-		var lobby_settings: Dictionary = network_manager.lobby_settings.player_settings.get(int(id), {})
+		var lobby_settings: Dictionary = network_manager.lobby_settings.get_player_settings(int(id))
 		vehicle_content_controller.request_lobby_vehicle_content(lobby_settings)
 	var local_id: int = game_manager._local_player_id()
 	var roster_changed := roster != roster_cache
@@ -182,7 +182,7 @@ func process_lobby(_delta: float) -> void:
 			var id := int(roster[i])
 			live[id] = true
 			if !cars.has(id) or !is_instance_valid(cars[id]):
-				var settings: Dictionary = network_manager.lobby_settings.player_settings.get(id, {})
+				var settings: Dictionary = network_manager.lobby_settings.get_player_settings(id)
 				var new_car = load(LOBBY_CHIBI_CAR_SCRIPT).new()
 				new_car.name = "ChibiCar%d" % id
 				new_car.position = _spawn_position(i)
@@ -208,7 +208,7 @@ func process_lobby(_delta: float) -> void:
 			player_profiles.append(_configure_car(
 				existing_car,
 				player_id,
-				network_manager.lobby_settings.player_settings.get(player_id, {}),
+				network_manager.lobby_settings.get_player_settings(player_id),
 				player_id == local_id,
 				network_manager.lobby_settings.get_player_settings_revision(player_id),
 				false))
@@ -288,7 +288,7 @@ func refresh_vehicle_content(affected_content_ids: Array = []) -> void:
 		var car = cars[player_id]
 		if car == null or !is_instance_valid(car):
 			continue
-		var player_settings: Dictionary = network_manager.lobby_settings.player_settings.get(player_id, {})
+		var player_settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
 		if targeted_refresh and !affected_content_ids.has(String(player_settings.get("vehicle_content_id", ""))):
 			continue
 		refreshed_players.append({

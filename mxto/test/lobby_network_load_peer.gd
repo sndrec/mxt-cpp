@@ -139,9 +139,9 @@ func _run() -> void:
 	var max_settings := 0
 	while Time.get_ticks_msec() < deadline:
 		max_players = maxi(max_players, manager.player_ids.size())
-		max_settings = maxi(max_settings, manager.lobby_settings.player_settings.size())
+		max_settings = maxi(max_settings, manager.lobby_settings.get_player_settings_count())
 		if role == "host" and !race_requested:
-			if manager.player_ids.size() >= target_players and manager.lobby_settings.player_settings.size() >= target_players:
+			if manager.player_ids.size() >= target_players and manager.lobby_settings.get_player_settings_count() >= target_players:
 				if full_roster_msec == 0:
 					full_roster_msec = Time.get_ticks_msec()
 				elif Time.get_ticks_msec() - full_roster_msec >= 2000:

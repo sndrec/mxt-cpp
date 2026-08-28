@@ -144,7 +144,7 @@ func _on_player_pressed(player_id: int) -> void:
 		_update_rows()
 
 func _player_display_name(player_id: int) -> String:
-	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
+	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(player_id)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		return str(settings["username"])
 	return str(player_id)

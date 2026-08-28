@@ -160,8 +160,8 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 		preserve_ids.append_array(spectator_ids)
 		preserve_ids.append_array(waiting_peers)
 		for id in preserve_ids:
-			if lobby_settings.player_settings.has(id):
-				preserved_player_settings[id] = lobby_settings.player_settings[id]
+			if lobby_settings.has_player_settings(id):
+				preserved_player_settings[id] = lobby_settings.get_player_settings(id)
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
@@ -479,15 +479,12 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 		return
 	var new_ids: Array = []
 	for id in waiting_peers:
-		var settings = lobby_settings.player_settings.get(id, {})
-		if typeof(settings) != TYPE_DICTIONARY:
-			settings = {}
-		settings = (settings as Dictionary).duplicate(true)
+		var settings: Dictionary = lobby_settings.get_player_settings(id)
 		if force_spectator:
 			settings["spectator"] = true
 			if !settings.has("username"):
 				settings["username"] = str(id)
-			lobby_settings.player_settings[id] = settings
+			lobby_settings.set_player_settings(id, settings)
 		var spec = force_spectator or settings.get("spectator", false)
 		if spec:
 			if player_ids.has(id):
@@ -512,8 +509,8 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	for id in new_ids:
 		lobby_settings.send_cpu_roster_to_peer(id)
-		if !race_active and lobby_settings.player_settings.has(id):
-			lobby_settings.send_player_settings_to_all(lobby_settings.player_settings[id], id)
+		if !race_active and lobby_settings.has_player_settings(id):
+			lobby_settings.send_player_settings_to_all(lobby_settings.get_player_settings(id), id)
 
 func broadcast_lobby_roster() -> void:
 	if !is_server:

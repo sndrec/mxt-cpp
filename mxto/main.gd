@@ -655,13 +655,15 @@ func _start_singleplayer_race(as_spectator: bool, requested_configuration: MxtRa
 	network_manager.lobby_settings.set_cpu_driver_count(race_cpu_count)
 	network_manager.lobby_settings.set_cpu_driver_vehicle_pool(Array(configuration.cpu_vehicle_content_ids))
 	ps.spectator = as_spectator
-	network_manager.lobby_settings.player_settings[my_id] = ps.to_dict()
+	network_manager.lobby_settings.set_player_settings(my_id, ps.to_dict())
 	# Invoke the normal race startup, but driven entirely by local state
 	var settings_array: Array = [ps.to_dict()]
 	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	for i in range(cpu_ids.size()):
 		var cpu_id = cpu_ids[i]
-		var cpu_settings = network_manager.lobby_settings.player_settings.get(cpu_id, build_cpu_player_settings(i))
+		var cpu_settings: Dictionary = network_manager.lobby_settings.get_player_settings(cpu_id)
+		if cpu_settings.is_empty():
+			cpu_settings = build_cpu_player_settings(i)
 		settings_array.append(cpu_settings)
 	_close_settings_menus_for_race_start()
 	race_dnf_low_speed_ticks.clear()
@@ -783,14 +785,11 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	network_manager.spectator_ids = []
 	network_manager.lobby_settings.cpu_player_ids = cpu_ids.duplicate(true)
 	network_manager.lobby_settings.set_race_cpu_roster(cpu_ids)
-	network_manager.lobby_settings.cpu_player_settings.clear()
-	network_manager.lobby_settings.player_settings.clear()
+	network_manager.lobby_settings.clear_player_settings()
 	for index in racer_ids.size():
 		var player_id := int(racer_ids[index])
 		var player_settings: Dictionary = (settings[index] as Dictionary).duplicate(true)
-		network_manager.lobby_settings.player_settings[player_id] = player_settings
-		if index != focus_index:
-			network_manager.lobby_settings.cpu_player_settings[player_id] = player_settings
+		network_manager.lobby_settings.set_player_settings(player_id, player_settings, index != focus_index)
 	singleplayer_cpu_count = cpu_ids.size()
 	time_attack_eligibility.clear()
 	time_attack_finalized = false
@@ -1316,21 +1315,15 @@ func _initialize_grand_prix_options(configuration: MxtRaceConfiguration, options
 	return initialized
 
 func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Dictionary:
-	var settings = network_manager.lobby_settings.player_settings.get(id, null)
-	if settings == null and network_manager.lobby_settings.cpu_player_settings.has(id):
-		settings = network_manager.lobby_settings.cpu_player_settings[id]
-	if settings == null:
+	var settings: Dictionary = network_manager.lobby_settings.get_player_settings(id)
+	if settings.is_empty():
 		if network_manager.lobby_settings.cpu_player_ids.has(id):
 			settings = build_cpu_player_settings(fallback_cpu_index)
 		else:
 			var vehicle_content_id: String = vehicle_content_controller.definitions[0].content_id if vehicle_content_controller.definitions.size() > 0 else ""
 			settings = {"vehicle_content_id": vehicle_content_id, "accel_setting": 1.0, "username": str(id)}
 			settings.merge(vehicle_content_controller.get_evidence(vehicle_content_id), true)
-	var out := {}
-	if typeof(settings) == TYPE_DICTIONARY:
-		out = (settings as Dictionary).duplicate(true)
-	elif settings is PlayerSettings:
-		out = (settings as PlayerSettings).to_dict()
+	var out := settings.duplicate(true)
 	out["_race_player_id"] = id
 	out["_race_is_cpu"] = network_manager.lobby_settings.cpu_player_ids.has(id)
 	return out
@@ -1907,8 +1900,7 @@ func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 				network_manager.spectator_ids.append(id)
 		if network_manager.lobby_settings.cpu_player_ids.has(id):
 			network_manager.lobby_settings.cpu_player_ids.erase(id)
-			network_manager.lobby_settings.cpu_player_settings.erase(id)
-			network_manager.lobby_settings.player_settings.erase(id)
+			network_manager.lobby_settings.remove_player(id)
 
 func _lookup_id_value(dict: Dictionary, id: int, fallback):
 	if dict.has(id):

@@ -71,7 +71,7 @@ func _run() -> void:
 			"accel_setting": 1.0,
 		}
 		settings.merge(game_manager.vehicle_content_controller.get_evidence(definition.content_id), true)
-		game_manager.network_manager.lobby_settings.player_settings[player_id] = settings
+		game_manager.network_manager.lobby_settings.set_player_settings(player_id, settings)
 	game_manager.network_manager.player_ids = roster
 	game_manager.lobby_control.visible = true
 
@@ -96,7 +96,7 @@ func _run() -> void:
 	var steady_usec := Time.get_ticks_usec() - steady_start
 	var steady_avg_usec := float(steady_usec) / float(STEADY_FRAMES)
 	var changed_player_id := int(roster[0])
-	var changed_settings: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[changed_player_id] as Dictionary).duplicate(true)
+	var changed_settings: Dictionary = game_manager.network_manager.lobby_settings.get_player_settings(changed_player_id)
 	var replacement_definition: CarDefinition = game_manager.vehicle_content_controller.definitions[1]
 	changed_settings["vehicle_content_id"] = replacement_definition.content_id
 	changed_settings["car_livery"] = _synthetic_livery(replacement_definition.content_id, 0)
@@ -129,14 +129,14 @@ func _run() -> void:
 	var discard_count_before: int = game_manager.lobby_chibi_controller.render_build_discard_count
 	var rebuild_count_before_churn: int = game_manager.lobby_chibi_controller.render_rebuild_count_total
 	var churn_player_a := int(roster[1])
-	var churn_settings_a: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[churn_player_a] as Dictionary).duplicate(true)
+	var churn_settings_a: Dictionary = game_manager.network_manager.lobby_settings.get_player_settings(churn_player_a)
 	churn_settings_a["car_livery"] = _synthetic_livery(String(churn_settings_a["vehicle_content_id"]), 101)
 	game_manager.network_manager.lobby_settings._store_player_settings(churn_player_a, churn_settings_a)
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	game_manager.lobby_chibi_controller.render_rebuild_due_msec = 0
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var churn_player_b := int(roster[2])
-	var churn_settings_b: Dictionary = (game_manager.network_manager.lobby_settings.player_settings[churn_player_b] as Dictionary).duplicate(true)
+	var churn_settings_b: Dictionary = game_manager.network_manager.lobby_settings.get_player_settings(churn_player_b)
 	churn_settings_b["car_livery"] = _synthetic_livery(String(churn_settings_b["vehicle_content_id"]), 202)
 	game_manager.network_manager.lobby_settings._store_player_settings(churn_player_b, churn_settings_b)
 	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)

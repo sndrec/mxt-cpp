@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 #include <cstdint>
@@ -53,6 +54,7 @@ private:
 		float accel_setting = 1.0f;
 		int32_t stickers[4] = {0, 1, 2, 3};
 		uint8_t flags = 0;
+		uint32_t revision = 1;
 		Livery livery;
 	};
 
@@ -61,6 +63,7 @@ private:
 
 	bool parse_entry(int64_t player_id, int64_t network_peer_id, uint8_t flags, const Dictionary &settings, Entry &out);
 	Dictionary entry_dictionary(const Entry &entry) const;
+	bool entries_equal(const Entry &a, const Entry &b) const;
 
 protected:
 	static void _bind_methods();
@@ -80,13 +83,18 @@ public:
 	bool append_settings(int64_t player_id, int64_t network_peer_id, bool cpu, bool bumper, bool disconnected, const Dictionary &settings);
 	bool upsert_settings(int64_t player_id, int64_t network_peer_id, bool cpu, bool bumper, bool disconnected, const Dictionary &settings);
 	bool remove_player(int64_t player_id);
+	bool replace_player_id(int64_t old_player_id, int64_t new_player_id, int64_t network_peer_id);
 	int32_t find_player(int64_t player_id) const;
+	bool has_player(int64_t player_id) const { return find_player(player_id) >= 0; }
+	PackedInt64Array get_player_ids() const;
 	int64_t get_player_id(int32_t index) const;
 	int64_t get_network_peer_id(int32_t index) const;
 	bool is_cpu(int32_t index) const;
 	bool is_bumper(int32_t index) const;
 	bool is_spectator(int32_t index) const;
 	bool is_disconnected(int32_t index) const;
+	int32_t get_revision(int64_t player_id) const;
+	bool set_accel_setting(int64_t player_id, float value);
 	Dictionary get_settings_dictionary(int32_t index) const;
 	Dictionary get_player_settings_dictionary(int64_t player_id) const;
 	String get_last_error() const { return last_error; }
