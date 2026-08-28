@@ -26,8 +26,8 @@ func _run() -> void:
 	if !practice.session_active or !practice.timeline_enabled \
 			or game_manager.game_sim.get_target_lap_count() != 99 \
 			or !game_manager.game_sim.get_boost_unlocked_from_start() \
-			or !game_manager.replay_controller.replay_recording_active \
-			or game_manager.replay_controller.replay_recording_source != "practice":
+			or !game_manager.replay_recorder.active \
+			or game_manager.replay_recorder.source != "practice":
 		_fail("finite Practice did not start with its exact policy")
 		return
 	practice._set_game_speed_index(10)
@@ -71,11 +71,11 @@ func _run() -> void:
 		_fail("frame-step continuation after Exact Input rewind did not replace the canonical future")
 		return
 	var export_dir := ProjectSettings.globalize_path("user://practice_smoke_exports")
-	var first_export := game_manager.replay_controller._write_replay_recording("practice_smoke", export_dir)
-	var second_export := game_manager.replay_controller._write_replay_recording("practice_smoke", export_dir)
+	var first_export := game_manager.replay_recorder._write("practice_smoke", export_dir)
+	var second_export := game_manager.replay_recorder._write("practice_smoke", export_dir)
 	if first_export.is_empty() or second_export.is_empty() or first_export == second_export \
 			or !FileAccess.file_exists(first_export) or !FileAccess.file_exists(second_export) \
-			or practice.canonical_frame_count() != 50 or !game_manager.replay_controller.replay_recording_active:
+			or practice.canonical_frame_count() != 50 or !game_manager.replay_recorder.active:
 		_fail("repeatable partial export mutated the live canonical timeline")
 		return
 	DirAccess.remove_absolute(first_export)
@@ -124,7 +124,7 @@ func _run() -> void:
 	practice = game_manager.practice_controller
 	if !practice.session_active or practice.timeline_enabled \
 			or game_manager.game_sim.get_target_lap_count() != 0 \
-			or game_manager.replay_controller.replay_recording_active:
+			or game_manager.replay_recorder.active:
 		_fail("Infinite Practice retained replay state or lost its lap policy")
 		return
 	for _tick in range(120):

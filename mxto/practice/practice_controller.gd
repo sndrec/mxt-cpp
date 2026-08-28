@@ -709,7 +709,7 @@ func _capture_companion_record(next_tick: int) -> Dictionary:
 		"next_tick": next_tick,
 		"race_results": game_manager.network_manager.race_results.capture_practice_state(),
 		"race_dnf_low_speed_ticks": game_manager.race_dnf_low_speed_ticks.duplicate(true),
-		"time_attack_finalized": game_manager.time_attack_finalized,
+		"time_attack_finalized": game_manager.time_attack_session_controller.finalized,
 		"practice_completed": session_completed,
 		"timeline_cursor": timeline.cursor() if timeline_enabled else 0,
 	}
@@ -720,7 +720,8 @@ func _restore_companion_record(record: Dictionary) -> void:
 	game_manager.network_manager.input_transport.clients_server_tick = game_manager._singleplayer_tick
 	game_manager.network_manager.race_results.restore_practice_state(record.get("race_results", {}))
 	game_manager.race_dnf_low_speed_ticks = (record.get("race_dnf_low_speed_ticks", {}) as Dictionary).duplicate(true)
-	game_manager.time_attack_finalized = bool(record.get("time_attack_finalized", false))
+	game_manager.time_attack_session_controller.finalized = bool(
+		record.get("time_attack_finalized", false))
 	session_completed = bool(record.get("practice_completed", false))
 	if timeline_enabled:
 		var timeline_cursor := int(record.get("timeline_cursor", timeline.cursor()))

@@ -12,7 +12,6 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 @onready var race_presentation_controller: RacePresentationControllerClass = get_node("../RacePresentationController") as RacePresentationControllerClass
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
 @onready var race_session_controller: RaceSessionControllerClass = get_node("../RaceSessionController") as RaceSessionControllerClass
-@onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
 const DEBUG_REPLAY_VERSION := 2
 const REPLAY_SCHEMA_VERSION := 5
@@ -56,14 +55,6 @@ var debug_replay_playback_index: int = 0
 var debug_replay_autoload_path: String = ""
 var debug_replay_loaded_path: String = ""
 var replay_autoload_path: String = ""
-var replay_recording_active: bool = false
-var replay_recording_saved: bool = false
-var replay_recording_source: String = ""
-var replay_recording_metadata: MxtReplayRunMetadata = MxtReplayRunMetadata.new()
-var replay_recording_racer_ids: Array = []
-var replay_recording_cpu_flags: Array = []
-var replay_recording_stream: MxtReplayStream = MxtReplayStream.new()
-var replay_recording_staged_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
 var replay_playback_stream: MxtReplayStream
@@ -150,11 +141,6 @@ var replay_timeline_marker_last_size := Vector2(-1.0, -1.0)
 func initialize() -> void:
 	_build_replay_timeline_controls()
 	reload_input_calibration()
-	if race_pause_save_replay_button != null and !race_pause_save_replay_button.pressed.is_connected(_on_pause_save_replay_pressed):
-		race_pause_save_replay_button.pressed.connect(_on_pause_save_replay_pressed)
-	if !game_manager.network_manager.input_transport.authoritative_server_frame.is_connected(record_frame):
-		game_manager.network_manager.input_transport.authoritative_server_frame.connect(record_frame)
-	refresh_pause_button()
 
 func _ensure_replay_interface_layer() -> CanvasLayer:
 	if replay_interface_layer != null and is_instance_valid(replay_interface_layer):
@@ -272,19 +258,9 @@ func record_debug_input(input_bytes: PackedByteArray) -> void:
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
 
-func record_singleplayer_frame(tick: int) -> void:
-	if !replay_recording_active:
-		return
-	if game_manager.practice_controller.session_active:
-		game_manager.practice_controller.append_canonical_game_sim_frame(game_manager.game_sim, tick)
-		return
-	if !replay_recording_stream.append_game_sim_frame(game_manager.game_sim, tick):
-		push_error("Replay recording rejected native frame %d: %s" % [tick, replay_recording_stream.get_last_error()])
-
-func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
+func reset_playback_for_transition() -> void:
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
-	stop_recording(save_multiplayer_host_replay)
 	debug_replay_playback = false
 	replay_playback_active = false
 	_apply_replay_hud_visibility()
@@ -302,8 +278,6 @@ func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	replay_input_display_frame_inputs = {}
 	_refresh_replay_input_display()
 	replay_start_grid_slots = PackedInt32Array()
-	_clear_recording_payload()
-	replay_recording_staged_path = ""
 	_clear_playback_payload()
 	debug_replay_inputs.clear()
 	debug_replay_playback_inputs.clear()
@@ -341,12 +315,6 @@ func detach_playback_for_practice() -> bool:
 	return true
 
 
-func _clear_recording_payload() -> void:
-	replay_recording_metadata = MxtReplayRunMetadata.new()
-	replay_recording_racer_ids.clear()
-	replay_recording_cpu_flags.clear()
-	replay_recording_stream = MxtReplayStream.new()
-
 func _clear_playback_payload() -> void:
 	replay_playback_stream = null
 	replay_playback_source_metadata = MxtReplayRunMetadata.new()
@@ -362,117 +330,21 @@ func _clear_playback_payload() -> void:
 	replay_playback_source_bytes = 0
 
 func get_memory_usage_stats() -> Dictionary:
-	var practice_recording := game_manager.practice_controller.session_active \
-		and game_manager.practice_controller.timeline_enabled
-	return {
-		"recording_frames": game_manager.practice_controller.canonical_frame_count() if practice_recording else replay_recording_stream.frame_count(),
-		"recording_input_bytes": game_manager.practice_controller.canonical_input_byte_count() if practice_recording else replay_recording_stream.input_byte_count(),
+	var stats := game_manager.replay_recorder.memory_usage_stats()
+	stats.merge({
 		"playback_frames": _playback_frame_count(),
 		"playback_source_bytes": replay_playback_source_bytes,
 		"seek_checkpoint_count": replay_seek_checkpoints.size(),
 		"seek_checkpoint_bytes": replay_seek_checkpoint_bytes,
 		"debug_recording_frames": debug_replay_inputs.size(),
 		"debug_playback_frames": debug_replay_playback_inputs.size(),
-	}
+	})
+	return stats
 
 func update(delta: float) -> void:
 	_update_replay_auto_camera(delta)
 	_update_replay_relative_camera(delta)
 	_update_replay_timeline_controls()
-
-func _on_pause_save_replay_pressed() -> void:
-	var saved_path := save_practice_snapshot_locally() \
-		if game_manager.practice_controller.session_active else save_replay_locally()
-	if saved_path != "":
-		race_presentation_controller.show_notification("Replay Saved", 2200)
-	refresh_pause_button()
-
-func finish_recording() -> void:
-	replay_recording_active = false
-	refresh_pause_button()
-
-func can_save_replay_locally() -> bool:
-	if !game_manager.singleplayer_mode:
-		return false
-	if game_manager.practice_controller.session_active:
-		return game_manager.practice_controller.timeline_enabled \
-			and game_manager.practice_controller.canonical_frame_count() > 0
-	return !replay_recording_saved and replay_recording_stream.frame_count() > 0
-
-func save_replay_locally() -> String:
-	if !can_save_replay_locally():
-		return ""
-	if game_manager.practice_controller.session_active:
-		return save_practice_snapshot_locally()
-	var path := _write_replay_recording("manual", _replay_dir())
-	if path.is_empty():
-		return ""
-	replay_recording_saved = true
-	replay_recording_active = false
-	_clear_recording_payload()
-	refresh_pause_button()
-	return path
-
-
-func save_practice_snapshot_locally() -> String:
-	if !game_manager.singleplayer_mode \
-			or !game_manager.practice_controller.session_active \
-			or !game_manager.practice_controller.timeline_enabled \
-			or game_manager.practice_controller.canonical_frame_count() <= 0:
-		return ""
-	return _write_replay_recording("practice_snapshot", _replay_dir())
-
-func stage_completed_time_attack_replay(for_submission: bool) -> String:
-	var configuration := game_manager.network_manager.race_configuration
-	if (!configuration.is_time_attack() and !configuration.is_practice()) \
-		or for_submission != configuration.is_time_attack():
-		return ""
-	finish_recording()
-	replay_recording_staged_path = _write_replay_recording(
-		"time_attack_submission" if for_submission else "time_attack_preview",
-		ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT))
-	if !replay_recording_staged_path.is_empty():
-		_clear_recording_payload()
-	return replay_recording_staged_path
-
-func _staged_replay_local_path(path: String) -> String:
-	if path.is_empty():
-		return ""
-	var staging_root := ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT).simplify_path().to_lower()
-	var absolute_path := ProjectSettings.globalize_path(path).simplify_path()
-	var lower_path := absolute_path.to_lower()
-	if !lower_path.begins_with(staging_root + "/") and !lower_path.begins_with(staging_root + "\\"):
-		return ""
-	return _replay_dir().path_join(absolute_path.get_file())
-
-func can_save_staged_replay_locally(path: String) -> bool:
-	var local_path := _staged_replay_local_path(path)
-	return !local_path.is_empty() and FileAccess.file_exists(path) and !FileAccess.file_exists(local_path)
-
-func save_staged_replay_locally(path: String) -> String:
-	var local_path := _staged_replay_local_path(path)
-	if local_path.is_empty() or !FileAccess.file_exists(path):
-		return ""
-	if FileAccess.file_exists(local_path):
-		return local_path
-	if DirAccess.make_dir_recursive_absolute(_replay_dir()) != OK:
-		return ""
-	if DirAccess.copy_absolute(ProjectSettings.globalize_path(path), local_path) != OK:
-		return ""
-	if game_manager.replay_catalog_controller.is_open():
-		game_manager.replay_catalog_controller.refresh()
-	_refresh_replay_timeline_save_local_button()
-	return local_path
-
-func _replay_dir() -> String:
-	return ProjectSettings.globalize_path("user://replays")
-
-func _replay_make_stamp() -> String:
-	return Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
-
-func _replay_engine_version() -> String:
-	var engine_version: Dictionary = Engine.get_version_info()
-	return str(engine_version.get("string", ""))
 
 func _replay_is_compatible(data: Dictionary) -> bool:
 	if !_replay_schema_is_supported(data):
@@ -485,184 +357,6 @@ func _replay_is_compatible(data: Dictionary) -> bool:
 
 func _replay_schema_is_supported(data: Dictionary) -> bool:
 	return int(data.get("schema_version", -1)) == REPLAY_SCHEMA_VERSION
-
-func _replay_mode_name() -> String:
-	if !game_manager.singleplayer_mode:
-		return "Multiplayer"
-	if game_manager.network_manager.race_configuration.is_practice():
-		return "Practice"
-	if game_manager.network_manager.lobby_settings.get_cpu_roster().is_empty():
-		return "Time Attack"
-	return "CPU Race"
-
-func _replay_should_record_current_race() -> bool:
-	if replay_playback_active:
-		return false
-	if game_manager.network_manager.race_configuration.is_practice() \
-		and game_manager.network_manager.race_configuration.lap_count == 0:
-		return false
-	if game_manager.singleplayer_mode:
-		return true
-	return game_manager.network_manager.is_server
-
-func start_recording(track_index: int, race_roster: MxtRaceRoster, start_grid_slots: PackedInt32Array) -> void:
-	stop_recording()
-	_clear_recording_payload()
-	replay_recording_staged_path = ""
-	if !_replay_should_record_current_race() or race_roster == null:
-		return
-	var practice_session := game_manager.network_manager.race_configuration.is_practice()
-	replay_recording_source = "practice" if practice_session else ("singleplayer" if game_manager.singleplayer_mode else "server")
-	var normalized_roster := MxtRaceRoster.new()
-	for index in race_roster.count():
-		var settings: Dictionary = _settings_with_vehicle_content_evidence(race_roster.get_settings_dictionary(index))
-		var player_id: int = race_roster.get_player_id(index)
-		if !normalized_roster.append_settings(player_id, player_id, race_roster.is_cpu(index), false, false, settings):
-			push_error("Replay recording roster rejected: %s" % normalized_roster.get_last_error())
-			return
-		replay_recording_racer_ids.append(player_id)
-		replay_recording_cpu_flags.append(race_roster.is_cpu(index))
-	replay_recording_stream = MxtReplayStream.new()
-	replay_recording_stream.begin_recording(replay_recording_racer_ids, replay_recording_cpu_flags)
-	if !replay_recording_stream.get_last_error().is_empty():
-		push_error("Replay recording roster rejected: %s" % replay_recording_stream.get_last_error())
-		return
-	replay_recording_active = true
-	replay_recording_saved = false
-	if practice_session:
-		game_manager.practice_controller.configure_timeline_roster(replay_recording_racer_ids, replay_recording_cpu_flags)
-	var track_content_id := game_manager.track_content_controller.track_id_for_index(track_index)
-	var track_record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(track_content_id)
-	replay_recording_metadata.schema_version = REPLAY_SCHEMA_VERSION
-	replay_recording_metadata.build = GameVersionData.display_string()
-	replay_recording_metadata.game_version_major = GameVersionData.MAJOR
-	replay_recording_metadata.game_version_compatibility = GameVersionData.COMPATIBILITY
-	replay_recording_metadata.game_version_patch = GameVersionData.PATCH
-	replay_recording_metadata.engine_version = _replay_engine_version()
-	replay_recording_metadata.created_unix = int(Time.get_unix_time_from_system())
-	replay_recording_metadata.name = "%s %s" % [_current_track_name(), _replay_make_stamp()]
-	replay_recording_metadata.mode = _replay_mode_name()
-	replay_recording_metadata.source = replay_recording_source
-	replay_recording_metadata.track_content_id = track_content_id
-	replay_recording_metadata.track_gameplay_digest = game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
-	replay_recording_metadata.track_package_digest = track_record.package_digest if track_record != null else ""
-	replay_recording_metadata.track_workshop_id = str(track_record.published_file_id) if track_record != null and track_record.published_file_id > 0 else ""
-	replay_recording_metadata.track_name = _current_track_name()
-	replay_recording_metadata.roster = normalized_roster
-	replay_recording_metadata.start_grid_slots = start_grid_slots
-	replay_recording_metadata.spawn_seed = game_manager.network_manager.spawn_seed
-	replay_recording_metadata.set_race_metadata(game_manager.network_manager.race_metadata_dictionary())
-	replay_recording_metadata.runtime_auto_accelerate = debug_runtime_controller.auto_accelerate
-	replay_recording_metadata.runtime_auto_bumpers = game_manager.auto_bumpers_mode
-	replay_recording_metadata.runtime_debug_bumper_smoke = debug_runtime_controller.bumper_smoke_enabled
-	replay_recording_metadata.runtime_debug_rail_trace = debug_runtime_controller.rail_trace_enabled
-	refresh_pause_button()
-
-func _settings_with_vehicle_content_evidence(settings: Dictionary) -> Dictionary:
-	var output := settings.duplicate(true)
-	var content_id := String(output.get("vehicle_content_id", ""))
-	var record: MxtContentRecord = vehicle_content_controller.content_catalog.resolve_content(content_id)
-	output["vehicle_gameplay_digest"] = record.gameplay_digest if record != null else ""
-	var package_digest := record.package_digest if record != null else ""
-	if !package_digest.is_empty():
-		output["vehicle_package_digest"] = package_digest
-	var published_file_id := str(record.published_file_id) if record != null and record.published_file_id > 0 else ""
-	if !published_file_id.is_empty():
-		output["vehicle_workshop_id"] = published_file_id
-	return output
-
-func _settings_array_with_vehicle_content_evidence(settings: Array) -> Array:
-	var output: Array = []
-	for settings_value in settings:
-		if typeof(settings_value) == TYPE_DICTIONARY:
-			output.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
-	return output
-
-func _race_roster_from_settings(settings: Array, racer_ids: Array, cpu_flags: Array) -> MxtRaceRoster:
-	if settings.size() != racer_ids.size():
-		push_error("Replay roster settings do not match the recorded racer IDs.")
-		return null
-	var roster := MxtRaceRoster.new()
-	for index in settings.size():
-		if typeof(settings[index]) != TYPE_DICTIONARY:
-			push_error("Replay roster contains malformed player settings.")
-			return null
-		var player_id := int(racer_ids[index])
-		var is_cpu := index < cpu_flags.size() and bool(cpu_flags[index])
-		if !roster.append_settings(player_id, player_id, is_cpu, false, false, settings[index]):
-			push_error("Replay roster conversion failed: %s" % roster.get_last_error())
-			return null
-	return roster
-
-func stop_recording(save_multiplayer_host_replay := false) -> void:
-	if save_multiplayer_host_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
-		var saved_path := _write_replay_recording("auto", _replay_dir())
-		if !saved_path.is_empty():
-			replay_recording_saved = true
-	replay_recording_active = false
-
-func refresh_pause_button() -> void:
-	if race_pause_save_replay_button == null:
-		return
-	var active_practice := game_manager.practice_controller.session_active \
-		and game_manager.practice_controller.timeline_enabled
-	var can_save := can_save_replay_locally() and (active_practice \
-		or game_manager.network_manager.race_results.net_race_finish_time != -1)
-	race_pause_save_replay_button.text = "Save Current Replay" if active_practice else "Save Replay"
-	race_pause_save_replay_button.visible = can_save
-	race_pause_save_replay_button.disabled = !can_save
-
-func record_frame(tick: int) -> void:
-	if !replay_recording_active or replay_recording_saved:
-		return
-	if !replay_recording_stream.append_game_sim_frame(game_manager.network_manager.server_game_sim, tick):
-		push_error("Replay recording rejected authoritative frame %d." % tick)
-
-func _write_replay_recording(reason: String, replay_dir: String) -> String:
-	var export_stream := _recording_stream_for_export()
-	if export_stream == null or export_stream.frame_count() <= 0:
-		return ""
-	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
-	if err != OK:
-		push_warning("Replay save failed: could not create %s err=%s" % [replay_dir, str(err)])
-		return ""
-	var run_metadata := replay_recording_metadata.copy()
-	run_metadata.saved_reason = reason
-	run_metadata.duration_ticks = export_stream.frame_count()
-	run_metadata.set_results(
-		game_manager.network_manager.race_results.player_finish_times,
-		game_manager.network_manager.race_results.player_finish_placements,
-		game_manager.network_manager.race_results.player_eliminations)
-	var metadata: Dictionary = run_metadata.to_dictionary()
-	var safe_track := run_metadata.track_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
-	var path := _unique_replay_path(replay_dir, safe_track)
-	var temporary_path := path + ".tmp"
-	if !export_stream.write_file(temporary_path, metadata):
-		push_warning("Replay save failed: %s" % export_stream.get_last_error())
-		return ""
-	if DirAccess.rename_absolute(temporary_path, path) != OK:
-		DirAccess.remove_absolute(temporary_path)
-		push_warning("Replay save failed while committing %s" % path)
-		return ""
-	var saved_frame_count := export_stream.frame_count()
-	print("MXT_REPLAY saved ", path, " frames=", saved_frame_count)
-	return path
-
-
-func _recording_stream_for_export() -> MxtReplayStream:
-	if game_manager.practice_controller.session_active and game_manager.practice_controller.timeline_enabled:
-		return game_manager.practice_controller.canonical_stream()
-	return replay_recording_stream
-
-
-func _unique_replay_path(replay_dir: String, safe_track: String) -> String:
-	var basename := "mxt_%s_%s" % [safe_track, _replay_make_stamp()]
-	var path := replay_dir.path_join(basename + REPLAY_FILE_SUFFIX)
-	var suffix := 2
-	while FileAccess.file_exists(path):
-		path = replay_dir.path_join("%s_%d%s" % [basename, suffix, REPLAY_FILE_SUFFIX])
-		suffix += 1
-	return path
 
 func _load_replay_file(path: String) -> Dictionary:
 	if !FileAccess.file_exists(path):
@@ -1115,14 +809,14 @@ func _format_replay_timeline_time(tick_value: int) -> String:
 func _refresh_replay_timeline_save_local_button() -> void:
 	if replay_timeline_save_local_button == null:
 		return
-	var local_path := _staged_replay_local_path(replay_playback_loaded_path)
+	var local_path := game_manager.replay_recorder.staged_local_path(replay_playback_loaded_path)
 	replay_timeline_save_local_button.visible = !local_path.is_empty()
 	var already_saved := !local_path.is_empty() and FileAccess.file_exists(local_path)
 	replay_timeline_save_local_button.disabled = already_saved
 	replay_timeline_save_local_button.text = "Saved Locally" if already_saved else "Save Replay Locally"
 
 func _on_replay_timeline_save_local_pressed() -> void:
-	var saved_path := save_staged_replay_locally(replay_playback_loaded_path)
+	var saved_path := game_manager.replay_recorder.save_staged_locally(replay_playback_loaded_path)
 	if saved_path.is_empty():
 		race_presentation_controller.show_notification("Replay could not be saved", 3000)
 		return
@@ -1649,7 +1343,8 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	var profile_race_start_us := Time.get_ticks_usec()
 	game_manager._close_settings_menus_for_race_start()
 	game_manager.race_dnf_low_speed_ticks.clear()
-	var race_roster: MxtRaceRoster = _race_roster_from_settings(settings as Array, replay_playback_racer_ids, replay_playback_cpu_flags)
+	var race_roster: MxtRaceRoster = game_manager.replay_recorder.race_roster_from_settings(
+		settings as Array, replay_playback_racer_ids, replay_playback_cpu_flags)
 	if race_roster == null:
 		return
 	race_session_controller.start_race(track_index, race_roster, game_manager.singleplayer_mode, game_manager.headless_mode)
@@ -2251,7 +1946,8 @@ func _stop_and_save_debug_replay_recording() -> void:
 		"track_package_digest": track_record.package_digest if track_record != null else "",
 		"track_workshop_id": str(track_record.published_file_id) if track_record != null and track_record.published_file_id > 0 else "",
 		"track_name": _current_track_name(),
-		"settings": _settings_array_with_vehicle_content_evidence(race_session_controller.last_race_settings),
+		"settings": game_manager.replay_recorder.settings_array_with_vehicle_content_evidence(
+			race_session_controller.last_race_settings),
 		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,
 		"spawn_seed": game_manager.network_manager.spawn_seed,
 		"snapshot_tick": debug_replay_snapshot_tick,
@@ -2259,7 +1955,8 @@ func _stop_and_save_debug_replay_recording() -> void:
 		"inputs_b64": input_b64,
 	}
 	var safe_track := _current_track_name().replace("/", "_").replace("\\", "_").replace(" ", "_")
-	var path := replay_dir.path_join("mxt_%s_%s.json" % [safe_track, _replay_make_stamp()])
+	var timestamp := Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
+	var path := replay_dir.path_join("mxt_%s_%s.json" % [safe_track, timestamp])
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		print("MXT_DEBUG_REPLAY save failed: ", FileAccess.get_open_error())
@@ -2357,7 +2054,8 @@ func _load_and_start_debug_replay(path: String) -> void:
 	var debug_cpu_flags: Array = [false]
 	for _cpu_id in cpu_ids:
 		debug_cpu_flags.append(true)
-	var race_roster: MxtRaceRoster = _race_roster_from_settings(settings, debug_racer_ids, debug_cpu_flags)
+	var race_roster: MxtRaceRoster = game_manager.replay_recorder.race_roster_from_settings(
+		settings, debug_racer_ids, debug_cpu_flags)
 	if race_roster == null:
 		game_manager._return_to_menu()
 		return

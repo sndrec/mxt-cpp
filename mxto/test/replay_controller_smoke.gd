@@ -63,24 +63,28 @@ func _run() -> void:
 		if game_manager.get_viewport().get_camera_3d() == null:
 			_fail("camera mode %d did not select a camera" % camera_mode)
 			return
-	replay._build_replay_catalog()
-	replay._refresh_replay_catalog()
-	if replay.replay_catalog_root == null or replay.replay_catalog_list == null:
+	var catalog := game_manager.replay_catalog_controller as ReplayCatalogController
+	catalog._build()
+	catalog.refresh()
+	if catalog.root == null or catalog.replay_list == null:
 		_fail("catalog UI was not constructed")
 		return
-	if replay.replay_catalog_entries.is_empty():
+	if catalog.entries.is_empty():
 		_fail("catalog did not discover replay metadata")
 		return
-	replay.replay_recording_stream = MxtReplayStream.new()
-	replay.replay_recording_stream.begin_recording([77], [false])
-	replay.replay_recording_active = true
-	replay.replay_recording_saved = false
+	var recorder := game_manager.replay_recorder as ReplayRecorder
+	recorder.stream = MxtReplayStream.new()
+	recorder.stream.begin_recording([77], [false])
+	recorder.active = true
+	recorder.saved = false
 	var frame_input := PackedByteArray([0])
-	replay.record_frame(0, {77: frame_input})
-	if replay.replay_recording_stream.frame_count() != 1:
+	if !recorder.stream.append_frame_inputs(0, {77: frame_input}):
+		_fail("authoritative frame could not be encoded")
+		return
+	if recorder.stream.frame_count() != 1:
 		_fail("authoritative frame was not recorded")
 		return
-	replay.replay_recording_active = false
+	recorder.active = false
 	replay.debug_replay_inputs.clear()
 	replay.debug_replay_recording = true
 	replay.record_debug_input(frame_input)
@@ -90,7 +94,7 @@ func _run() -> void:
 	replay.debug_replay_recording = false
 	print("MXT_REPLAY_CONTROLLER_SMOKE_OK frames=", total_ticks,
 		" seek_tick=", seek_tick,
-		" catalog_entries=", replay.replay_catalog_entries.size())
+		" catalog_entries=", catalog.entries.size())
 	game_manager.queue_free()
 	await process_frame
 	quit(0)

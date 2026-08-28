@@ -123,14 +123,14 @@ func _run_race(track_index: int, racer_count: int, sample_index: int, max_ticks:
 	game_manager._check_race_finished()
 	var finished_count := game_manager.game_sim.get_finished_player_ids().size()
 	if finished_count < racer_count:
-		game_manager.replay_controller.finish_recording()
+		game_manager.replay_recorder.finish()
 		return {
 			"success": false,
 			"error": "race hit the tick cap",
 			"ticks": ticks_run,
 			"finished": finished_count,
 		}
-	var metadata := game_manager.replay_controller.replay_recording_metadata
+	var metadata := game_manager.replay_recorder.metadata
 	metadata.name = "Replay Catalog Benchmark - %03d racers - %02d" % [racer_count, sample_index]
 	metadata.benchmark_suite = SUITE_ID
 	metadata.benchmark_racer_count = racer_count
@@ -139,7 +139,7 @@ func _run_race(track_index: int, racer_count: int, sample_index: int, max_ticks:
 	metadata.benchmark_generation_ticks = ticks_run
 	metadata.benchmark_generation_usec = Time.get_ticks_usec() - race_start_usec
 	var save_start_usec := Time.get_ticks_usec()
-	var replay_path: String = game_manager.replay_controller.save_replay_locally()
+	var replay_path: String = game_manager.replay_recorder.save_locally()
 	var save_usec := Time.get_ticks_usec() - save_start_usec
 	if replay_path.is_empty():
 		return {"success": false, "error": "replay save failed", "ticks": ticks_run}
@@ -211,9 +211,9 @@ func _run() -> void:
 				" path=", result.get("path", ""))
 			game_manager._return_to_menu()
 			await process_frame
-	game_manager.replay_controller._build_replay_catalog()
+	game_manager.replay_catalog_controller._build()
 	var catalog_start_usec := Time.get_ticks_usec()
-	game_manager.replay_controller._refresh_replay_catalog()
+	game_manager.replay_catalog_controller.refresh()
 	var catalog_usec := Time.get_ticks_usec() - catalog_start_usec
 	print(
 		"MXT_REPLAY_BENCHMARK_COMPLETE requested=", requested_count,

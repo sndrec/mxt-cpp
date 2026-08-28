@@ -93,7 +93,7 @@ func _run() -> void:
 		return
 	if !game_manager.network_manager.race_configuration.is_practice() \
 			or game_manager.network_manager.race_configuration.leaderboard_eligible \
-			or game_manager.replay_controller.replay_recording_source != "practice" \
+			or game_manager.replay_recorder.source != "practice" \
 			or practice.game_speed() != 0.0:
 		_fail("resumed Practice policy was not applied")
 		return

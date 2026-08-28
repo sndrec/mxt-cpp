@@ -192,7 +192,7 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 	_configure_game_sim(game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
 	race_audio_controller.configure_vehicle_properties(chosen_definitions)
 	network_manager.input_transport.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
-	replay_controller.start_recording(track_index, active_roster, start_grid_slots)
+	game_root.replay_recorder.start(track_index, active_roster, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	race_presentation_controller.configure_race(local_player_id, local_player_index, singleplayer_mode, nametag_names)
@@ -255,7 +255,8 @@ func reconfigure_practice_control(focused_player_id: int, cpu_flags: Array) -> b
 
 func begin_transition(singleplayer_mode: bool, audio_fade_seconds := 0.0) -> void:
 	race_audio_controller.leave_race(audio_fade_seconds)
-	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
+	game_root.replay_recorder.reset(network_manager.is_server and !singleplayer_mode)
+	replay_controller.reset_playback_for_transition()
 
 func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -> void:
 	race_presentation_controller.reset()

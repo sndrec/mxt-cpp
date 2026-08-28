@@ -24,6 +24,7 @@ var lobby_button: Button
 var disconnect_button: Button
 var practice_controller: PracticeController
 var replay_controller: ReplayController
+var replay_recorder: ReplayRecorder
 var options_menu: Control
 var open := false
 var options_open := false
@@ -35,10 +36,12 @@ func initialize(
 		in_root: Control,
 		in_practice_controller: PracticeController,
 		in_replay_controller: ReplayController,
+		in_replay_recorder: ReplayRecorder,
 		in_options_menu: Control) -> void:
 	root = in_root
 	practice_controller = in_practice_controller
 	replay_controller = in_replay_controller
+	replay_recorder = in_replay_recorder
 	options_menu = in_options_menu
 	title = root.get_node("Center/Panel/Box/RacePauseTitle")
 	resume_button = root.get_node("Center/Panel/Box/ResumeButton")
@@ -75,7 +78,7 @@ func open_for_race(configuration: MxtRaceConfiguration, singleplayer: bool, host
 	disconnect_button.text = "Exit To Main Menu" if singleplayer else "Disconnect"
 	if practice:
 		practice_controller.set_pause_freeze(true)
-	replay_controller.refresh_pause_button()
+	replay_recorder.refresh_pause_button()
 	_reset_navigation()
 	resume_button.grab_focus()
 

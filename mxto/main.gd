@@ -38,6 +38,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var time_attack_session_controller: TimeAttackSessionController = $TimeAttackSessionController
 @onready var grand_prix_session_controller: GrandPrixSessionController = $GrandPrixSessionController
 @onready var replay_catalog_controller: ReplayCatalogController = $ReplayCatalogController
+@onready var replay_recorder: ReplayRecorder = $ReplayRecorder
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -220,6 +221,8 @@ func _ready() -> void:
 	grand_prix_session_controller.initialize(network_manager)
 	replay_catalog_controller.initialize()
 	replay_catalog_controller.watch_requested.connect(replay_controller.play_replay_file)
+	replay_recorder.initialize()
+	replay_recorder.staged_replay_saved.connect(replay_controller._refresh_replay_timeline_save_local_button)
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -274,7 +277,11 @@ func _ready() -> void:
 	race_pause_controller.name = "RacePauseController"
 	add_child(race_pause_controller)
 	race_pause_controller.initialize(
-		$RacePauseLayer/RacePauseRoot, practice_controller, replay_controller, options_menu)
+		$RacePauseLayer/RacePauseRoot,
+		practice_controller,
+		replay_controller,
+		replay_recorder,
+		options_menu)
 	race_pause_controller.retry_requested.connect(_on_pause_retry_pressed)
 	race_pause_controller.disconnect_requested.connect(_on_pause_disconnect_pressed)
 	race_pause_controller.lobby_requested.connect(_on_pause_lobby_pressed)
@@ -802,7 +809,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		race_presentation_controller.show_notification("Replay resume failed while rebuilding its racer roster.", 5000)
 		_return_to_menu()
 		return
-	replay_controller.start_recording(track_index, resumed_roster, exact_grid)
+	replay_recorder.start(track_index, resumed_roster, exact_grid)
 	if !practice_controller.begin_resumed_session(configuration, focused_player_id, replay_stream_value as MxtReplayStream, canonical_prefix_count, transition_start_usec):
 		race_presentation_controller.show_notification("Replay resume failed while restoring its canonical timeline.", 5000)
 		_return_to_menu()
@@ -1453,7 +1460,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
 	if time_attack_ghost_controller != null:
 		time_attack_ghost_controller.tick(tick_to_record)
-	replay_controller.record_singleplayer_frame(tick_to_record)
+	replay_recorder.record_singleplayer_frame(tick_to_record)
 	_singleplayer_tick += 1
 	if debug_runtime_controller.bumper_smoke_enabled and _singleplayer_tick % 120 == 0 and game_sim.has_method("get_bumper_debug_string"):
 		print("MXT_BUMPER_SMOKE tick=", _singleplayer_tick, " ", game_sim.get_bumper_debug_string())
@@ -1891,7 +1898,7 @@ func _process(delta: float) -> void:
 	race_presentation_controller.update()
 	debug_runtime_controller.update_labels(lobby_control.visible)
 	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
-		replay_controller.refresh_pause_button()
+		replay_recorder.refresh_pause_button()
 	if game_sim.sim_started:
 		spectator_controller.update_finished_input()
 		var profile_visuals_start := Time.get_ticks_usec() if profile_enabled else 0

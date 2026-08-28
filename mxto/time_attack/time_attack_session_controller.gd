@@ -89,14 +89,14 @@ func finalize_ranked(local_player_id: int) -> void:
 	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_player_id, -1))
 	var start_tick := presentation_controller.race_results_start_tick()
 	presentation_controller.update_time_attack_submission_status("Preparing verification replay…")
-	last_replay_path = replay_controller.stage_completed_time_attack_replay(true)
+	last_replay_path = game_manager.replay_recorder.stage_completed_time_attack(true)
 	eligibility = LeaderboardEligibility.finalize(
 		eligibility, finish_tick, start_tick, last_replay_path)
 	var board: Dictionary = eligibility.get("board", {})
 	eligibility["board_name"] = String(board.get("steam_name", ""))
 	eligibility["friendly_reason"] = TimeAttackRules.friendly_reason(
 		String(eligibility.get("reason", "")))
-	eligibility["replay_can_save"] = replay_controller.can_save_staged_replay_locally(last_replay_path)
+	eligibility["replay_can_save"] = game_manager.replay_recorder.can_save_staged_locally(last_replay_path)
 	presentation_controller.show_time_attack_result(
 		eligibility, previous_best_milliseconds, "Preparing trusted submission…")
 	if bool(eligibility.get("eligible", false)):
@@ -121,7 +121,7 @@ func finalize_practice(local_player_id: int) -> void:
 	practice_controller.mark_completed()
 	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_player_id, -1))
 	var start_tick := presentation_controller.race_results_start_tick()
-	last_replay_path = replay_controller.stage_completed_time_attack_replay(false)
+	last_replay_path = game_manager.replay_recorder.stage_completed_time_attack(false)
 	var practice_score := TimeAttackRules.finish_ticks_to_milliseconds(finish_tick, start_tick)
 	var practice_board := {}
 	if network_manager.race_track_evidence.count() == 1:
@@ -134,7 +134,7 @@ func finalize_practice(local_player_id: int) -> void:
 		"score_milliseconds": practice_score,
 		"board_name": String(practice_board.get("steam_name", "")),
 		"replay_path": last_replay_path,
-		"replay_can_save": replay_controller.can_save_staged_replay_locally(last_replay_path),
+		"replay_can_save": game_manager.replay_recorder.can_save_staged_locally(last_replay_path),
 	}
 	presentation_controller.show_time_attack_result(
 		practice_result, 0,
@@ -192,7 +192,7 @@ func _on_race_again_requested() -> void:
 
 
 func _save_replay() -> void:
-	var saved_path := replay_controller.save_staged_replay_locally(last_replay_path)
+	var saved_path := game_manager.replay_recorder.save_staged_locally(last_replay_path)
 	if saved_path.is_empty():
 		presentation_controller.show_notification("Replay could not be saved", 3000)
 		return

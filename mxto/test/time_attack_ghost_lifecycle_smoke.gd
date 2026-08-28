@@ -153,7 +153,7 @@ func _exercise_isolation_and_reconstruction(track_index: int, descriptor: Dictio
 		"finish_times": game_manager.network_manager.race_results.player_finish_times,
 		"dnfs": game_manager.network_manager.race_results.player_dnfs,
 	})
-	if result_after != result_snapshot or game_manager.time_attack_finalized:
+	if result_after != result_snapshot or game_manager.time_attack_session_controller.finalized:
 		_fail("ghost finish/fade mutated the player's result state")
 		return false
 	controller.teardown_runtime()
@@ -180,9 +180,8 @@ func _exercise_practice_cpu_lifecycle(track_index: int, descriptor: Dictionary) 
 	if int(main_memory.get("car_count", 0)) != 2 or int(ghost_memory.get("car_count", 0)) != 1:
 		_fail("practice CPU was not kept in the main simulation and out of the ghost simulation")
 		return false
-	var recording := game_manager.replay_controller
-	if recording.replay_recording_metadata.mode != "Practice" \
-			or recording.replay_recording_racer_ids.size() != 2:
+	var recording := game_manager.replay_recorder
+	if recording.metadata.mode != "Practice" or recording.racer_ids.size() != 2:
 		_fail("practice CPU roster was not recorded independently from ghost selection")
 		return false
 	var first_sim_id := (((controller.runtime_slots[0] as Dictionary).get("sim")) as GameSim).get_instance_id()
@@ -242,8 +241,8 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 		if !race_roster.append_settings(int(racer_ids[0]), int(racer_ids[0]), false, false, false, settings[0]):
 			_fail("failed to build ranked replay smoke roster")
 			return false
-		game_manager.replay_controller.start_recording(track_index, race_roster, grid_slots)
-		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.to_dictionary()
+		game_manager.replay_recorder.start(track_index, race_roster, grid_slots)
+		var candidate: Dictionary = game_manager.replay_recorder.metadata.to_dictionary()
 		candidate["saved_reason"] = "time_attack_submission"
 		candidate["duration_ticks"] = int(replay.get("duration_ticks", 0))
 		candidate["finish_times"] = (replay.get("finish_times", {}) as Dictionary).duplicate(true)
@@ -253,7 +252,7 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 		if !bool(candidate_validation.get("valid", false)):
 			_fail("%d-ghost ranked replay is noncanonical: %s" % [ghost_count, String(candidate_validation.get("reason", "unknown"))])
 			return false
-		if game_manager.replay_controller.replay_recording_racer_ids.size() != 1 \
+		if game_manager.replay_recorder.racer_ids.size() != 1 \
 				or JSON.stringify(candidate).findn("ghost") >= 0:
 			_fail("%d-ghost selection leaked into the ranked replay roster or schema" % ghost_count)
 			return false
@@ -262,10 +261,10 @@ func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary,
 
 
 func _catalog_excludes_cache_files() -> bool:
-	var replay_controller := game_manager.replay_controller
-	replay_controller._build_replay_catalog()
-	replay_controller._refresh_replay_catalog()
-	for entry_value in replay_controller.replay_catalog_entries:
+	var catalog := game_manager.replay_catalog_controller
+	catalog._build()
+	catalog.refresh()
+	for entry_value in catalog.entries:
 		var entry: Dictionary = entry_value
 		if String(entry.get("_path", "")).replace("\\", "/").contains("/leaderboard_replays/"):
 			_fail("leaderboard cache file appeared in the saved replay catalog")
