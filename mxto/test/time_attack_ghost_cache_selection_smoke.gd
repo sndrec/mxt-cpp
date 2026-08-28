@@ -8,7 +8,7 @@ class SelectionCache extends LeaderboardReplayCache:
 	var issued_tokens: Array[int] = []
 	var canceled_tokens: Array[int] = []
 
-	func request_replay(_board_name: String, _entry: Dictionary) -> int:
+	func request_replay(_board_name: String, _entry: MxtLeaderboardEntry) -> int:
 		var token := next_token
 		next_token += 1
 		issued_tokens.append(token)
@@ -65,7 +65,9 @@ func _run() -> void:
 	var entry_c := _entry_for_bytes(bytes_c, base_validation, 703)
 	var board_name := String(base_validation.get("board_name", ""))
 
-	var missing_token := cache.request_replay(board_name, {"_trusted_details": entry_a["_trusted_details"]})
+	var missing_entry := MxtLeaderboardEntry.new()
+	missing_entry.load_dictionary({"score_milliseconds": 0, "replay_sha256": entry_a.replay_sha256})
+	var missing_token := cache.request_replay(board_name, missing_entry)
 	await _wait_for_completion(missing_token)
 	if String((completions[missing_token] as Dictionary).get("reason", "")) != "missing_replay_attachment":
 		_fail("missing UGC did not produce its explicit failure")
@@ -73,7 +75,7 @@ func _run() -> void:
 
 	var token_a1 := _prime_download(cache, board_name, entry_a)
 	var token_a2 := _prime_download(cache, board_name, entry_a)
-	var digest_a := String((entry_a["_trusted_details"] as Dictionary)["replay_sha256"])
+	var digest_a := entry_a.replay_sha256
 	if cache._waiter_tokens(digest_a).size() != 2:
 		_fail("same-digest requests were not deduplicated")
 		return
@@ -93,8 +95,8 @@ func _run() -> void:
 
 	var token_b := _prime_download(cache, board_name, entry_b)
 	var token_c := _prime_download(cache, board_name, entry_c)
-	var digest_b := String((entry_b["_trusted_details"] as Dictionary)["replay_sha256"])
-	var digest_c := String((entry_c["_trusted_details"] as Dictionary)["replay_sha256"])
+	var digest_b := entry_b.replay_sha256
+	var digest_c := entry_c.replay_sha256
 	_activate_download(cache, digest_b, 102)
 	cache.queued_digests.append(digest_c)
 	cache._pump_queue()
@@ -117,7 +119,7 @@ func _run() -> void:
 	var warm_bytes := (original_text + "\n\t\n").to_utf8_buffer()
 	var warm_entry := _entry_for_bytes(warm_bytes, base_validation, 704)
 	var warm_token := _prime_download(cache, board_name, warm_entry)
-	var warm_digest := String((warm_entry["_trusted_details"] as Dictionary)["replay_sha256"])
+	var warm_digest := warm_entry.replay_sha256
 	_activate_download(cache, warm_digest, 104)
 	var warm_path := String(cache.active_download_context.get("cache_path", ""))
 	cache.cancel_request(warm_token)
@@ -129,7 +131,7 @@ func _run() -> void:
 
 	var corrupt_bytes := (original_text + "\n\r\n").to_utf8_buffer()
 	var corrupt_entry := _entry_for_bytes(corrupt_bytes, base_validation, 705)
-	var corrupt_digest := String((corrupt_entry["_trusted_details"] as Dictionary)["replay_sha256"])
+	var corrupt_digest := corrupt_entry.replay_sha256
 	var corrupt_path := CACHE_ROOT.path_join(corrupt_digest.trim_prefix("sha256:") + ".attachment")
 	_write_bytes(corrupt_path, "not a replay".to_utf8_buffer())
 	var corrupt_cache := LeaderboardReplayCache.new()
@@ -174,7 +176,7 @@ func _exercise_selection_model(board_name: String, base_validation: Dictionary, 
 	var selection := TimeAttackGhostSelection.new()
 	selection.initialize(selection_cache)
 	selection.set_board(board_name)
-	var entries: Array[Dictionary] = []
+	var entries: Array[MxtLeaderboardEntry] = []
 	for index in range(5):
 		var bytes := (original_text + "\n" + " ".repeat(index + 10)).to_utf8_buffer()
 		entries.append(_entry_for_bytes(bytes, base_validation, 800 + index))
@@ -205,7 +207,7 @@ func _exercise_selection_model(board_name: String, base_validation: Dictionary, 
 		"success": true,
 		"cache_path": "res://fixture.mxt_replay",
 		"replay_sha256": first_digest,
-		"trusted_details": (entries[0]["_trusted_details"] as Dictionary).duplicate(true),
+		"trusted_details": entries[0].trusted_details(),
 		"validation": base_validation.duplicate(true),
 	})
 	await process_frame
@@ -223,7 +225,7 @@ func _exercise_selection_model(board_name: String, base_validation: Dictionary, 
 	return true
 
 
-func _prime_download(target_cache: LeaderboardReplayCache, board_name: String, entry: Dictionary) -> int:
+func _prime_download(target_cache: LeaderboardReplayCache, board_name: String, entry: MxtLeaderboardEntry) -> int:
 	var token := target_cache.next_token
 	target_cache.next_token += 1
 	var request: Dictionary = target_cache._build_request(board_name, entry)
@@ -239,7 +241,7 @@ func _activate_download(target_cache: LeaderboardReplayCache, digest: String, re
 	target_cache.active_download_context = target_cache._first_waiting_request(digest)
 
 
-func _entry_for_bytes(bytes: PackedByteArray, validation: Dictionary, ugc_handle: int) -> Dictionary:
+func _entry_for_bytes(bytes: PackedByteArray, validation: Dictionary, ugc_handle: int) -> MxtLeaderboardEntry:
 	var details := {
 		"replay_sha256": _sha256(bytes),
 		"ruleset_revision": int(validation.get("ruleset_revision", -1)),
@@ -248,14 +250,22 @@ func _entry_for_bytes(bytes: PackedByteArray, validation: Dictionary, ugc_handle
 		"vehicle_gameplay_digest": String(validation.get("vehicle_gameplay_digest", "")),
 		"machine_setting_percent": int(validation.get("machine_setting_percent", -1)),
 	}
-	return {
+	var entry := MxtLeaderboardEntry.new()
+	entry.load_dictionary({
 		"steam_id": ugc_handle,
 		"persona_name": "Ghost %d" % ugc_handle,
-		"global_rank": ugc_handle - 700,
-		"score": 60000 + ugc_handle,
-		"ugc_handle": ugc_handle,
-		"_trusted_details": details,
-	}
+		"rank": ugc_handle - 700,
+		"score_milliseconds": 60000 + ugc_handle,
+		"run_id": "run-%d" % ugc_handle,
+		"replay_sha256": details["replay_sha256"],
+		"ruleset_revision": details["ruleset_revision"],
+		"replay_schema_version": details["replay_schema_version"],
+		"track_gameplay_digest": details["track_gameplay_digest"],
+		"vehicle_gameplay_digest": details["vehicle_gameplay_digest"],
+		"machine_setting_percent": details["machine_setting_percent"],
+		"game_version": validation.get("game_version", {}),
+	})
+	return entry
 
 
 func _wait_for_completion(token: int) -> void:

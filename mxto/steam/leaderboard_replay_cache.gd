@@ -37,7 +37,7 @@ func initialize(manager: GameManager, client: LeaderboardClient) -> void:
 	add_child(http_request)
 
 
-func request_replay(board_name: String, entry: Dictionary) -> int:
+func request_replay(board_name: String, entry: MxtLeaderboardEntry) -> int:
 	var token := next_token
 	next_token += 1
 	var request := _build_request(board_name, entry)
@@ -69,14 +69,13 @@ func stats() -> Dictionary:
 	}
 
 
-func _build_request(board_name: String, entry: Dictionary) -> Dictionary:
-	var details_value = entry.get("_trusted_details", {})
-	if typeof(details_value) != TYPE_DICTIONARY:
+func _build_request(board_name: String, entry: MxtLeaderboardEntry) -> Dictionary:
+	if entry == null:
 		return {"error": "missing_trusted_replay_metadata"}
-	var details: Dictionary = (details_value as Dictionary).duplicate(true)
+	var details := entry.trusted_details()
 	var replay_digest := String(details.get("replay_sha256", ""))
 	var digest_hex := _digest_hex(replay_digest)
-	var run_id := String(entry.get("run_id", ""))
+	var run_id := entry.run_id
 	if digest_hex.is_empty() or run_id.is_empty():
 		return {"error": "missing_replay_attachment"}
 	if board_name.is_empty():

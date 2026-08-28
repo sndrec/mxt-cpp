@@ -20,6 +20,7 @@
 #include "render/native_stamp_mesh_builder.h"
 #include "replay/replay_stream.h"
 #include "replay/replay_run_metadata.h"
+#include "leaderboard/leaderboard_data.h"
 #include "audio/opus_voice_codec.h"
 #include "audio/spatial_audio_manager.h"
 #include "platform/steam/steam_service.h"
@@ -45,6 +46,8 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(NativeStampMeshBuilder);
 	GDREGISTER_CLASS(MxtReplayStream);
 	GDREGISTER_CLASS(MxtReplayRunMetadata);
+	GDREGISTER_CLASS(MxtLeaderboardEntry);
+	GDREGISTER_CLASS(MxtLeaderboardQueryResult);
 	GDREGISTER_CLASS(OpusVoiceCodec);
 	GDREGISTER_CLASS(MxtSpatialAudioManager);
 	GDREGISTER_CLASS(MxtSteamService);

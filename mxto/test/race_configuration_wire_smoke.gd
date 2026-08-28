@@ -161,6 +161,41 @@ func _init() -> void:
 		push_error("MXT_REPLAY_RUN_METADATA_SMOKE_FAIL: " + metadata_decoded.get_last_error())
 		quit(1)
 		return
+	var leaderboard_result := MxtLeaderboardQueryResult.new()
+	if !leaderboard_result.load_dictionary({
+		"ok": true,
+		"next_cursor": "next-page",
+		"entries": [{
+			"rank": 7,
+			"steam_id": 76561198000000000,
+			"persona_name": "Typed Racer",
+			"score_milliseconds": 65432,
+			"run_id": "run-7",
+			"replay_sha256": "sha256:" + "7".repeat(64),
+			"track_content_id": "official:track-a",
+			"track_gameplay_digest": "sha256:track",
+			"vehicle_content_id": "official:vehicle-a",
+			"vehicle_gameplay_digest": "sha256:vehicle",
+			"machine_setting_percent": 75,
+			"ruleset_revision": 4,
+			"replay_schema_version": 5,
+			"game_version": {"major": 3, "compatibility": 2, "patch": 1},
+		}],
+	}, "sha256:vehicle", "cursor"):
+		push_error("MXT_LEADERBOARD_QUERY_LOAD_FAIL")
+		quit(1)
+		return
+	var leaderboard_entry := leaderboard_result.get_entry(0)
+	if leaderboard_result.get_entry_count() != 1 \
+			or leaderboard_result.next_cursor != "next-page" \
+			or leaderboard_result.requested_cursor != "cursor" \
+			or leaderboard_entry == null \
+			or leaderboard_entry.rank != 7 \
+			or leaderboard_entry.machine_setting_percent != 75 \
+			or leaderboard_entry.trusted_details().get("replay_sha256", "") != "sha256:" + "7".repeat(64):
+		push_error("MXT_LEADERBOARD_QUERY_SMOKE_FAIL")
+		quit(1)
+		return
 	print("MXT_RACE_CONFIGURATION_WIRE_SMOKE_OK config_bytes=", source.encode_wire().size(),
 		" track_bytes=", track_source.encode_wire().size(), " roster_bytes=", roster_source.encode_wire().size())
 	quit(0)

@@ -1,6 +1,6 @@
 class_name LeaderboardBrowser extends VBoxContainer
 
-signal watch_replay_requested(board_name: String, entry: Dictionary)
+signal watch_replay_requested(board_name: String, entry: MxtLeaderboardEntry)
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
@@ -181,11 +181,11 @@ func _format_score(score_milliseconds: int) -> String:
 	return "%d:%02d.%03d" % [int(score_milliseconds / 60000), int(score_milliseconds / 1000) % 60, score_milliseconds % 1000]
 
 
-func _show_entries(board_name: String, request_type: String, result: Dictionary) -> void:
+func _show_entries(board_name: String, request_type: String, result: MxtLeaderboardQueryResult) -> void:
 	if board_name != active_board_name or request_type != active_request_type \
-			or String(result.get("requested_vehicle_gameplay_digest", "")) != _selected_vehicle_digest():
+			or result.requested_vehicle_gameplay_digest != _selected_vehicle_digest():
 		return
-	var requested_cursor := String(result.get("requested_cursor", ""))
+	var requested_cursor := result.requested_cursor
 	if !requested_cursor.is_empty() and requested_cursor != loading_cursor:
 		return
 	var appending := !requested_cursor.is_empty()
@@ -196,48 +196,48 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 		entry_tree.clear()
 		visible_entries.clear()
 		root = entry_tree.create_item()
-	if !bool(result.get("ok", false)):
+	if !result.is_ok():
 		if !appending:
 			var unavailable := entry_tree.create_item(root)
-			unavailable.set_text(1, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
+			unavailable.set_text(1, "Unavailable: %s" % (result.message if !result.message.is_empty() else "Leaderboard request failed."))
 			status_label.text = "Leaderboard unavailable"
 			summary_label.text = "Check connectivity and use Refresh to try again."
 		else:
 			status_label.text = "Could not load more entries. Try again."
 		load_more_button.disabled = next_cursor.is_empty()
 		return
-	var entries: Array = result.get("entries", [])
 	var local_steam_id := game_manager.steam_service.get_steam_id() if game_manager.steam_service != null else 0
-	for value in entries:
-		if typeof(value) != TYPE_DICTIONARY:
+	for index in result.get_entry_count():
+		var value := result.get_entry(index)
+		if value == null:
 			continue
-		var entry: Dictionary = LeaderboardEntryPresenterClass.decorate(game_manager, value as Dictionary)
+		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, value)
 		visible_entries.append(entry)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
-		item.set_text(0, "#%d" % int(entry.get("rank", 0)))
-		item.set_text(1, String(entry.get("_display_player", "Unknown")))
-		item.set_text(2, String(entry.get("_display_vehicle", "Unknown")))
-		item.set_text(3, String(entry.get("_display_version", "Legacy / unknown")))
-		item.set_text(4, _format_score(int(entry.get("score_milliseconds", 0))))
-		if int(entry.get("steam_id", 0)) == local_steam_id:
+		item.set_text(0, "#%d" % entry.rank)
+		item.set_text(1, entry.display_player)
+		item.set_text(2, entry.display_vehicle)
+		item.set_text(3, entry.display_version)
+		item.set_text(4, _format_score(entry.score_milliseconds))
+		if entry.steam_id == local_steam_id:
 			for column in range(entry_tree.columns):
 				item.set_custom_color(column, Color(0.45, 0.86, 1.0))
-	next_cursor = String(result.get("next_cursor", ""))
+	next_cursor = result.next_cursor
 	load_more_button.visible = request_type == "global" and !next_cursor.is_empty()
 	load_more_button.disabled = next_cursor.is_empty()
 	status_label.text = "%s · %s · %s" % [_board_title(board_name), _selected_vehicle_name(), _friendly_mode(request_type)]
-	var local_entry: Dictionary = {}
+	var local_entry: MxtLeaderboardEntry
 	for entry_value in visible_entries:
-		var candidate: Dictionary = entry_value
-		if int(candidate.get("steam_id", 0)) == local_steam_id:
+		var candidate: MxtLeaderboardEntry = entry_value
+		if candidate.steam_id == local_steam_id:
 			local_entry = candidate
 			break
-	if !local_entry.is_empty():
-		summary_label.text = "Your verified best: #%d · %s" % [int(local_entry.get("rank", 0)), _format_score(int(local_entry.get("score_milliseconds", 0)))]
+	if local_entry != null:
+		summary_label.text = "Your verified best: #%d · %s" % [local_entry.rank, _format_score(local_entry.score_milliseconds)]
 	else:
 		summary_label.text = "You do not have a verified entry in this view."
-	if entries.is_empty():
+	if result.get_entry_count() == 0:
 		var empty := entry_tree.create_item(root)
 		empty.set_text(1, "No %s entries yet." % _friendly_mode(request_type).to_lower())
 
@@ -267,10 +267,9 @@ func _show_categories(board_name: String, result: Dictionary) -> void:
 			vehicle_option.set_item_tooltip(index, "%s record: %s by %s" % [
 				vehicle_name,
 				_format_score(int(category.get("record_milliseconds", 0))),
-				LeaderboardEntryPresenterClass.player_name(category.merged({
-					"persona_name": category.get("record_persona_name", ""),
-					"steam_id": category.get("record_steam_id", ""),
-				}, true)),
+				LeaderboardEntryPresenterClass.category_player_name(
+					String(category.get("record_persona_name", "")),
+					category.get("record_steam_id", "")),
 			])
 			if digest == previous_digest:
 				vehicle_option.select(index)
@@ -279,20 +278,21 @@ func _show_categories(board_name: String, result: Dictionary) -> void:
 		_request(active_request_type)
 
 
-func _show_player_bests(board_name: String, result: Dictionary) -> void:
+func _show_player_bests(board_name: String, result: MxtLeaderboardQueryResult) -> void:
 	if board_name != _selected_board():
 		return
-	if !bool(result.get("ok", false)):
+	if !result.is_ok():
 		my_bests_label.text = "Your vehicle bests are unavailable."
 		return
 	var best_text: Array[String] = []
-	for value in result.get("entries", []):
-		if typeof(value) != TYPE_DICTIONARY:
+	for index in result.get_entry_count():
+		var value := result.get_entry(index)
+		if value == null:
 			continue
-		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, value as Dictionary)
+		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, value)
 		best_text.append("%s  %s" % [
-			String(entry.get("_display_vehicle", "Unknown")),
-			_format_score(int(entry.get("score_milliseconds", 0))),
+			entry.display_vehicle,
+			_format_score(entry.score_milliseconds),
 		])
 	my_bests_label.text = "Your vehicle bests: %s" % " · ".join(best_text) \
 		if !best_text.is_empty() else "You do not have a verified vehicle best on this track yet."
@@ -307,8 +307,8 @@ func _on_entry_selected() -> void:
 	if index < 0 or index >= visible_entries.size():
 		watch_button.disabled = true
 		return
-	var entry: Dictionary = visible_entries[index]
-	watch_button.disabled = !bool(entry.get("_replay_available", false))
+	var entry: MxtLeaderboardEntry = visible_entries[index]
+	watch_button.disabled = !entry.replay_available
 
 
 func _watch_selected() -> void:
@@ -317,7 +317,7 @@ func _watch_selected() -> void:
 		return
 	var index := int(selected.get_metadata(0))
 	if index >= 0 and index < visible_entries.size():
-		watch_replay_requested.emit(active_board_name, (visible_entries[index] as Dictionary).duplicate(true))
+		watch_replay_requested.emit(active_board_name, visible_entries[index] as MxtLeaderboardEntry)
 
 
 func _show_submission_status(status: Dictionary) -> void:

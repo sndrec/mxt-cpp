@@ -2,7 +2,7 @@ extends SceneTree
 
 
 class SelectionCache extends LeaderboardReplayCache:
-	func request_replay(_board_name: String, _entry: Dictionary) -> int:
+	func request_replay(_board_name: String, _entry: MxtLeaderboardEntry) -> int:
 		var token := next_token
 		next_token += 1
 		return token
@@ -45,7 +45,7 @@ func _run() -> void:
 	catalog.replay_root = replay_path.get_base_dir()
 	var entries := catalog.scan(game_manager, track_index)
 	var fixture_entry := _entry_for_path(entries, replay_path)
-	if fixture_entry.is_empty():
+	if fixture_entry == null:
 		var metadata := catalog._load_metadata(replay_path)
 		_fail("catalog did not expose the exact-track local Time Attack fixture: root=%s files=%d metadata=%s" % [
 			replay_path.get_base_dir(),
@@ -64,9 +64,9 @@ func _run() -> void:
 	if !bool(prepared.get("success", false)):
 		_fail("local replay preparation failed: %s" % JSON.stringify(prepared))
 		return
-	var entry: Dictionary = prepared.get("entry", {})
-	var digest := String((entry.get("_trusted_details", {}) as Dictionary).get("replay_sha256", ""))
-	if digest.is_empty() or int(entry.get("score", 0)) <= 0:
+	var entry: MxtLeaderboardEntry = prepared.get("entry")
+	var digest := entry.replay_sha256
+	if digest.is_empty() or entry.score_milliseconds <= 0:
 		_fail("catalog entry is missing digest or finish time")
 		return
 
@@ -80,9 +80,7 @@ func _run() -> void:
 	if !bool(select_result.get("success", false)) or !selection.all_ready() or selection.count() != 1:
 		_fail("local selection was not immediately ready: %s" % JSON.stringify(select_result))
 		return
-	var duplicate_entry := entry.duplicate(true)
-	duplicate_entry["ugc_handle"] = 9001
-	var duplicate_result := selection.select(scope, duplicate_entry)
+	var duplicate_result := selection.select_local(scope, entry)
 	if !bool(duplicate_result.get("success", false)) or selection.count() != 1:
 		_fail("local and leaderboard copies were not deduplicated by digest")
 		return
@@ -118,13 +116,13 @@ func _track_index_for_digest(game_manager: GameManager, digest: String) -> int:
 	return -1
 
 
-func _entry_for_path(entries: Array, replay_path: String) -> Dictionary:
+func _entry_for_path(entries: Array, replay_path: String) -> MxtLeaderboardEntry:
 	var simplified := replay_path.replace("\\", "/").simplify_path().to_lower()
 	for entry_value in entries:
-		if typeof(entry_value) == TYPE_DICTIONARY \
-				and String((entry_value as Dictionary).get("_local_path", "")).replace("\\", "/").simplify_path().to_lower() == simplified:
-			return entry_value as Dictionary
-	return {}
+		if entry_value is MxtLeaderboardEntry \
+				and (entry_value as MxtLeaderboardEntry).local_path.replace("\\", "/").simplify_path().to_lower() == simplified:
+			return entry_value as MxtLeaderboardEntry
+	return null
 
 
 func _argument_value(flag: String) -> String:

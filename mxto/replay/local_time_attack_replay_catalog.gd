@@ -9,14 +9,14 @@ var replay_root := "user://replays"
 
 
 func scan(game_manager: GameManager, track_index: int) -> Array:
-	var entries: Array = []
+	var entry_data: Array[Dictionary] = []
 	if game_manager == null or track_index < 0:
-		return entries
+		return []
 	var expected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(track_index)
 	var absolute_root := ProjectSettings.globalize_path(replay_root)
 	var directory := DirAccess.open(absolute_root)
 	if directory == null:
-		return entries
+		return []
 	for file_name in directory.get_files():
 		if !file_name.ends_with(REPLAY_SUFFIX):
 			continue
@@ -26,14 +26,19 @@ func scan(game_manager: GameManager, track_index: int) -> Array:
 			continue
 		var entry := _entry_from_metadata(game_manager, path, metadata)
 		if !entry.is_empty():
-			entries.append(entry)
-	entries.sort_custom(func(a: Dictionary, b: Dictionary):
+			entry_data.append(entry)
+	entry_data.sort_custom(func(a: Dictionary, b: Dictionary):
 		return float(a.get("created_unix", 0.0)) > float(b.get("created_unix", 0.0)))
+	var entries: Array = []
+	for value in entry_data:
+		var entry := _typed_entry(value)
+		if entry != null:
+			entries.append(entry)
 	return entries
 
 
-func prepare_entry(game_manager: GameManager, entry: Dictionary, track_index: int) -> Dictionary:
-	var path := String(entry.get("_local_path", ""))
+func prepare_entry(game_manager: GameManager, entry: MxtLeaderboardEntry, track_index: int) -> Dictionary:
+	var path := entry.local_path
 	if path.is_empty() or !FileAccess.file_exists(path):
 		return _failure("local_replay_missing", "That local replay file no longer exists.")
 	var replay_stream := MxtReplayStream.new()
@@ -48,7 +53,7 @@ func prepare_entry(game_manager: GameManager, entry: Dictionary, track_index: in
 	var digest := _file_digest(path)
 	if digest.is_empty():
 		return _failure("local_replay_invalid", "That local replay could not be read.")
-	var prepared_entry := entry.duplicate(true)
+	var prepared_data := _entry_from_metadata(game_manager, path, replay)
 	var trusted_details := {
 		"replay_sha256": digest,
 		"track_gameplay_digest": expected_track_digest,
@@ -59,12 +64,20 @@ func prepare_entry(game_manager: GameManager, entry: Dictionary, track_index: in
 		"replay_schema_version": int(replay.get("schema_version", -1)),
 		"game_version": replay.get("game_version", {}).duplicate(true) if typeof(replay.get("game_version", {})) == TYPE_DICTIONARY else {},
 	}
-	prepared_entry["_trusted_details"] = trusted_details
-	prepared_entry["_local_path"] = path
-	prepared_entry["_replay_available"] = true
-	prepared_entry["_compatibility_warning"] = _has_compatibility_warning(replay)
-	prepared_entry["_local_validation"] = validation
+	prepared_data["_trusted_details"] = trusted_details
+	prepared_data["_local_path"] = path
+	prepared_data["_replay_available"] = true
+	prepared_data["_compatibility_warning"] = _has_compatibility_warning(replay)
+	prepared_data["_local_validation"] = validation
+	var prepared_entry := _typed_entry(prepared_data)
+	if prepared_entry == null:
+		return _failure("local_replay_invalid", "That local replay has invalid metadata.")
 	return {"success": true, "entry": prepared_entry}
+
+
+func _typed_entry(data: Dictionary) -> MxtLeaderboardEntry:
+	var entry := MxtLeaderboardEntry.new()
+	return entry if entry.load_dictionary(data) else null
 
 
 func _entry_from_metadata(game_manager: GameManager, path: String, metadata: Dictionary) -> Dictionary:

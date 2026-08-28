@@ -1,9 +1,9 @@
 class_name LeaderboardClient extends Node
 
 signal submission_status_changed(status: Dictionary)
-signal entries_received(board_name: String, request_type: String, result: Dictionary)
+signal entries_received(board_name: String, request_type: String, result: MxtLeaderboardQueryResult)
 signal categories_received(board_name: String, result: Dictionary)
-signal player_bests_received(board_name: String, result: Dictionary)
+signal player_bests_received(board_name: String, result: MxtLeaderboardQueryResult)
 signal submission_completed(result: Dictionary)
 
 const CONFIG_PATH := "res://steam/leaderboard_service.json"
@@ -347,12 +347,9 @@ func _start_auxiliary_read(url: String, context: Dictionary) -> int:
 
 
 func _emit_read_failure(_request_id: int, board_name: String, request_type: String, vehicle_digest: String, cursor: String, message: String) -> void:
-	entries_received.emit(board_name, request_type, {
-		"ok": false,
-		"message": message,
-		"requested_vehicle_gameplay_digest": vehicle_digest,
-		"requested_cursor": cursor,
-	})
+	var result := MxtLeaderboardQueryResult.new()
+	result.set_failure(message, vehicle_digest, cursor)
+	entries_received.emit(board_name, request_type, result)
 
 
 func _emit_categories_failure(board_name: String, message: String) -> void:
@@ -360,7 +357,9 @@ func _emit_categories_failure(board_name: String, message: String) -> void:
 
 
 func _emit_player_bests_failure(board_name: String, message: String) -> void:
-	player_bests_received.emit(board_name, {"ok": false, "message": message})
+	var result := MxtLeaderboardQueryResult.new()
+	result.set_failure(message, "", "")
+	player_bests_received.emit(board_name, result)
 
 
 func _on_read_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, request_id: int) -> void:
@@ -381,11 +380,16 @@ func _on_read_request_completed(result: int, response_code: int, _headers: Packe
 		"categories":
 			categories_received.emit(String(context.get("board_name", "")), parsed)
 		"player_bests":
-			player_bests_received.emit(String(context.get("board_name", "")), parsed)
+			var query_result := MxtLeaderboardQueryResult.new()
+			query_result.load_dictionary(parsed, "", "")
+			player_bests_received.emit(String(context.get("board_name", "")), query_result)
 		_:
-			parsed["requested_vehicle_gameplay_digest"] = String(context.get("vehicle_digest", ""))
-			parsed["requested_cursor"] = String(context.get("cursor", ""))
-			entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), parsed)
+			var query_result := MxtLeaderboardQueryResult.new()
+			query_result.load_dictionary(
+				parsed,
+				String(context.get("vehicle_digest", "")),
+				String(context.get("cursor", "")))
+			entries_received.emit(String(context.get("board_name", "")), String(context.get("request_type", "")), query_result)
 
 
 func status() -> Dictionary:

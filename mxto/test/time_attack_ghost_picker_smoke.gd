@@ -6,7 +6,7 @@ const GameVersionData = preload("res://core/game_version.gd")
 class SelectionCache extends LeaderboardReplayCache:
 	var issued_tokens: Array[int] = []
 
-	func request_replay(_board_name: String, _entry: Dictionary) -> int:
+	func request_replay(_board_name: String, _entry: MxtLeaderboardEntry) -> int:
 		var token := next_token
 		next_token += 1
 		issued_tokens.append(token)
@@ -68,13 +68,10 @@ func _run() -> void:
 	picker.active_request_type = "global"
 
 	var own_id := int(game_manager.steam_service.get_steam_id())
-	var own_entry := _entry(own_id, "Your Time", 1, 61001, 1001, _digest("1"), true)
-	var friend_entry := _entry(2002, "Friend", 2, 62002, 1002, _digest("2"), true)
-	var unavailable_entry := _entry(3003, "No Replay", 3, 63003, 0, _digest("3"), false)
-	picker._on_entries_received(board_name, "global", {
-		"success": true,
-		"entries": [own_entry, friend_entry, unavailable_entry],
-	})
+	var own_data := _entry_data(own_id, "Your Time", 1, 61001, _digest("1"), true)
+	var friend_data := _entry_data(2002, "Friend", 2, 62002, _digest("2"), true)
+	var unavailable_data := _entry_data(3003, "No Replay", 3, 63003, _digest("3"), false)
+	picker._on_entries_received(board_name, "global", _query([own_data, friend_data, unavailable_data]))
 	if picker.visible_entries.size() != 3:
 		_fail("Global Top 100 rows were not populated")
 		return
@@ -82,7 +79,7 @@ func _run() -> void:
 	var own_item := tree_root.get_first_child()
 	var friend_item := own_item.get_next()
 	var unavailable_item := friend_item.get_next()
-	var decorated_friend: Dictionary = (picker.visible_entries[1] as Dictionary).duplicate(true)
+	var decorated_friend: MxtLeaderboardEntry = picker.visible_entries[1]
 	if own_item == null or !own_item.is_editable(0) or unavailable_item == null or unavailable_item.is_editable(0):
 		_fail("replay availability did not control checkbox editing")
 		return
@@ -104,20 +101,14 @@ func _run() -> void:
 		return
 
 	picker.active_request_type = "friends"
-	var refreshed_friend_entry := own_entry.duplicate(true)
-	refreshed_friend_entry["global_rank"] = 14
-	picker._on_entries_received(board_name, "friends", {
-		"success": true,
-		"entries": [friend_entry, refreshed_friend_entry],
-	})
+	var refreshed_own_data := own_data.duplicate(true)
+	refreshed_own_data["rank"] = 14
+	picker._on_entries_received(board_name, "friends", _query([friend_data, refreshed_own_data]))
 	if selection.count() != 1 or int((selection.snapshot()[0] as Dictionary).get("global_rank", 0)) != 14:
 		_fail("Friends refresh did not preserve selection by digest and update display rank")
 		return
 	picker.active_request_type = "around_user"
-	picker._on_entries_received(board_name, "around_user", {
-		"success": true,
-		"entries": [refreshed_friend_entry],
-	})
+	picker._on_entries_received(board_name, "around_user", _query([refreshed_own_data]))
 	if picker.visible_entries.size() != 1 or !selection.contains(_digest("1")):
 		_fail("Around Me view did not retain the selected local entry")
 		return
@@ -159,36 +150,27 @@ func _run() -> void:
 	quit(0)
 
 
-func _entry(steam_id: int, persona_name: String, rank: int, score: int, ugc_handle: int, digest: String, attached: bool) -> Dictionary:
+func _entry_data(steam_id: int, persona_name: String, rank: int, score: int, digest: String, attached: bool) -> Dictionary:
 	return {
 		"steam_id": steam_id,
 		"persona_name": persona_name,
-		"global_rank": rank,
-		"score": score,
-		"ugc_handle": ugc_handle if attached else 0,
-		"details": _details(digest),
+		"rank": rank,
+		"score_milliseconds": score,
+		"run_id": "run-%d" % steam_id if attached else "",
+		"replay_sha256": digest if attached else "",
+		"track_gameplay_digest": _digest("a"),
+		"vehicle_gameplay_digest": _digest("b"),
+		"machine_setting_percent": 50,
+		"ruleset_revision": 3,
+		"replay_schema_version": 4,
+		"game_version": GameVersionData.metadata(),
 	}
 
 
-func _details(replay_digest: String) -> Array:
-	var values: Array = [
-		0x3154584d,
-		3,
-		1,
-		4,
-		(GameVersionData.MAJOR << 24) | (GameVersionData.COMPATIBILITY << 16) | GameVersionData.PATCH,
-	]
-	_append_digest_words(values, replay_digest)
-	_append_digest_words(values, _digest("a"))
-	_append_digest_words(values, _digest("b"))
-	values.append(50)
-	return values
-
-
-func _append_digest_words(values: Array, digest: String) -> void:
-	var hex := digest.trim_prefix("sha256:")
-	for index in range(8):
-		values.append(hex.substr(index * 8, 8).hex_to_int())
+func _query(entries: Array) -> MxtLeaderboardQueryResult:
+	var result := MxtLeaderboardQueryResult.new()
+	result.load_dictionary({"ok": true, "entries": entries}, "", "")
+	return result
 
 
 func _digest(character: String) -> String:

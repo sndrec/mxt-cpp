@@ -147,10 +147,10 @@ func _load_more() -> void:
 	game_manager.leaderboard_client.request_entries(steam_board_name, active_request_type, "", loading_cursor)
 
 
-func _on_entries_received(request_board: String, request_type: String, result: Dictionary) -> void:
+func _on_entries_received(request_board: String, request_type: String, result: MxtLeaderboardQueryResult) -> void:
 	if !visible or request_board != steam_board_name or request_type != active_request_type:
 		return
-	var requested_cursor := String(result.get("requested_cursor", ""))
+	var requested_cursor := result.requested_cursor
 	if !requested_cursor.is_empty() and requested_cursor != loading_cursor:
 		return
 	var appending := !requested_cursor.is_empty()
@@ -162,19 +162,20 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 		visible_entries.clear()
 		item_by_digest.clear()
 		root = entry_tree.create_item()
-	if !bool(result.get("ok", false)):
+	if !result.is_ok():
 		if !appending:
 			var unavailable := entry_tree.create_item(root)
-			unavailable.set_text(2, "Unavailable: %s" % String(result.get("message", "Leaderboard request failed.")))
+			unavailable.set_text(2, "Unavailable: %s" % (result.message if !result.message.is_empty() else "Leaderboard request failed."))
 			message_override = "Leaderboard unavailable. Use Refresh to try again."
 		else:
 			message_override = "Could not load more entries. Try again."
 		load_more_button.disabled = next_cursor.is_empty()
 		_update_status()
 		return
-	var entries_value = result.get("entries", [])
-	var entries: Array = entries_value if typeof(entries_value) == TYPE_ARRAY else []
-	next_cursor = String(result.get("next_cursor", ""))
+	var entries: Array = []
+	for index in result.get_entry_count():
+		entries.append(result.get_entry(index))
+	next_cursor = result.next_cursor
 	load_more_button.visible = request_type == "global" and !next_cursor.is_empty()
 	load_more_button.disabled = next_cursor.is_empty()
 	_populate_entries(entries, true, appending)
@@ -188,25 +189,22 @@ func _populate_entries(entries: Array, decorate_leaderboard: bool, append := fal
 		item_by_digest.clear()
 		root = entry_tree.create_item()
 	for entry_value in entries:
-		if typeof(entry_value) != TYPE_DICTIONARY:
+		if !(entry_value is MxtLeaderboardEntry):
 			continue
-		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, entry_value as Dictionary) \
-			if decorate_leaderboard else (entry_value as Dictionary).duplicate(true)
+		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, entry_value as MxtLeaderboardEntry)
 		visible_entries.append(entry)
-		var trusted_value = entry.get("_trusted_details", {})
-		var trusted: Dictionary = trusted_value if typeof(trusted_value) == TYPE_DICTIONARY else {}
-		var digest := String(trusted.get("replay_sha256", ""))
+		var digest := entry.replay_sha256
 		if !digest.is_empty() and selection_model.contains(digest):
 			selection_model.update_entry(selection_scope, entry)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
 		item.set_cell_mode(0, TreeItem.CELL_MODE_CHECK)
-		item.set_editable(0, bool(entry.get("_replay_available", false)))
-		item.set_text(1, String(entry.get("_display_rank", "#%d" % int(entry.get("rank", 0)))))
-		item.set_text(2, String(entry.get("_display_player", entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))))
-		item.set_text(3, String(entry.get("_display_vehicle", "Unknown")))
-		item.set_text(4, String(entry.get("_display_version", "Legacy / unknown")))
-		item.set_text(5, _format_score(int(entry.get("score_milliseconds", 0))))
+		item.set_editable(0, entry.replay_available)
+		item.set_text(1, entry.display_rank)
+		item.set_text(2, entry.display_player)
+		item.set_text(3, entry.display_vehicle)
+		item.set_text(4, entry.display_version)
+		item.set_text(5, _format_score(entry.score_milliseconds))
 		if !digest.is_empty():
 			item_by_digest[digest] = item
 	if visible_entries.is_empty():
@@ -231,17 +229,15 @@ func _toggle_item(item: TreeItem, checked: bool) -> void:
 	var index := int(item.get_metadata(0))
 	if index < 0 or index >= visible_entries.size():
 		return
-	var entry: Dictionary = visible_entries[index]
-	var trusted_value = entry.get("_trusted_details", {})
-	var trusted: Dictionary = trusted_value if typeof(trusted_value) == TYPE_DICTIONARY else {}
-	var digest := String(trusted.get("replay_sha256", ""))
+	var entry: MxtLeaderboardEntry = visible_entries[index]
+	var digest := entry.replay_sha256
 	message_override = ""
 	if checked:
 		var result: Dictionary
-		if String(entry.get("_source", "leaderboard")) == "local":
+		if entry.source == "local":
 			var prepare := local_replay_catalog.prepare_entry(game_manager, entry, game_manager.track_selector.selected)
 			if bool(prepare.get("success", false)):
-				var prepared_entry: Dictionary = prepare.get("entry", {})
+				var prepared_entry: MxtLeaderboardEntry = prepare.get("entry")
 				visible_entries[index] = prepared_entry
 				entry = prepared_entry
 				result = selection_model.select_local(selection_scope, entry)
@@ -304,12 +300,12 @@ func _refresh_row_states() -> void:
 				item.set_custom_color(column, color)
 		else:
 			var entry_index := int(item.get_metadata(0))
-			var available := entry_index >= 0 and entry_index < visible_entries.size() \
-				and bool((visible_entries[entry_index] as Dictionary).get("_replay_available", false))
-			var older_version := available and bool((visible_entries[entry_index] as Dictionary).get("_compatibility_warning", false))
+			var entry: MxtLeaderboardEntry = visible_entries[entry_index] if entry_index >= 0 and entry_index < visible_entries.size() else null
+			var available := entry != null and entry.replay_available
+			var older_version := available and entry.compatibility_warning
 			var availability_text := "No replay"
 			if available:
-				var local := String((visible_entries[entry_index] as Dictionary).get("_source", "")) == "local"
+				var local := entry.source == "local"
 				availability_text = "Local · older version" if local and older_version \
 					else "Local" if local \
 					else "Available · older version" if older_version else "Available"
@@ -367,8 +363,7 @@ func _selected_digest() -> String:
 	var index := int(index_value)
 	if index < 0 or index >= visible_entries.size():
 		return ""
-	var trusted_value = (visible_entries[index] as Dictionary).get("_trusted_details", {})
-	return String((trusted_value as Dictionary).get("replay_sha256", "")) if typeof(trusted_value) == TYPE_DICTIONARY else ""
+	return (visible_entries[index] as MxtLeaderboardEntry).replay_sha256
 
 
 func _process(delta: float) -> void:

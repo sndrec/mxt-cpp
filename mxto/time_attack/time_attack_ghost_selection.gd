@@ -25,17 +25,14 @@ func set_board(board_name: String) -> void:
 	active_board_name = board_name
 
 
-func select(board_name: String, entry: Dictionary) -> Dictionary:
+func select(board_name: String, entry: MxtLeaderboardEntry) -> Dictionary:
 	if active_board_name.is_empty():
 		active_board_name = board_name
 	elif board_name != active_board_name:
 		return _failure("wrong_leaderboard", "Ghost selections must come from the current track.")
-	var trusted_value = entry.get("_trusted_details", {})
-	if typeof(trusted_value) != TYPE_DICTIONARY:
-		return _failure("missing_trusted_replay_metadata", "This time has no trusted replay metadata.")
-	var trusted: Dictionary = trusted_value
+	var trusted := entry.trusted_details()
 	var digest := String(trusted.get("replay_sha256", ""))
-	if digest.is_empty() or String(entry.get("run_id", "")).is_empty():
+	if digest.is_empty() or entry.run_id.is_empty():
 		return _failure("missing_replay_attachment", "This time does not have a replay attached.")
 	if selected_by_digest.has(digest):
 		update_entry(board_name, entry)
@@ -55,19 +52,15 @@ func select(board_name: String, entry: Dictionary) -> Dictionary:
 	return {"success": true, "replay_sha256": digest, "slot_index": slot_index}
 
 
-func select_local(board_name: String, entry: Dictionary) -> Dictionary:
+func select_local(board_name: String, entry: MxtLeaderboardEntry) -> Dictionary:
 	if active_board_name.is_empty():
 		active_board_name = board_name
 	elif board_name != active_board_name:
 		return _failure("wrong_leaderboard", "Ghost selections must come from the current track.")
-	var trusted_value = entry.get("_trusted_details", {})
-	var validation_value = entry.get("_local_validation", {})
-	if typeof(trusted_value) != TYPE_DICTIONARY or typeof(validation_value) != TYPE_DICTIONARY:
-		return _failure("local_replay_invalid", "That local replay is missing required metadata.")
-	var trusted: Dictionary = trusted_value
-	var validation: Dictionary = validation_value
+	var trusted := entry.trusted_details()
+	var validation := entry.local_validation
 	var digest := String(trusted.get("replay_sha256", ""))
-	var path := String(entry.get("_local_path", ""))
+	var path := entry.local_path
 	if digest.is_empty() or path.is_empty() or !FileAccess.file_exists(path):
 		return _failure("local_replay_missing", "That local replay file no longer exists.")
 	if selected_by_digest.has(digest):
@@ -133,10 +126,10 @@ func retry(replay_sha256: String) -> Dictionary:
 	if old_token != 0:
 		digest_by_request_token.erase(old_token)
 		replay_cache.cancel_request(old_token)
-	var entry_value = selection.get("entry", {})
-	if typeof(entry_value) != TYPE_DICTIONARY:
+	var entry_value = selection.get("entry")
+	if !(entry_value is MxtLeaderboardEntry):
 		return _failure("selection_missing", "The selected leaderboard entry is unavailable.")
-	var token := replay_cache.request_replay(String(selection.get("board_name", "")), entry_value as Dictionary)
+	var token := replay_cache.request_replay(String(selection.get("board_name", "")), entry_value as MxtLeaderboardEntry)
 	selection["request_token"] = token
 	selection["state"] = "preparing"
 	selection["message"] = "Preparing replay…"
@@ -147,22 +140,19 @@ func retry(replay_sha256: String) -> Dictionary:
 	return {"success": true, "replay_sha256": replay_sha256}
 
 
-func update_entry(board_name: String, entry: Dictionary) -> void:
+func update_entry(board_name: String, entry: MxtLeaderboardEntry) -> void:
 	if board_name != active_board_name:
 		return
-	var trusted_value = entry.get("_trusted_details", {})
-	if typeof(trusted_value) != TYPE_DICTIONARY:
-		return
-	var digest := String((trusted_value as Dictionary).get("replay_sha256", ""))
+	var digest := entry.replay_sha256
 	var selection_value = selected_by_digest.get(digest, {})
 	if typeof(selection_value) != TYPE_DICTIONARY or (selection_value as Dictionary).is_empty():
 		return
 	var selection: Dictionary = selection_value
-	selection["entry"] = entry.duplicate(true)
-	selection["steam_id"] = int(entry.get("steam_id", 0))
-	selection["persona_name"] = String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))
-	selection["global_rank"] = int(entry.get("rank", 0))
-	selection["score_milliseconds"] = int(entry.get("score_milliseconds", 0))
+	selection["entry"] = entry
+	selection["steam_id"] = entry.steam_id
+	selection["persona_name"] = entry.persona_name
+	selection["global_rank"] = entry.rank
+	selection["score_milliseconds"] = entry.score_milliseconds
 	selected_by_digest[digest] = selection
 	_emit_changed()
 
@@ -247,20 +237,20 @@ func _on_cache_request_completed(token: int, result: Dictionary) -> void:
 	_emit_changed()
 
 
-func _selection_record(board_name: String, entry: Dictionary, trusted: Dictionary, digest: String, slot_index: int) -> Dictionary:
+func _selection_record(board_name: String, entry: MxtLeaderboardEntry, trusted: Dictionary, digest: String, slot_index: int) -> Dictionary:
 	return {
 		"board_name": board_name,
-		"steam_id": int(entry.get("steam_id", 0)),
-		"persona_name": String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))),
-		"global_rank": int(entry.get("rank", 0)),
-		"score_milliseconds": int(entry.get("score_milliseconds", 0)),
+		"steam_id": entry.steam_id,
+		"persona_name": entry.persona_name,
+		"global_rank": entry.rank,
+		"score_milliseconds": entry.score_milliseconds,
 		"replay_sha256": digest,
 		"trusted_details": trusted.duplicate(true),
 		"slot_index": slot_index,
 		"state": "preparing",
 		"message": "Preparing replay…",
 		"compatibility_warning": false,
-		"entry": entry.duplicate(true),
+		"entry": entry,
 	}
 
 

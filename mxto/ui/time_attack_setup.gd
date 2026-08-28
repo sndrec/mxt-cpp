@@ -5,7 +5,7 @@ signal practice_requested
 signal back_requested
 signal official_vehicle_requested
 signal leaderboard_requested(board_name: String)
-signal watch_replay_requested(board_name: String, entry: Dictionary)
+signal watch_replay_requested(board_name: String, entry: MxtLeaderboardEntry)
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
@@ -34,7 +34,7 @@ var eligibility: Dictionary = {}
 var board_name := ""
 var personal_best_milliseconds := 0
 var personal_global_rank := 0
-var personal_entry: Dictionary = {}
+var personal_entry: MxtLeaderboardEntry
 var ghost_selection: TimeAttackGhostSelection
 var ghost_selection_scope := ""
 
@@ -53,7 +53,7 @@ func initialize(in_game_manager: GameManager) -> void:
 	practice_button.pressed.connect(func(): practice_requested.emit())
 	official_button.pressed.connect(func(): official_vehicle_requested.emit())
 	leaderboard_button.pressed.connect(func(): leaderboard_requested.emit(board_name))
-	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry.duplicate(true)))
+	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry))
 	choose_ghosts_button.pressed.connect(func(): ghost_picker.open_for_track(ghost_selection_scope, board_name))
 	$Center/Panel/Margin/Content/Secondary/Back.pressed.connect(func(): back_requested.emit())
 	hide()
@@ -62,7 +62,7 @@ func initialize(in_game_manager: GameManager) -> void:
 func open_for_current_selection() -> void:
 	personal_best_milliseconds = 0
 	personal_global_rank = 0
-	personal_entry.clear()
+	personal_entry = null
 	watch_replay_button.disabled = true
 	var configuration := TimeAttackRulesClass.build_configuration()
 	var track_evidence := game_manager.track_content_controller.build_track_content_evidence(
@@ -132,26 +132,25 @@ func _start_ranked() -> void:
 	ranked_start_requested.emit(context)
 
 
-func _on_entries_received(request_board: String, request_type: String, result: Dictionary) -> void:
+func _on_entries_received(request_board: String, request_type: String, result: MxtLeaderboardQueryResult) -> void:
 	if !visible or request_board != board_name:
 		return
-	if !bool(result.get("ok", false)):
-		var message := String(result.get("message", "Unavailable"))
+	if !result.is_ok():
+		var message := result.message if !result.message.is_empty() else "Unavailable"
 		if request_type == "around_user":
 			personal_label.text = "Personal Best  ·  Unavailable"
 			global_label.text = "Global Rank  ·  %s" % message
 		return
-	var entries: Array = result.get("entries", [])
 	var local_steam_id := game_manager.steam_service.get_steam_id()
 	if request_type == "around_user":
-		for entry_value in entries:
-			var entry: Dictionary = entry_value
-			if int(entry.get("steam_id", 0)) != local_steam_id:
+		for index in result.get_entry_count():
+			var entry := result.get_entry(index)
+			if entry == null or entry.steam_id != local_steam_id:
 				continue
-			personal_best_milliseconds = int(entry.get("score_milliseconds", 0))
-			personal_global_rank = int(entry.get("rank", 0))
+			personal_best_milliseconds = entry.score_milliseconds
+			personal_global_rank = entry.rank
 			personal_entry = LeaderboardEntryPresenterClass.decorate(game_manager, entry)
-			watch_replay_button.disabled = !bool(personal_entry.get("_replay_available", false))
+			watch_replay_button.disabled = !personal_entry.replay_available
 			break
 		personal_label.text = "Personal Best  ·  %s" % (_format_score(personal_best_milliseconds) if personal_best_milliseconds > 0 else "No verified time")
 		global_label.text = "Global Rank  ·  #%d" % personal_global_rank if personal_global_rank > 0 else "Global Rank  ·  Unranked"

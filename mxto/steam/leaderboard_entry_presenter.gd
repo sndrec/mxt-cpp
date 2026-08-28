@@ -3,54 +3,36 @@ class_name LeaderboardEntryPresenter extends RefCounted
 const GameVersionData = preload("res://core/game_version.gd")
 
 
-static func decorate(game_manager: GameManager, entry: Dictionary) -> Dictionary:
-	var result := entry.duplicate(true)
-	result["_trusted_details"] = _trusted_details(entry)
-	result["_display_vehicle"] = _vehicle_display(game_manager, entry)
-	result["_display_player"] = player_name(entry)
-	result["_display_version"] = _version_display(entry)
-	result["_replay_available"] = !String(entry.get("run_id", "")).is_empty() \
-		and !String(entry.get("replay_sha256", "")).is_empty()
-	result["_compatibility_warning"] = _compatibility_warning(entry)
-	return result
+static func decorate(game_manager: GameManager, entry: MxtLeaderboardEntry) -> MxtLeaderboardEntry:
+	entry.set_presentation(
+		entry.display_rank if !entry.display_rank.is_empty() else "#%d" % entry.rank,
+		entry.display_player if !entry.display_player.is_empty() else player_name(entry),
+		entry.display_vehicle if !entry.display_vehicle.is_empty() else _vehicle_display(game_manager, entry),
+		entry.display_version if !entry.display_version.is_empty() else _version_display(entry),
+		!entry.run_id.is_empty() and !entry.replay_sha256.is_empty() if entry.source != "local" else entry.replay_available,
+		entry.compatibility_warning if entry.source == "local" else _compatibility_warning(entry))
+	return entry
 
 
-static func _trusted_details(entry: Dictionary) -> Dictionary:
-	return {
-		"replay_sha256": String(entry.get("replay_sha256", "")),
-		"track_content_id": String(entry.get("track_content_id", "")),
-		"track_gameplay_digest": String(entry.get("track_gameplay_digest", "")),
-		"vehicle_content_id": String(entry.get("vehicle_content_id", "")),
-		"vehicle_gameplay_digest": String(entry.get("vehicle_gameplay_digest", "")),
-		"machine_setting_percent": int(entry.get("machine_setting_percent", -1)),
-		"ruleset_revision": int(entry.get("ruleset_revision", -1)),
-		"replay_schema_version": int(entry.get("replay_schema_version", -1)),
-		"game_version": (entry.get("game_version", {}) as Dictionary).duplicate(true) \
-			if typeof(entry.get("game_version", {})) == TYPE_DICTIONARY else {},
-	}
-
-
-static func _vehicle_display(game_manager: GameManager, entry: Dictionary) -> String:
+static func _vehicle_display(game_manager: GameManager, entry: MxtLeaderboardEntry) -> String:
 	var display_name := vehicle_name(
 		game_manager,
-		String(entry.get("vehicle_content_id", "")),
-		String(entry.get("vehicle_gameplay_digest", "")))
-	var machine_setting_percent := int(entry.get("machine_setting_percent", -1))
+		entry.vehicle_content_id,
+		entry.vehicle_gameplay_digest)
+	var machine_setting_percent := entry.machine_setting_percent
 	return "%s · %d%%" % [display_name, machine_setting_percent] if machine_setting_percent >= 0 else display_name
 
 
-static func _version_display(entry: Dictionary) -> String:
-	if String(entry.get("provenance", "")) == "steam_import_score_only":
+static func _version_display(entry: MxtLeaderboardEntry) -> String:
+	if entry.provenance == "steam_import_score_only":
 		return "Historical Steam entry · no replay"
-	var version_value = entry.get("game_version", {})
-	if typeof(version_value) != TYPE_DICTIONARY:
+	if entry.game_version_major < 0:
 		return "Unknown version"
-	var version: Dictionary = version_value
 	return "v%d.%d.%d · replay r%d" % [
-		int(version.get("major", 0)),
-		int(version.get("compatibility", 0)),
-		int(version.get("patch", 0)),
-		int(entry.get("replay_schema_version", 0)),
+		entry.game_version_major,
+		entry.game_version_compatibility,
+		entry.game_version_patch,
+		entry.replay_schema_version,
 	]
 
 
@@ -71,15 +53,16 @@ static func vehicle_name(game_manager: GameManager, content_id: String, gameplay
 	return "Digest %s…" % gameplay_digest.trim_prefix("sha256:").left(8)
 
 
-static func player_name(entry: Dictionary) -> String:
-	var persona_name := String(entry.get("persona_name", "")).strip_edges()
-	return persona_name if !persona_name.is_empty() else "Steam %s" % String(entry.get("steam_id", "Unknown"))
+static func player_name(entry: MxtLeaderboardEntry) -> String:
+	var persona_name := entry.persona_name.strip_edges()
+	return persona_name if !persona_name.is_empty() else "Steam %s" % str(entry.steam_id)
 
 
-static func _compatibility_warning(entry: Dictionary) -> bool:
-	var version_value = entry.get("game_version", {})
-	if typeof(version_value) != TYPE_DICTIONARY:
-		return false
-	var version: Dictionary = version_value
-	return int(version.get("major", -1)) != GameVersionData.MAJOR \
-		or int(version.get("compatibility", -1)) != GameVersionData.COMPATIBILITY
+static func category_player_name(persona_name: String, steam_id) -> String:
+	var clean_name := persona_name.strip_edges()
+	return clean_name if !clean_name.is_empty() else "Steam %s" % str(steam_id)
+
+
+static func _compatibility_warning(entry: MxtLeaderboardEntry) -> bool:
+	return entry.game_version_major >= 0 and (entry.game_version_major != GameVersionData.MAJOR \
+		or entry.game_version_compatibility != GameVersionData.COMPATIBILITY)

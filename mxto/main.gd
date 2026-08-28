@@ -2308,16 +2308,15 @@ func _on_leaderboard_submission_completed(result: Dictionary) -> void:
 		leaderboard_client.request_entries(board_name, "around_user")
 
 
-func _on_time_attack_rank_entries_received(board_name: String, request_type: String, response: Dictionary) -> void:
-	if board_name != time_attack_rank_refresh_board or !bool(response.get("ok", false)):
+func _on_time_attack_rank_entries_received(board_name: String, request_type: String, response: MxtLeaderboardQueryResult) -> void:
+	if board_name != time_attack_rank_refresh_board or !response.is_ok():
 		return
 	var local_steam_id := steam_service.get_steam_id()
-	var entries: Array = response.get("entries", [])
 	if request_type == "around_user":
-		for value in entries:
-			var entry: Dictionary = value
-			if int(entry.get("steam_id", 0)) == local_steam_id:
-				time_attack_rank_refresh_global = "Global rank #%d" % int(entry.get("rank", 0))
+		for index in response.get_entry_count():
+			var entry := response.get_entry(index)
+			if entry != null and entry.steam_id == local_steam_id:
+				time_attack_rank_refresh_global = "Global rank #%d" % entry.rank
 				break
 	var parts: Array[String] = []
 	if !time_attack_rank_refresh_global.is_empty():
@@ -2350,7 +2349,7 @@ func _on_time_attack_watch_replay_requested() -> void:
 		replay_controller.call_deferred("play_replay_file", time_attack_last_replay_path)
 
 
-func _on_leaderboard_replay_watch_requested(board_name: String, entry: Dictionary) -> void:
+func _on_leaderboard_replay_watch_requested(board_name: String, entry: MxtLeaderboardEntry) -> void:
 	if leaderboard_replay_cache == null:
 		return
 	if leaderboard_watch_request_token != 0:
