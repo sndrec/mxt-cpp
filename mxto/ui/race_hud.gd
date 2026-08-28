@@ -658,7 +658,7 @@ func _process( _delta:float ) -> void:
 	var use_tick := nm.input_transport.get_race_tick()
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
 	var place_id := focus_player_id
-	if car.game_manager != null and car.game_manager.replay_controller.replay_playback_active:
+	if car.game_manager != null and car.game_manager.replay_playback_session.replay_playback_active:
 		local_id = focus_player_id
 		use_tick = car.game_manager._singleplayer_tick
 	if nm.race_results.player_finish_times.has(focus_player_id):

@@ -1,4 +1,4 @@
-class_name ReplayController extends Node
+class_name ReplayPlaybackSession extends Node
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")

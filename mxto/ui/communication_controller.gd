@@ -19,7 +19,7 @@ const GLOBAL_REFILL_PER_SECOND := 8.0
 var game_manager
 var network_manager: NetworkManager
 var game_sim: GameSim
-var replay_controller: ReplayController
+var replay_playback_session: ReplayPlaybackSession
 
 var lobby_history: Array[Dictionary] = []
 var rate_state := {}
@@ -39,12 +39,12 @@ func initialize(
 	in_game_manager,
 	in_network_manager: NetworkManager,
 	in_game_sim: GameSim,
-	in_replay_controller: ReplayController
+	in_replay_playback_session: ReplayPlaybackSession
 ) -> void:
 	game_manager = in_game_manager
 	network_manager = in_network_manager
 	game_sim = in_game_sim
-	replay_controller = in_replay_controller
+	replay_playback_session = in_replay_playback_session
 
 func _on_lobby_send_pressed() -> void:
 	submit_message(lobby_input.text)
@@ -232,7 +232,7 @@ func handle_unhandled_input(event: InputEvent) -> bool:
 	return true
 
 func update_race_overlay() -> void:
-	if !game_sim.sim_started or replay_controller.replay_playback_active or !network_manager.has_network_peer():
+	if !game_sim.sim_started or replay_playback_session.replay_playback_active or !network_manager.has_network_peer():
 		race_overlay.set_voice_status({"race_active": false}, {})
 		return
 	var status: Dictionary = voice_chat.get_voice_debug_status()

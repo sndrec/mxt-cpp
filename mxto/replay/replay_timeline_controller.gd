@@ -10,7 +10,7 @@ const DEATH_ICON_SIZE := Vector2(24.0, 24.0)
 const DEATH_FALLOUT := 2
 
 @onready var game_manager: GameManager = get_parent() as GameManager
-@onready var playback: ReplayController = get_node("../ReplayController") as ReplayController
+@onready var playback: ReplayPlaybackSession = get_node("../ReplayPlaybackSession") as ReplayPlaybackSession
 @onready var replay_camera_controller: ReplayCameraController = get_node("../ReplayCameraController") as ReplayCameraController
 @onready var race_presentation_controller: RacePresentationController = get_node("../RacePresentationController") as RacePresentationController
 @onready var debug_runtime_controller: DebugRuntimeController = get_node("../DebugRuntimeController") as DebugRuntimeController

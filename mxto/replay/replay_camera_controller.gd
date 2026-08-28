@@ -17,7 +17,7 @@ const MANUAL_SPEED_MIN := 1.0
 const MANUAL_SPEED_MAX := 5000.0
 
 @onready var game_manager: GameManager = get_parent() as GameManager
-@onready var playback: ReplayController = get_node("../ReplayController") as ReplayController
+@onready var playback: ReplayPlaybackSession = get_node("../ReplayPlaybackSession") as ReplayPlaybackSession
 @onready var vehicle_content_controller: VehicleContentController = get_node("../VehicleContentController") as VehicleContentController
 @onready var spectator_controller: SpectatorController = get_node("../SpectatorController") as SpectatorController
 @onready var race_presentation_controller: RacePresentationController = get_node("../RacePresentationController") as RacePresentationController

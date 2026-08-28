@@ -20,7 +20,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
-@onready var replay_controller: ReplayController = $ReplayController
+@onready var replay_playback_session: ReplayPlaybackSession = $ReplayPlaybackSession
 @onready var race_audio_controller: RaceAudioController = $RaceAudioController
 @onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var track_presentation_controller: TrackPresentationController = $TrackPresentationController
@@ -187,7 +187,7 @@ func _ready() -> void:
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
 	race_audio_controller.initialize()
-	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
+	communication_controller.initialize(self, network_manager, game_sim, replay_playback_session)
 	lobby_chibi_controller.initialize(
 		self,
 		network_manager,
@@ -206,14 +206,14 @@ func _ready() -> void:
 		network_manager,
 		game_sim,
 		server_game_sim,
-		replay_controller,
+		replay_playback_session,
 		track_content_controller,
 		car_node_container,
 		car_settings)
 	time_attack_session_controller.initialize(
 		self,
 		network_manager,
-		replay_controller,
+		replay_playback_session,
 		race_presentation_controller,
 		practice_controller,
 		leaderboard_client,
@@ -223,7 +223,7 @@ func _ready() -> void:
 	time_attack_session_controller.main_menu_requested.connect(_return_to_menu)
 	grand_prix_session_controller.initialize(network_manager)
 	replay_catalog_controller.initialize()
-	replay_catalog_controller.watch_requested.connect(replay_controller.play_replay_file)
+	replay_catalog_controller.watch_requested.connect(replay_playback_session.play_replay_file)
 	replay_recorder.initialize()
 	replay_recorder.staged_replay_saved.connect(replay_timeline_controller.refresh_save_local_button)
 	replay_camera_controller.initialize()
@@ -242,7 +242,7 @@ func _ready() -> void:
 		game_sim,
 		server_game_sim,
 		network_manager,
-		replay_controller,
+		replay_playback_session,
 		race_audio_controller,
 		track_content_controller,
 		track_presentation_controller,
@@ -284,7 +284,7 @@ func _ready() -> void:
 	race_pause_controller.initialize(
 		$RacePauseLayer/RacePauseRoot,
 		practice_controller,
-		replay_controller,
+		replay_playback_session,
 		replay_recorder,
 		options_menu)
 	race_pause_controller.retry_requested.connect(_on_pause_retry_pressed)
@@ -370,7 +370,7 @@ func _ready() -> void:
 		float(options_menu.call("get_vehicle_view_distance_multiplier")),
 		bool(options_menu.call("get_render_all_vehicles")))
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
-	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
+	var replay_launch_requested := replay_playback_session.configure_command_line(args, user_args)
 	replay_launch_requested = debug_replay_controller.configure_command_line(args, user_args) \
 		or replay_launch_requested
 	replay_launch_requested = replay_catalog_controller.configure_command_line(args, user_args) \
@@ -729,7 +729,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	if focus_index < 0 or settings.size() != racer_ids.size() \
 			or track_index < 0 or track_index >= track_content_controller.tracks.size() \
 			or cursor < 0 or cursor != _singleplayer_tick or full_state.is_empty() \
-			or !replay_controller.replay_playback_active or !game_sim.sim_started \
+			or !replay_playback_session.replay_playback_active or !game_sim.sim_started \
 			or race_session_controller.current_racer_ids != racer_ids \
 			or !(replay_stream_value is MxtReplayStream) \
 			or canonical_prefix_count != cursor:
@@ -784,7 +784,7 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	else:
 		time_attack_ghost_controller.clear()
 	replay_camera_controller.apply_focus_to_local_visual()
-	if !replay_controller.detach_playback_for_practice():
+	if !replay_playback_session.detach_playback_for_practice():
 		race_presentation_controller.show_notification("Replay resume failed while leaving playback.", 5000)
 		return
 	singleplayer_mode = true
@@ -1101,8 +1101,8 @@ func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: 
 func _local_player_id() -> int:
 	if practice_controller != null and practice_controller.local_player_id_override >= 0:
 		return practice_controller.local_player_id_override
-	if replay_controller.replay_playback_active:
-		return replay_controller.replay_playback_local_player_id
+	if replay_playback_session.replay_playback_active:
+		return replay_playback_session.replay_playback_local_player_id
 	if singleplayer_mode:
 		return 0
 	return multiplayer.get_unique_id() if network_manager.has_network_peer() else 0
@@ -1184,7 +1184,7 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		race_presentation_controller.show_sticker(actor_id, value)
 		return
 	if event_type == "eliminated":
-		if actor_id == _local_player_id() and replay_controller.should_enqueue_replay_race_notification():
+		if actor_id == _local_player_id() and replay_playback_session.should_enqueue_replay_race_notification():
 			spectator_controller.activate_local_elimination()
 		return
 	if event_type == "dnf":
@@ -1193,13 +1193,13 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 			spectator_controller.change_focus(1)
 		return
 	if event_type == "ko":
-		if replay_controller.should_enqueue_replay_race_notification():
+		if replay_playback_session.should_enqueue_replay_race_notification():
 			race_presentation_controller.show_ko_medal(actor_id, target_id)
 		return
 	if event_type == "finish":
 		if actor_id == _local_player_id():
 			race_audio_controller.begin_local_finish()
-		if replay_controller.should_enqueue_replay_race_notification():
+		if replay_playback_session.should_enqueue_replay_race_notification():
 			race_presentation_controller.show_finish_medal(actor_id, tick_value)
 
 func _consume_authoritative_race_events() -> void:
@@ -1352,8 +1352,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if headless_mode:
 		if singleplayer_mode and game_sim.sim_started:
-			if replay_controller.replay_playback_active:
-				replay_controller.simulate_playback()
+			if replay_playback_session.replay_playback_active:
+				replay_playback_session.simulate_playback()
 			else:
 				_simulate_singleplayer_tick()
 			if debug_runtime_controller.quit_after_frames >= 0 and _singleplayer_tick >= debug_runtime_controller.quit_after_frames:
@@ -1391,8 +1391,8 @@ func _run_active_race_physics_frame(delta: float) -> void:
 		input_bytes = practice_controller.resolve_local_input(input_bytes)
 	if singleplayer_mode:
 		var profile_tick_start := Time.get_ticks_usec() if profile_enabled else 0
-		if replay_controller.replay_playback_active:
-			replay_controller.simulate_playback()
+		if replay_playback_session.replay_playback_active:
+			replay_playback_session.simulate_playback()
 		else:
 			_simulate_singleplayer_tick(input_bytes)
 		if profile_enabled:
@@ -1409,7 +1409,7 @@ func _run_active_race_physics_frame(delta: float) -> void:
 		else:
 			_simulate_single_tick()
 	var profile_events_start := Time.get_ticks_usec() if profile_enabled else 0
-	if !replay_controller.replay_playback_active:
+	if !replay_playback_session.replay_playback_active:
 		_consume_authoritative_race_events()
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.EVENTS, profile_events_start)
@@ -1431,7 +1431,7 @@ func _run_active_race_physics_frame(delta: float) -> void:
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.NAMETAG, profile_nametag_start)
 	var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0
-	if !replay_controller.replay_playback_active:
+	if !replay_playback_session.replay_playback_active:
 		_check_race_finished()
 	if practice_controller.session_active:
 		practice_controller.capture_completed_tick(_singleplayer_tick - 1)
@@ -1441,8 +1441,8 @@ func _run_active_race_physics_frame(delta: float) -> void:
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
 	var start_time := Time.get_ticks_usec()
-	if replay_controller.replay_playback_active:
-		replay_controller.simulate_playback()
+	if replay_playback_session.replay_playback_active:
+		replay_playback_session.simulate_playback()
 		network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
 		return
 	input_bytes = debug_replay_controller.consume_playback_input(input_bytes)
@@ -1777,7 +1777,7 @@ func _check_race_finished() -> void:
 			continue
 		if !network_manager.race_results.player_dnfs.has(racer_id):
 			all_done = false
-	if replay_controller.replay_playback_active:
+	if replay_playback_session.replay_playback_active:
 		return
 	if network_manager.is_server:
 		if all_done:
@@ -1834,7 +1834,7 @@ func _on_leaderboard_replay_cache_request_completed(token: int, result: Dictiona
 		race_presentation_controller.show_notification(String(result.get("message", "Leaderboard replay ready.")), 3000)
 	var cache_path := String(result.get("cache_path", ""))
 	if !cache_path.is_empty():
-		replay_controller.call_deferred("play_replay_file", cache_path)
+		replay_playback_session.call_deferred("play_replay_file", cache_path)
 
 
 func _load_gameplay_camera_settings() -> void:
@@ -1906,7 +1906,7 @@ func _process(delta: float) -> void:
 	_update_start_sync_drop_panel()
 	race_presentation_controller.update()
 	debug_runtime_controller.update_labels(lobby_control.visible)
-	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
+	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_playback_session.replay_playback_active:
 		replay_recorder.refresh_pause_button()
 	if game_sim.sim_started:
 		spectator_controller.update_finished_input()

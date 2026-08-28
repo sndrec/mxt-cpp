@@ -265,7 +265,7 @@ func _on_pause_save_pressed() -> void:
 
 
 func _should_record_current_race() -> bool:
-	if game_manager.replay_controller.replay_playback_active:
+	if game_manager.replay_playback_session.replay_playback_active:
 		return false
 	if (
 			game_manager.network_manager.race_configuration.is_practice()

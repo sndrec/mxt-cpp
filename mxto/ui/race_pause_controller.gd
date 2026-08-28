@@ -23,7 +23,7 @@ var save_replay_button: Button
 var lobby_button: Button
 var disconnect_button: Button
 var practice_controller: PracticeController
-var replay_controller: ReplayController
+var replay_playback_session: ReplayPlaybackSession
 var replay_recorder: ReplayRecorder
 var options_menu: Control
 var open := false
@@ -35,12 +35,12 @@ var nav_repeat_seconds := 0.0
 func initialize(
 		in_root: Control,
 		in_practice_controller: PracticeController,
-		in_replay_controller: ReplayController,
+		in_replay_playback_session: ReplayPlaybackSession,
 		in_replay_recorder: ReplayRecorder,
 		in_options_menu: Control) -> void:
 	root = in_root
 	practice_controller = in_practice_controller
-	replay_controller = in_replay_controller
+	replay_playback_session = in_replay_playback_session
 	replay_recorder = in_replay_recorder
 	options_menu = in_options_menu
 	title = root.get_node("Center/Panel/Box/RacePauseTitle")

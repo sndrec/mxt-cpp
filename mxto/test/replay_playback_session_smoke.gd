@@ -13,7 +13,7 @@ func _arg_value(name: String) -> String:
 	return String(source[index + 1])
 
 func _fail(message: String) -> void:
-	push_error("MXT_REPLAY_CONTROLLER_SMOKE_FAIL " + message)
+	push_error("MXT_REPLAY_PLAYBACK_SESSION_SMOKE_FAIL " + message)
 	quit(1)
 
 func _init() -> void:
@@ -34,7 +34,7 @@ func _run() -> void:
 		if child is Timer:
 			(child as Timer).stop()
 			child.queue_free()
-	var replay := game_manager.replay_controller as ReplayController
+	var replay := game_manager.replay_playback_session as ReplayPlaybackSession
 	replay._start_replay_playback_from_path(replay_path)
 	replay.replay_playback_paused = true
 	if !replay.replay_playback_active or replay._playback_frame_count() <= 0:
@@ -94,7 +94,7 @@ func _run() -> void:
 		_fail("debug frame was not recorded")
 		return
 	debug_replay.recording = false
-	print("MXT_REPLAY_CONTROLLER_SMOKE_OK frames=", total_ticks,
+	print("MXT_REPLAY_PLAYBACK_SESSION_SMOKE_OK frames=", total_ticks,
 		" seek_tick=", seek_tick,
 		" catalog_entries=", catalog.entries.size())
 	game_manager.queue_free()

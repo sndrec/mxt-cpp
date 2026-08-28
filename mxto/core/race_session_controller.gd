@@ -16,7 +16,7 @@ var game_root: Node
 var game_sim: GameSim
 var server_game_sim: GameSim
 var network_manager: NetworkManager
-var replay_controller
+var replay_playback_session: ReplayPlaybackSession
 var race_audio_controller: RaceAudioController
 var track_content_controller: TrackContentController
 var track_presentation_controller: TrackPresentationController
@@ -50,7 +50,7 @@ func initialize(
 	in_game_sim: GameSim,
 	in_server_game_sim: GameSim,
 	in_network_manager: NetworkManager,
-	in_replay_controller,
+	in_replay_playback_session: ReplayPlaybackSession,
 	in_race_audio_controller: RaceAudioController,
 	in_track_content_controller: TrackContentController,
 	in_track_presentation_controller: TrackPresentationController,
@@ -71,7 +71,7 @@ func initialize(
 	game_sim = in_game_sim
 	server_game_sim = in_server_game_sim
 	network_manager = in_network_manager
-	replay_controller = in_replay_controller
+	replay_playback_session = in_replay_playback_session
 	race_audio_controller = in_race_audio_controller
 	track_content_controller = in_track_content_controller
 	track_presentation_controller = in_track_presentation_controller
@@ -140,8 +140,8 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 	var local_player_id := _local_player_id()
 	local_player_index = racer_ids.find(local_player_id)
 	var start_grid_slots: PackedInt32Array
-	if replay_controller.replay_playback_active and replay_controller.replay_start_grid_slots.size() == racer_ids.size():
-		start_grid_slots = replay_controller.replay_start_grid_slots.duplicate()
+	if replay_playback_session.replay_playback_active and replay_playback_session.replay_start_grid_slots.size() == racer_ids.size():
+		start_grid_slots = replay_playback_session.replay_start_grid_slots.duplicate()
 	else:
 		start_grid_slots = _build_start_grid_slots(racer_ids, singleplayer_mode)
 	current_racer_ids = racer_ids.duplicate(true)
@@ -258,7 +258,7 @@ func begin_transition(singleplayer_mode: bool, audio_fade_seconds := 0.0) -> voi
 	game_root.replay_recorder.reset(network_manager.is_server and !singleplayer_mode)
 	game_root.debug_replay_controller.reset_for_transition()
 	game_root.replay_camera_controller.reset()
-	replay_controller.reset_playback_for_transition()
+	replay_playback_session.reset_playback_for_transition()
 
 func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -> void:
 	race_presentation_controller.reset()
@@ -322,7 +322,7 @@ func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_prope
 			network_manager.race_configuration.is_practice() \
 			and network_manager.race_configuration.boost_unlocked_from_start)
 	if sim.has_method("set_multiplayer_intro_camera_enabled"):
-		sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_controller.replay_playback_use_multiplayer_startup)
+		sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_playback_session.replay_playback_use_multiplayer_startup)
 	sim.instantiate_gamesim(level_buffer.duplicate(), car_properties.duplicate(true), acceleration_settings)
 	sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(sim, racer_ids)
@@ -331,7 +331,7 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 	var slots := PackedInt32Array()
 	slots.resize(racer_ids.size())
 	slots.fill(-1)
-	if singleplayer_mode and !replay_controller.replay_playback_use_multiplayer_startup and !network_manager.lobby_settings.get_cpu_roster().is_empty():
+	if singleplayer_mode and !replay_playback_session.replay_playback_use_multiplayer_startup and !network_manager.lobby_settings.get_cpu_roster().is_empty():
 		var local_index := racer_ids.find(_local_player_id())
 		if local_index >= 0 and racer_ids.size() > 1:
 			var next_slot := 0
@@ -438,8 +438,8 @@ func _clear_triggers() -> void:
 func _local_player_id() -> int:
 	if game_root.practice_controller != null and game_root.practice_controller.local_player_id_override >= 0:
 		return game_root.practice_controller.local_player_id_override
-	if replay_controller.replay_playback_active:
-		return replay_controller.replay_playback_local_player_id
+	if replay_playback_session.replay_playback_active:
+		return replay_playback_session.replay_playback_local_player_id
 	if current_singleplayer_mode:
 		return 0
 	if network_manager.has_network_peer():

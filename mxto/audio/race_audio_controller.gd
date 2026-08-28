@@ -190,7 +190,7 @@ func leave_race(music_fade_seconds: float = -1.0) -> void:
 		spatial_audio.call("stop_music", music_fade_seconds)
 
 func begin_local_finish() -> void:
-	if race_finish_audio_started or game_manager.replay_controller.replay_playback_active:
+	if race_finish_audio_started or game_manager.replay_playback_session.replay_playback_active:
 		return
 	race_finish_audio_started = true
 	var generation := race_finish_audio_generation
@@ -205,7 +205,7 @@ func _begin_race_finish_sfx_duck_after_delay(generation: int) -> void:
 		await get_tree().create_timer(RACE_FINISH_SFX_DUCK_DELAY_SECONDS).timeout
 	if generation != race_finish_audio_generation or !race_finish_audio_started:
 		return
-	if game_manager.replay_controller.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
+	if game_manager.replay_playback_session.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
 		return
 	_begin_race_finish_sfx_duck()
 
@@ -213,7 +213,7 @@ func _play_race_results_music_after_delay(generation: int) -> void:
 	await get_tree().create_timer(RACE_RESULTS_MUSIC_DELAY_SECONDS).timeout
 	if generation != race_finish_audio_generation or !race_finish_audio_started:
 		return
-	if game_manager.replay_controller.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
+	if game_manager.replay_playback_session.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
 		return
 	_play_music_from_definition({
 		"loop": RACE_RESULTS_MUSIC_LOOP,
@@ -361,7 +361,7 @@ func _race_audio_focus_player_id() -> int:
 	return local_id
 
 func after_simulation_tick() -> void:
-	if spatial_audio == null or game_manager.replay_controller.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
+	if spatial_audio == null or game_manager.replay_playback_session.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
 		return
 	var player_id := _race_audio_focus_player_id()
 	var current_tick := game_manager.network_manager.input_transport.get_race_tick()

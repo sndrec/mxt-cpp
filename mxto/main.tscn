@@ -11,7 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://do7bo8imdv64e" path="res://ui/lobby_static.tscn" id="20_lobby_static"]
 [ext_resource type="PackedScene" uid="uid://bbe5vn5g66jbq" path="res://ui/race_pause_menu.tscn" id="21_race_pause"]
 [ext_resource type="Script" uid="uid://dyf161ibfwcno" path="res://netplay/proximity_voice_chat.gd" id="22_voice"]
-[ext_resource type="Script" uid="uid://cpt5qenuy0jws" path="res://replay/replay_controller.gd" id="23_replay"]
+[ext_resource type="Script" uid="uid://cpt5qenuy0jws" path="res://replay/replay_playback_session.gd" id="23_replay"]
 [ext_resource type="Script" uid="uid://ci4gxdo86qgxd" path="res://audio/race_audio_controller.gd" id="24_audio"]
 [ext_resource type="Script" uid="uid://berp7plvet1og" path="res://track/track_content_controller.gd" id="25_track"]
 [ext_resource type="Script" path="res://track/track_presentation_controller.gd" id="25_track_presentation"]
@@ -188,7 +188,7 @@ script = ExtResource("1_tjhrj")
 
 [node name="GameSim" type="GameSim" parent="." unique_id=253165976]
 
-[node name="ReplayController" type="Node" parent="." unique_id=1464332657]
+[node name="ReplayPlaybackSession" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
 metadata/_custom_type_script = "uid://cpt5qenuy0jws"
 

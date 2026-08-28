@@ -25,9 +25,9 @@ func _run() -> void:
 	for child in game_manager.get_children():
 		if child is Timer:
 			(child as Timer).stop()
-	game_manager.replay_controller.replay_skip_seek_bake_requested = true
-	game_manager.replay_controller._start_replay_playback_from_path(replay_path)
-	var replay := game_manager.replay_controller
+	game_manager.replay_playback_session.replay_skip_seek_bake_requested = true
+	game_manager.replay_playback_session._start_replay_playback_from_path(replay_path)
+	var replay := game_manager.replay_playback_session
 	if !replay.replay_playback_active or replay._playback_frame_count() < 4:
 		_fail("replay playback did not start")
 		return
@@ -75,10 +75,10 @@ func _run() -> void:
 		return
 	game_manager.resume_replay_in_practice(payload)
 	var practice := game_manager.practice_controller
-	if !practice.session_active or game_manager.replay_controller.replay_playback_active:
+	if !practice.session_active or game_manager.replay_playback_session.replay_playback_active:
 		_fail("replay did not transition into a live Practice session active=%s playback=%s singleplayer=%s sim=%s ghost_error=%s prepared_track=%d" % [
 			str(practice.session_active),
-			str(game_manager.replay_controller.replay_playback_active),
+			str(game_manager.replay_playback_session.replay_playback_active),
 			str(game_manager.singleplayer_mode),
 			str(game_manager.game_sim.sim_started),
 			game_manager.time_attack_ghost_controller.last_error,

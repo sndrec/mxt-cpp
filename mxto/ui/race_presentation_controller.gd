@@ -23,7 +23,7 @@ const NAMETAG_MAX_DISTANCE_SQ := 12000.0
 var network_manager: NetworkManager
 var game_sim: GameSim
 var server_game_sim: GameSim
-var replay_controller: ReplayController
+var replay_playback_session: ReplayPlaybackSession
 var track_content_controller: TrackContentControllerClass
 var car_node_container: CarNodeContainer
 var car_settings: CarSettingsClass
@@ -48,7 +48,7 @@ func initialize(
 	in_network_manager: NetworkManager,
 	in_game_sim: GameSim,
 	in_server_game_sim: GameSim,
-	in_replay_controller: ReplayController,
+	in_replay_playback_session: ReplayPlaybackSession,
 	in_track_content_controller: TrackContentControllerClass,
 	in_car_node_container: CarNodeContainer,
 	in_car_settings: CarSettingsClass
@@ -56,7 +56,7 @@ func initialize(
 	network_manager = in_network_manager
 	game_sim = in_game_sim
 	server_game_sim = in_server_game_sim
-	replay_controller = in_replay_controller
+	replay_playback_session = in_replay_playback_session
 	track_content_controller = in_track_content_controller
 	car_node_container = in_car_node_container
 	car_settings = in_car_settings
@@ -96,7 +96,7 @@ func update() -> void:
 	if notification_label.visible and notification_hide_msec > 0 and now_msec > notification_hide_msec and network_manager.race_results.net_race_finish_time == -1:
 		notification_label.visible = false
 		notification_hide_msec = 0
-	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
+	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_playback_session.replay_playback_active:
 		show_results()
 
 func show_notification(text: String, duration_msec := 2200) -> void:
@@ -105,7 +105,7 @@ func show_notification(text: String, duration_msec := 2200) -> void:
 	notification_hide_msec = Time.get_ticks_msec() + duration_msec
 
 func show_results() -> void:
-	if replay_controller.replay_playback_active:
+	if replay_playback_session.replay_playback_active:
 		hide_results()
 		return
 	notification_label.visible = false

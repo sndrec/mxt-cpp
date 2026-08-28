@@ -13,7 +13,7 @@ const TimeAttackRules = preload("res://leaderboards/time_attack_rules.gd")
 
 var game_manager: GameManager
 var network_manager: NetworkManager
-var replay_controller: ReplayController
+var replay_playback_session: ReplayPlaybackSession
 var presentation_controller: RacePresentationController
 var practice_controller: PracticeController
 var leaderboard_client: LeaderboardClient
@@ -30,14 +30,14 @@ var rank_refresh_global := ""
 func initialize(
 		in_game_manager: GameManager,
 		in_network_manager: NetworkManager,
-		in_replay_controller: ReplayController,
+		in_replay_playback_session: ReplayPlaybackSession,
 		in_presentation_controller: RacePresentationController,
 		in_practice_controller: PracticeController,
 		in_leaderboard_client: LeaderboardClient,
 		in_steam_service: MxtSteamService) -> void:
 	game_manager = in_game_manager
 	network_manager = in_network_manager
-	replay_controller = in_replay_controller
+	replay_playback_session = in_replay_playback_session
 	presentation_controller = in_presentation_controller
 	practice_controller = in_practice_controller
 	leaderboard_client = in_leaderboard_client
@@ -202,4 +202,4 @@ func _save_replay() -> void:
 
 func _watch_replay() -> void:
 	if !last_replay_path.is_empty():
-		replay_controller.call_deferred("play_replay_file", last_replay_path)
+		replay_playback_session.call_deferred("play_replay_file", last_replay_path)

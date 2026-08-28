@@ -39,9 +39,9 @@ func _racer_counts(args: Array) -> Array:
 	return result
 
 
-func _existing_suite_samples(replay_controller) -> Dictionary:
+func _existing_suite_samples(replay_catalog_controller: ReplayCatalogController, replay_playback_session: ReplayPlaybackSession) -> Dictionary:
 	var existing := {}
-	var replay_dir: String = replay_controller._replay_dir()
+	var replay_dir: String = replay_catalog_controller._replay_dir()
 	if DirAccess.make_dir_recursive_absolute(replay_dir) != OK:
 		return existing
 	var directory := DirAccess.open(replay_dir)
@@ -52,7 +52,7 @@ func _existing_suite_samples(replay_controller) -> Dictionary:
 	while !file_name.is_empty():
 		if !directory.current_is_dir() and file_name.ends_with(".mxt_replay"):
 			var path := replay_dir.path_join(file_name)
-			var metadata: Dictionary = replay_controller._load_replay_metadata_file(path)
+			var metadata: Dictionary = replay_playback_session._load_replay_metadata_file(path)
 			if String(metadata.get("benchmark_suite", "")) == SUITE_ID:
 				var key := "%d:%d" % [
 					int(metadata.get("benchmark_racer_count", 0)),
@@ -176,7 +176,7 @@ func _run() -> void:
 		_fail("Twist Road is absent from the track catalog")
 		return
 	game_manager.track_selector.select(track_index)
-	var existing := _existing_suite_samples(game_manager.replay_controller)
+	var existing := _existing_suite_samples(game_manager.replay_catalog_controller, game_manager.replay_playback_session)
 	var requested_count := racer_counts.size() * sample_count
 	var generated_count := 0
 	var skipped_count := 0
@@ -186,7 +186,7 @@ func _run() -> void:
 		"MXT_REPLAY_BENCHMARK_BEGIN suite=", SUITE_ID,
 		" counts=", racer_counts,
 		" samples=", sample_count,
-		" replay_dir=", game_manager.replay_controller._replay_dir())
+		" replay_dir=", game_manager.replay_catalog_controller._replay_dir())
 	for racer_count_value in racer_counts:
 		var racer_count := int(racer_count_value)
 		for sample_index in range(1, sample_count + 1):

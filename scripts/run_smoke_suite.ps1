@@ -66,7 +66,7 @@ $simulationScripts = @(
 function Write-GroupList {
     Write-Output 'stable         Single-process scene, UI, content, and controller smoke tests.'
     Write-Output 'simulation     Deterministic input, bumper, and netstate checks.'
-    Write-Output 'replay         Replay controller smoke; requires -ReplayPath.'
+    Write-Output 'replay         Replay playback-session smoke; requires -ReplayPath.'
     Write-Output 'lobby-load     Multi-process lobby load; requires run_lobby_load_test.ps1.'
     Write-Output 'all-applicable Stable and simulation groups plus optional groups whose prerequisites were supplied.'
     Write-Output 'self-check     Verify that a failing child process is detected.'
@@ -163,7 +163,7 @@ function Invoke-ReplayGroup {
     if (-not (Test-Path -LiteralPath $resolvedReplayPath -PathType Leaf)) {
         throw "Replay file not found: $resolvedReplayPath"
     }
-    Invoke-GodotScript -ScriptName 'replay_controller_smoke.gd' -UserArguments @(
+    Invoke-GodotScript -ScriptName 'replay_playback_session_smoke.gd' -UserArguments @(
         '--replay-smoke'
         $resolvedReplayPath
     ) -Failures $Failures
