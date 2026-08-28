@@ -5,6 +5,7 @@
 #include "content/content_catalog.h"
 #include "content/content_record.h"
 #include "content/content_load_result.h"
+#include "content/content_sync_result.h"
 #include "core/race_configuration.h"
 #include "core/race_roster.h"
 #include "core/track_content_evidence.h"
@@ -52,6 +53,9 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtContentCatalog);
 	GDREGISTER_CLASS(MxtContentRecord);
 	GDREGISTER_CLASS(MxtContentLoadResult);
+	GDREGISTER_CLASS(MxtContentCatalogDelta);
+	GDREGISTER_CLASS(MxtWorkshopSyncItem);
+	GDREGISTER_CLASS(MxtWorkshopSyncResult);
 	GDREGISTER_CLASS(MxtRaceConfiguration);
 	GDREGISTER_CLASS(MxtRaceRoster);
 	GDREGISTER_CLASS(MxtTrackContentEvidence);

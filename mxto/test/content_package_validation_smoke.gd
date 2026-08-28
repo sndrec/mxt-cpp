@@ -41,18 +41,18 @@ func _initialize() -> void:
 		"size_on_disk": 5678,
 		"item_state_bits": 5,
 	}
-	var workshop_first: Dictionary = workshop_catalog.sync_workshop_packages([workshop_item])
-	_expect(bool(workshop_first.get("catalog_changed", false)), "first Workshop catalog sync should add its validated record")
-	_expect(int(workshop_first.get("validation_cache_miss_count", 0)) == 1, "first Workshop catalog sync should validate once")
+	var workshop_first: MxtWorkshopSyncResult = workshop_catalog.sync_workshop_packages([workshop_item])
+	_expect(workshop_first.catalog_changed, "first Workshop catalog sync should add its validated record")
+	_expect(workshop_first.validation_cache_miss_count == 1, "first Workshop catalog sync should validate once")
 	var transient_item := workshop_item.duplicate(true)
 	transient_item["item_state_bits"] = 13
 	transient_item["downloading"] = true
-	var workshop_transient: Dictionary = workshop_catalog.sync_workshop_packages([transient_item])
-	_expect(!bool(workshop_transient.get("catalog_changed", true)), "transient Steam item state should not rebuild unchanged Workshop content")
-	_expect(int(workshop_transient.get("validation_cache_hit_count", 0)) == 1, "transient Steam item state should reuse native validation")
-	var workshop_removed: Dictionary = workshop_catalog.sync_workshop_packages([])
-	_expect(bool(workshop_removed.get("catalog_changed", false)), "missing Workshop item should remove only its prior record")
-	_expect((workshop_removed.get("delta", {}) as Dictionary).get("removed_content_ids", []).size() == 1, "Workshop removal should emit one exact content ID")
+	var workshop_transient: MxtWorkshopSyncResult = workshop_catalog.sync_workshop_packages([transient_item])
+	_expect(!workshop_transient.catalog_changed, "transient Steam item state should not rebuild unchanged Workshop content")
+	_expect(workshop_transient.validation_cache_hit_count == 1, "transient Steam item state should reuse native validation")
+	var workshop_removed: MxtWorkshopSyncResult = workshop_catalog.sync_workshop_packages([])
+	_expect(workshop_removed.catalog_changed, "missing Workshop item should remove only its prior record")
+	_expect(workshop_removed.delta.removed_content_ids.size() == 1, "Workshop removal should emit one exact content ID")
 	workshop_catalog = null
 	var snapshot_library := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_snapshot_library")
 	_remove_tree(snapshot_library)

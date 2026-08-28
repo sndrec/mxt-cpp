@@ -3,6 +3,7 @@
 
 #include "content/content_record.h"
 #include "content/content_load_result.h"
+#include "content/content_sync_result.h"
 #include "content/content_validator.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -71,7 +72,7 @@ public:
 	Ref<MxtContentLoadResult> add_draft_package(const String &package_root);
 	Ref<MxtContentLoadResult> snapshot_draft_package(const String &package_root, const String &library_root);
 	Ref<MxtContentLoadResult> add_workshop_package(const String &package_root, int64_t published_file_id);
-	Dictionary sync_workshop_packages(const Array &items);
+	Ref<MxtWorkshopSyncResult> sync_workshop_packages(const Array &items);
 	Ref<MxtContentLoadResult> scan_local_library(const String &library_root);
 	bool remove_content(const String &content_id);
 	void clear();

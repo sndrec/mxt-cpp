@@ -37,7 +37,7 @@ func selected_content_ids() -> Array:
 	return selected
 
 
-func _on_catalog_delta(_delta: Dictionary) -> void:
+func _on_catalog_delta(_delta: MxtContentCatalogDelta) -> void:
 	_refresh()
 
 

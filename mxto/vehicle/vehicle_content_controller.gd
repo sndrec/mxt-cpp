@@ -3,7 +3,7 @@ extends Node
 
 signal workshop_content_changed(items: Array)
 signal catalog_changed
-signal catalog_delta(delta: Dictionary)
+signal catalog_delta(delta: MxtContentCatalogDelta)
 signal garage_catalog_changed
 
 const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
@@ -459,33 +459,32 @@ func _on_workshop_items_changed(items: Array) -> void:
 		var published_file_id := int(item.get("published_file_id", 0))
 		if published_file_id > 0:
 			lobby_known_workshop_items[published_file_id] = true
-	var synced: Dictionary = content_catalog.sync_workshop_packages(items)
+	var synced: MxtWorkshopSyncResult = content_catalog.sync_workshop_packages(items)
 	var native_results_by_id := {}
-	for result_value in synced.get("items", []):
-		var result: Dictionary = result_value
-		var published_file_id := int(result.get("published_file_id", 0))
-		native_results_by_id[published_file_id] = result
+	for index in synced.get_item_count():
+		var result := synced.get_item(index)
+		native_results_by_id[result.published_file_id] = result
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
 		var published_file_id := int(item.get("published_file_id", 0))
-		var validation: Dictionary = native_results_by_id.get(published_file_id, {})
-		if bool(validation.get("valid", false)):
+		var validation := native_results_by_id.get(published_file_id) as MxtWorkshopSyncItem
+		if validation != null and validation.is_valid():
 			item["status"] = "ready_update_pending" if (
 				bool(item.get("needs_update", false))
 				or bool(item.get("downloading", false))
 				or bool(item.get("download_pending", false))) else "ready"
-			item["record"] = validation.get("record", {})
+			item["record"] = validation.record
 		else:
-			var errors = validation.get("errors", [])
+			var errors := validation.errors if validation != null else PackedStringArray()
 			if bool(item.get("installed", false)) and !errors.is_empty():
 				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
 				item["errors"] = errors
 		processed_items.append(item)
-	var catalog_materially_changed := bool(synced.get("catalog_changed", false))
-	var delta: Dictionary = synced.get("delta", {})
-	for published_file_id in delta.get("changed_item_ids", []):
+	var catalog_materially_changed := synced.catalog_changed
+	var delta := synced.delta
+	for published_file_id in delta.changed_item_ids:
 		lobby_ready_workshop_packages.erase(int(published_file_id))
-	for published_file_id in delta.get("removed_item_ids", []):
+	for published_file_id in delta.removed_item_ids:
 		lobby_ready_workshop_packages.erase(int(published_file_id))
 	workshop_content_items = processed_items
 	if runtime_content_loaded and catalog_materially_changed:
@@ -523,18 +522,18 @@ func _load_packaged_definitions() -> void:
 			continue
 		definitions.append(definition)
 		definitions_by_content_id[definition.content_id] = definition
-func _apply_workshop_content_delta(delta: Dictionary) -> void:
+func _apply_workshop_content_delta(delta: MxtContentCatalogDelta) -> void:
 	var remove_ids: Array = []
-	remove_ids.append_array(delta.get("removed_content_ids", []))
-	remove_ids.append_array(delta.get("changed_content_ids", []))
+	remove_ids.append_array(Array(delta.removed_content_ids))
+	remove_ids.append_array(Array(delta.changed_content_ids))
 	for content_id_value in remove_ids:
 		var content_id := String(content_id_value)
 		definitions_by_content_id.erase(content_id)
 	definitions = definitions.filter(
 		func(definition): return definition is CarDefinition and !remove_ids.has(definition.content_id))
 	var load_ids: Array = []
-	load_ids.append_array(delta.get("added_content_ids", []))
-	load_ids.append_array(delta.get("changed_content_ids", []))
+	load_ids.append_array(Array(delta.added_content_ids))
+	load_ids.append_array(Array(delta.changed_content_ids))
 	for content_id_value in load_ids:
 		var content_id := String(content_id_value)
 		var record: MxtContentRecord = content_catalog.resolve_content(content_id)

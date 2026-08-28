@@ -411,11 +411,11 @@ func _on_vehicle_content_catalog_changed() -> void:
 	if car_settings != null:
 		car_settings.call("refresh_after_game_manager_loaded")
 
-func _on_vehicle_content_catalog_delta(delta: Dictionary) -> void:
+func _on_vehicle_content_catalog_delta(delta: MxtContentCatalogDelta) -> void:
 	var affected_content_ids: Array = []
-	affected_content_ids.append_array(delta.get("added_content_ids", []))
-	affected_content_ids.append_array(delta.get("changed_content_ids", []))
-	affected_content_ids.append_array(delta.get("removed_content_ids", []))
+	affected_content_ids.append_array(Array(delta.added_content_ids))
+	affected_content_ids.append_array(Array(delta.changed_content_ids))
+	affected_content_ids.append_array(Array(delta.removed_content_ids))
 	if lobby_chibi_controller != null and !affected_content_ids.is_empty():
 		lobby_chibi_controller.refresh_vehicle_content(affected_content_ids)
 	if car_settings != null:
