@@ -99,15 +99,6 @@ static float angle16_to_rad(int16_t angle)
 	return (float)angle * (6.28318530717958647692f / 65536.0f);
 }
 
-static Vector3 rotate_about_axis(const Vector3 &value, const Vector3 &axis, int16_t angle16)
-{
-	const Vector3 n = normalized_or(axis, Vector3(0.0f, 1.0f, 0.0f));
-	const float radians = angle16_to_rad(angle16);
-	const float s = std::sin(radians);
-	const float c = std::cos(radians);
-	return value * c + n.cross(value) * s + n * (n.dot(value) * (1.0f - c));
-}
-
 static Vector3 rotate_about_axis_radians(const Vector3 &value, const Vector3 &axis, float radians)
 {
 	const Vector3 n = normalized_or(axis, Vector3(1.0f, 0.0f, 0.0f));

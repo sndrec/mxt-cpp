@@ -772,19 +772,6 @@ static void begin_vehicle_tick_soa(
 		return car.soa->restore_state[car.soa_index] != 0;
 	}
 
-	static inline SimVec3 transform_point_components(
-		float c0x, float c0y, float c0z,
-		float c1x, float c1y, float c1z,
-		float c2x, float c2y, float c2z,
-		float ox, float oy, float oz,
-		const SimVec3& p)
-	{
-		return SimVec3(
-			c0x * p.x + c1x * p.y + c2x * p.z + ox,
-			c0y * p.x + c1y * p.y + c2y * p.z + oy,
-			c0z * p.x + c1z * p.y + c2z * p.z + oz);
-	}
-
 	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count)
 	{
 		for (int i = 0; i < count; ++i) {

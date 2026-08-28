@@ -40,7 +40,6 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_authoritative_stat_payload_bytes"), &NetcodeSession::get_authoritative_stat_payload_bytes);
 	ClassDB::bind_method(D_METHOD("get_authoritative_stat_compression_candidates"), &NetcodeSession::get_authoritative_stat_compression_candidates);
 	ClassDB::bind_method(D_METHOD("get_authoritative_stat_build_usec"), &NetcodeSession::get_authoritative_stat_build_usec);
-	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("clear_peer_state"), &NetcodeSession::clear_peer_state);
 	ClassDB::bind_method(D_METHOD("remove_peer", "peer_id"), &NetcodeSession::remove_peer);
 	ClassDB::bind_method(D_METHOD("set_peer_last_received", "peer_id", "tick", "now_sec"), &NetcodeSession::set_peer_last_received);
@@ -56,7 +55,6 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
 	ClassDB::bind_method(D_METHOD("recalculate_predictions", "start_tick", "end_tick"), &NetcodeSession::recalculate_predictions);
 	ClassDB::bind_method(D_METHOD("replay_history", "game_sim", "start_tick", "end_tick"), &NetcodeSession::replay_history);
-	ClassDB::bind_method(D_METHOD("get_frame_as_dictionary", "tick"), &NetcodeSession::get_frame_as_dictionary);
 }
 
 NetcodeSession::NetcodeSession()

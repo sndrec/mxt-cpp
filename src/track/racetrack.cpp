@@ -1289,17 +1289,6 @@ static bool mesh_bvh_child_overlaps_segment(const TrackMeshBVHNode &node, int sl
 	return aabb_overlaps_segment(bounds, p0, p1);
 }
 
-static uint32_t mesh_bvh_live_child_mask(const TrackMeshBVHNode &node)
-{
-	uint32_t mask = 0;
-	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
-		if (!mesh_bvh_child_empty(node, slot)) {
-			mask |= 1u << slot;
-		}
-	}
-	return mask;
-}
-
 static uint32_t mesh_bvh_child_aabb_mask(const TrackMeshBVHNode &node, const SimAABB &bounds)
 {
 #if defined(__SSE__)

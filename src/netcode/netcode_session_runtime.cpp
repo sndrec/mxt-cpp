@@ -73,42 +73,6 @@ int64_t NetcodeSession::get_authoritative_stat_payload_bytes() const { return st
 int64_t NetcodeSession::get_authoritative_stat_compression_candidates() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.compression_candidates); }
 int64_t NetcodeSession::get_authoritative_stat_build_usec() const { return static_cast<int64_t>(last_consumed_authoritative_packet_stats.build_usec); }
 
-godot::Dictionary NetcodeSession::get_input_frame_debug(int tick) const
-{
-	Dictionary out;
-	const InputFrame* frame = find_frame(pending_inputs, tick);
-	out["tick"] = tick;
-	out["frame_found"] = frame != nullptr;
-	out["racer_count"] = racer_count;
-	int human_count = 0;
-	int cpu_count = 0;
-	int present_humans = 0;
-	int first_missing_slot = -1;
-	int first_missing_player_id = 0;
-	bool first_missing_cpu = false;
-	for (int i = 0; i < racer_count; ++i) {
-		if (cpu_flags[i]) {
-			++cpu_count;
-			continue;
-		}
-		++human_count;
-		if (frame && frame->present[i]) {
-			++present_humans;
-		} else if (first_missing_slot < 0) {
-			first_missing_slot = i;
-			first_missing_player_id = player_ids[i];
-			first_missing_cpu = cpu_flags[i] != 0;
-		}
-	}
-	out["human_count"] = human_count;
-	out["cpu_count"] = cpu_count;
-	out["present_humans"] = present_humans;
-	out["first_missing_slot"] = first_missing_slot;
-	out["first_missing_player_id"] = first_missing_player_id;
-	out["first_missing_cpu"] = first_missing_cpu;
-	return out;
-}
-
 void NetcodeSession::clear_peer_state()
 {
 	for (int i = 0; i < MAX_PEERS; ++i) {
@@ -427,22 +391,4 @@ bool NetcodeSession::replay_history(godot::Object* game_sim_obj, int start_tick,
 	}
 	sim->finish_render_rollback_correction_capture();
 	return true;
-}
-
-godot::Dictionary NetcodeSession::get_frame_as_dictionary(int tick) const
-{
-	godot::Dictionary out;
-	const InputFrame* frame = find_frame(authoritative_history, tick);
-	if (!frame) {
-		frame = find_frame(input_history, tick);
-	}
-	if (!frame) {
-		return out;
-	}
-	for (int i = 0; i < racer_count; ++i) {
-		if (frame->present[i]) {
-			out[player_ids[i]] = PlayerInput::to_bytes(frame->inputs[i]);
-		}
-	}
-	return out;
 }

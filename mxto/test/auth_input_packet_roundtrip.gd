@@ -73,13 +73,11 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 	server.configure(player_ids, cpu_flags, 1000)
 	client.configure(player_ids, cpu_flags, 1001)
 
-	var expected := {}
 	for tick in range(frame_count):
 		for i in range(racer_count):
 			var id := int(player_ids[i])
 			var bytes := _make_input(tick + input_tick_base, i, mode)
 			server.store_authoritative_input(tick, id, bytes)
-			expected[[tick, id]] = bytes
 
 	var packet: PackedByteArray = server.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
 	server.consume_authoritative_packet_stats()
@@ -105,15 +103,10 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 		])
 		return false
 
-	for tick in range(frame_count):
-		var decoded: Dictionary = client.get_frame_as_dictionary(tick)
-		for i in range(racer_count):
-			var id := int(player_ids[i])
-			var got: PackedByteArray = decoded.get(id, PackedByteArray())
-			var want: PackedByteArray = expected[[tick, id]]
-			if got != want:
-				push_error("MXT_AUTH_INPUT_ROUNDTRIP mismatch mode=%s tick=%d id=%d got=%s want=%s" % [mode, tick, id, got, want])
-				return false
+	var rebuilt_packet := client.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
+	if rebuilt_packet != packet:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP decoded packet mismatch mode=%s got=%d want=%d" % [mode, rebuilt_packet.size(), packet.size()])
+		return false
 
 	var stripped_client := NetcodeSession.new()
 	stripped_client.configure(player_ids, cpu_flags, 1001)
@@ -137,15 +130,10 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 			stripped_client.get_last_authoritative_packet_count(),
 		])
 		return false
-	for tick in range(frame_count):
-		var stripped_decoded: Dictionary = stripped_client.get_frame_as_dictionary(tick)
-		for i in range(racer_count):
-			var id := int(player_ids[i])
-			var got: PackedByteArray = stripped_decoded.get(id, PackedByteArray())
-			var want: PackedByteArray = expected[[tick, id]]
-			if got != want:
-				push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped mismatch mode=%s tick=%d id=%d got=%s want=%s" % [mode, tick, id, got, want])
-				return false
+	var rebuilt_stripped_packet := stripped_client.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
+	if rebuilt_stripped_packet != packet:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped decoded packet mismatch mode=%s got=%d want=%d" % [mode, rebuilt_stripped_packet.size(), packet.size()])
+		return false
 
 	print("MXT_AUTH_INPUT_ROUNDTRIP_CASE_OK mode=", mode, " racers=", racer_count, " frames=", frame_count, " packet=", packet.size())
 	return true

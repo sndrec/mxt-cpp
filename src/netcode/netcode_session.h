@@ -2,7 +2,6 @@
 
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/variant/array.hpp"
-#include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
 #include "core/player_input.h"
 #include <cstdint>
@@ -150,7 +149,6 @@ public:
 	int64_t get_authoritative_stat_payload_bytes() const;
 	int64_t get_authoritative_stat_compression_candidates() const;
 	int64_t get_authoritative_stat_build_usec() const;
-	godot::Dictionary get_input_frame_debug(int tick) const;
 	void clear_peer_state();
 	void remove_peer(int peer_id);
 	void set_peer_last_received(int peer_id, int tick, double now_sec);
@@ -166,7 +164,6 @@ public:
 	bool tick_client_predicted_frame(godot::Object* game_sim_obj, int tick);
 	void recalculate_predictions(int start_tick, int end_tick);
 	bool replay_history(godot::Object* game_sim_obj, int start_tick, int end_tick);
-	godot::Dictionary get_frame_as_dictionary(int tick) const;
 };
 
 }

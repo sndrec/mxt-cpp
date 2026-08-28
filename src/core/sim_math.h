@@ -472,13 +472,3 @@ static inline SimVec3 get_closest_point_to_segment(SimVec3 p_point, SimVec3 p_se
 	}
 	return p_segment_start + n * d;
 }
-
-static inline float get_closest_t_on_segment(SimVec3 p_point, SimVec3 p_segment_start, SimVec3 p_segment_end) {
-	SimVec3 p = p_point - p_segment_start;
-	SimVec3 n = p_segment_end - p_segment_start;
-	float l2 = n.length_squared();
-	if (l2 < 1e-20f) {
-		return 0.0f;
-	}
-	return n.dot(p) / l2;
-}

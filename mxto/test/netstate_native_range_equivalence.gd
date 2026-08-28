@@ -109,21 +109,14 @@ func _init() -> void:
 		_free_sim(range_sim)
 		quit(1)
 		return
-	var old_frame: Dictionary = old_session.get_frame_as_dictionary(end_tick)
-	var range_frame: Dictionary = range_session.get_frame_as_dictionary(end_tick)
-	if old_frame.size() != range_frame.size():
-		push_error("native range authoritative frame count diverged at tick %d old=%d range=%d" % [end_tick, old_frame.size(), range_frame.size()])
+	var old_packet := old_session.build_authoritative_input_packet(end_tick, 1)
+	var range_packet := range_session.build_authoritative_input_packet(end_tick, 1)
+	if old_packet != range_packet:
+		push_error("native range authoritative input diverged at tick %d old=%d range=%d" % [end_tick, old_packet.size(), range_packet.size()])
 		_free_sim(old_sim)
 		_free_sim(range_sim)
 		quit(1)
 		return
-	for id in old_frame.keys():
-		if !range_frame.has(id) or old_frame[id] != range_frame[id]:
-			push_error("native range authoritative input diverged at tick %d player=%s" % [end_tick, str(id)])
-			_free_sim(old_sim)
-			_free_sim(range_sim)
-			quit(1)
-			return
 
 	print("MXT_NETSTATE_NATIVE_RANGE_EQUIV_OK track=", track_path,
 		" cars=", cars,

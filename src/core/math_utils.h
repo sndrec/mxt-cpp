@@ -22,40 +22,6 @@ template <typename T> static int sgn(T val) {
 	return (T(0) < val) - (val < T(0));
 }
 
-static SimVec3 get_closest_point_to_segment_uncapped(SimVec3 p_point, SimVec3 p_segment_start, SimVec3 p_segment_end) {
-	SimVec3 p = p_point - p_segment_start;
-	SimVec3 n = p_segment_end - p_segment_start;
-	float l2 = n.length_squared();
-	if (l2 < 1e-20f) {
-		return p_segment_start;
-	}
-
-	float d = n.dot(p) / l2;
-
-	return p_segment_start + n * d;
-}
-
-static bool is_projected_point_within_segment(SimVec3 p_point, SimVec3 p_segment_start, SimVec3 p_segment_end) {
-	SimVec3 p = p_point - p_segment_start;
-	SimVec3 n = p_segment_end - p_segment_start;
-	float l2 = n.length_squared();
-	if (l2 < 1e-20f) {
-		return false;
-	}
-
-	float d = n.dot(p);
-
-	if (d < 0.0f) {
-		return false;
-	}
-	else if (d > l2) {
-		return false;
-	}
-	else {
-		return true;
-	}
-}
-
 inline static float remap_float(float value, float istart, float istop, float ostart, float ostop) {
 	return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
