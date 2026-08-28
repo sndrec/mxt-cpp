@@ -152,6 +152,9 @@ func update_finished_input() -> void:
 		live_strafe_direction = 0
 		live_focus_id = -1
 		return
+	if spectator != null and get_viewport().get_camera_3d() == spectator.camera:
+		live_strafe_direction = 0
+		return
 	var left := Input.get_action_raw_strength("StrafeLeft")
 	var right := Input.get_action_raw_strength("StrafeRight")
 	var direction := 0

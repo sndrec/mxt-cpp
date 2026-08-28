@@ -30,8 +30,11 @@ const REPLAY_RELATIVE_LOOK_TARGET := Vector3(0.0, 2.0, 0.0)
 const REPLAY_RELATIVE_LOOK_SPEED := 0.0025
 const REPLAY_RELATIVE_LOOK_ACTION_SPEED := 6.0
 const REPLAY_RELATIVE_ROLL_SPEED := 4.0
-const REPLAY_RELATIVE_MOVE_SPEED := 300.0
-const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
+const REPLAY_MANUAL_CAMERA_FAST_MULTIPLIER := 3.0
+const REPLAY_MANUAL_CAMERA_FOV_MIN := 10.0
+const REPLAY_MANUAL_CAMERA_FOV_MAX := 150.0
+const REPLAY_MANUAL_CAMERA_SPEED_MIN := 1.0
+const REPLAY_MANUAL_CAMERA_SPEED_MAX := 5000.0
 const REPLAY_SEEK_CHECKPOINT_INTERVAL := 1800
 const REPLAY_INTERFACE_CANVAS_LAYER := 90
 const REPLAY_INPUT_DISPLAY_SCRIPT := preload("res://replay/replay_input_display.gd")
@@ -102,6 +105,8 @@ var replay_relative_camera_basis_desired := Basis.IDENTITY
 var replay_relative_offset := Vector3.ZERO
 var replay_relative_velocity := Vector3.ZERO
 var replay_relative_pending_look_delta := Vector2.ZERO
+var replay_manual_camera_fov := 72.0
+var replay_manual_camera_speed := 300.0
 var replay_input_calib: InputCalibration
 var replay_interface_layer: CanvasLayer
 var replay_catalog_root: Control
@@ -136,6 +141,11 @@ var replay_input_display_checkbox: CheckBox
 var replay_input_display_enabled := false
 var replay_hide_hud_checkbox: CheckBox
 var replay_hide_hud_enabled := false
+var replay_camera_controls: HBoxContainer
+var replay_camera_fov_slider: HSlider
+var replay_camera_fov_value: SpinBox
+var replay_camera_speed_slider: HSlider
+var replay_camera_speed_value: SpinBox
 var replay_input_display_frame_inputs: Dictionary = {}
 var replay_timeline_markers: Dictionary = {}
 var replay_marker_last_laps: Dictionary = {}
@@ -856,7 +866,7 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_panel.anchor_right = 0.92
 	replay_timeline_panel.anchor_top = 1.0
 	replay_timeline_panel.anchor_bottom = 1.0
-	replay_timeline_panel.offset_top = -164.0
+	replay_timeline_panel.offset_top = -210.0
 	replay_timeline_panel.offset_bottom = -18.0
 	replay_timeline_root.add_child(replay_timeline_panel)
 	replay_input_display_panel = PanelContainer.new()
@@ -975,6 +985,56 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	replay_timeline_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	controls.add_child(replay_timeline_time_label)
+	replay_camera_controls = HBoxContainer.new()
+	replay_camera_controls.name = "ManualCameraControls"
+	replay_camera_controls.add_theme_constant_override("separation", 8)
+	replay_camera_controls.visible = false
+	rows.add_child(replay_camera_controls)
+	var fov_label := Label.new()
+	fov_label.text = "FoV"
+	replay_camera_controls.add_child(fov_label)
+	replay_camera_fov_slider = HSlider.new()
+	replay_camera_fov_slider.min_value = REPLAY_MANUAL_CAMERA_FOV_MIN
+	replay_camera_fov_slider.max_value = REPLAY_MANUAL_CAMERA_FOV_MAX
+	replay_camera_fov_slider.step = 1.0
+	replay_camera_fov_slider.value = replay_manual_camera_fov
+	replay_camera_fov_slider.custom_minimum_size.x = 180.0
+	replay_camera_fov_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay_camera_fov_slider.value_changed.connect(_on_replay_camera_fov_changed)
+	replay_camera_controls.add_child(replay_camera_fov_slider)
+	replay_camera_fov_value = SpinBox.new()
+	replay_camera_fov_value.min_value = REPLAY_MANUAL_CAMERA_FOV_MIN
+	replay_camera_fov_value.max_value = REPLAY_MANUAL_CAMERA_FOV_MAX
+	replay_camera_fov_value.step = 1.0
+	replay_camera_fov_value.value = replay_manual_camera_fov
+	replay_camera_fov_value.suffix = " deg"
+	replay_camera_fov_value.custom_minimum_size.x = 105.0
+	replay_camera_fov_value.value_changed.connect(_on_replay_camera_fov_changed)
+	replay_camera_controls.add_child(replay_camera_fov_value)
+	var speed_label := Label.new()
+	speed_label.text = "Speed"
+	replay_camera_controls.add_child(speed_label)
+	replay_camera_speed_slider = HSlider.new()
+	replay_camera_speed_slider.min_value = REPLAY_MANUAL_CAMERA_SPEED_MIN
+	replay_camera_speed_slider.max_value = REPLAY_MANUAL_CAMERA_SPEED_MAX
+	replay_camera_speed_slider.step = 1.0
+	replay_camera_speed_slider.exp_edit = true
+	replay_camera_speed_slider.value = replay_manual_camera_speed
+	replay_camera_speed_slider.custom_minimum_size.x = 180.0
+	replay_camera_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay_camera_speed_slider.tooltip_text = "Base movement speed. Hold Shift for 3x speed."
+	replay_camera_speed_slider.value_changed.connect(_on_replay_camera_speed_changed)
+	replay_camera_controls.add_child(replay_camera_speed_slider)
+	replay_camera_speed_value = SpinBox.new()
+	replay_camera_speed_value.min_value = REPLAY_MANUAL_CAMERA_SPEED_MIN
+	replay_camera_speed_value.max_value = REPLAY_MANUAL_CAMERA_SPEED_MAX
+	replay_camera_speed_value.step = 1.0
+	replay_camera_speed_value.value = replay_manual_camera_speed
+	replay_camera_speed_value.suffix = " u/s"
+	replay_camera_speed_value.custom_minimum_size.x = 115.0
+	replay_camera_speed_value.tooltip_text = "Base movement speed. Hold Shift for 3x speed."
+	replay_camera_speed_value.value_changed.connect(_on_replay_camera_speed_changed)
+	replay_camera_controls.add_child(replay_camera_speed_value)
 	replay_timeline_resume_reason_label = Label.new()
 	replay_timeline_resume_reason_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
 	replay_timeline_resume_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1364,6 +1424,32 @@ func _on_replay_hide_hud_toggled(enabled: bool) -> void:
 	replay_hide_hud_enabled = enabled
 	_apply_replay_hud_visibility()
 
+func _on_replay_camera_fov_changed(value: float) -> void:
+	replay_manual_camera_fov = clampf(value, REPLAY_MANUAL_CAMERA_FOV_MIN, REPLAY_MANUAL_CAMERA_FOV_MAX)
+	if replay_camera_fov_slider != null:
+		replay_camera_fov_slider.set_value_no_signal(replay_manual_camera_fov)
+	if replay_camera_fov_value != null:
+		replay_camera_fov_value.set_value_no_signal(replay_manual_camera_fov)
+	_apply_replay_manual_camera_settings()
+
+func _on_replay_camera_speed_changed(value: float) -> void:
+	replay_manual_camera_speed = clampf(value, REPLAY_MANUAL_CAMERA_SPEED_MIN, REPLAY_MANUAL_CAMERA_SPEED_MAX)
+	if replay_camera_speed_slider != null:
+		replay_camera_speed_slider.set_value_no_signal(replay_manual_camera_speed)
+	if replay_camera_speed_value != null:
+		replay_camera_speed_value.set_value_no_signal(replay_manual_camera_speed)
+	_apply_replay_manual_camera_settings()
+
+func _apply_replay_manual_camera_settings() -> void:
+	if replay_relative_camera != null and is_instance_valid(replay_relative_camera):
+		replay_relative_camera.fov = replay_manual_camera_fov
+	if spectator_controller.spectator != null and is_instance_valid(spectator_controller.spectator):
+		var free_camera := spectator_controller.spectator
+		free_camera.move_speed = replay_manual_camera_speed
+		free_camera.fast_move_speed = replay_manual_camera_speed * REPLAY_MANUAL_CAMERA_FAST_MULTIPLIER
+		if free_camera.camera != null:
+			free_camera.camera.fov = replay_manual_camera_fov
+
 func _apply_replay_hud_visibility() -> void:
 	var hidden := replay_playback_active and replay_hide_hud_enabled
 	debug_runtime_controller.set_replay_hud_hidden(hidden)
@@ -1436,7 +1522,7 @@ func _update_replay_timeline_controls() -> void:
 	if replay_playback_active:
 		var mouse_y := get_viewport().get_mouse_position().y
 		var viewport_h := get_viewport().get_visible_rect().size.y
-		should_show = mouse_y >= viewport_h - 190.0
+		should_show = mouse_y >= viewport_h - 240.0
 		if replay_timeline_panel != null:
 			should_show = should_show or replay_timeline_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
 	replay_timeline_root.visible = should_show
@@ -1461,6 +1547,9 @@ func _update_replay_timeline_controls() -> void:
 		replay_timeline_rate_label.text = _format_replay_playback_rate()
 	if replay_timeline_play_button != null:
 		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
+	if replay_camera_controls != null:
+		replay_camera_controls.visible = replay_playback_active and (
+			replay_camera_mode == REPLAY_CAMERA_RELATIVE or replay_camera_mode == REPLAY_CAMERA_SPECTATOR)
 	if replay_timeline_resume_practice_button != null:
 		var eligibility := _replay_resume_eligibility()
 		var eligible := bool(eligibility.get("eligible", false))
@@ -1831,7 +1920,7 @@ func _ensure_replay_relative_camera() -> Camera3D:
 		replay_relative_camera.name = "ReplayRelativeCamera"
 		replay_relative_camera.near = 0.25
 		replay_relative_camera.far = 40000.0
-		replay_relative_camera.fov = 72.0
+		replay_relative_camera.fov = replay_manual_camera_fov
 		game_manager.get_node("GameWorld").add_child(replay_relative_camera)
 	return replay_relative_camera
 
@@ -1967,11 +2056,14 @@ func _apply_replay_camera_mode() -> void:
 		spectator_controller.disable_free_camera()
 		_reset_replay_relative_camera()
 		_ensure_replay_relative_camera().make_current()
+		_apply_replay_manual_camera_settings()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
 		var focus_transform := _focused_replay_transform()
 		spectator_controller.show_free_camera_at(focus_transform)
+		_apply_replay_manual_camera_settings()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_update_replay_timeline_controls()
 
 func _cycle_replay_camera_mode() -> void:
 	replay_camera_mode = (replay_camera_mode + 1) % 4
@@ -2063,6 +2155,8 @@ func _update_replay_relative_camera(delta: float) -> void:
 		move_input.x -= 1.0
 	if Input.is_physical_key_pressed(KEY_D):
 		move_input.x += 1.0
+	if Input.is_physical_key_pressed(KEY_SPACE):
+		move_input.y += 1.0
 	if Input.is_physical_key_pressed(KEY_CTRL):
 		move_input.y -= 1.0
 	move_input.x += _replay_action_axis("MoveLeft", "MoveRight")
@@ -2071,7 +2165,8 @@ func _update_replay_relative_camera(delta: float) -> void:
 	move_input.z += _replay_action_axis("SteerUp", "SteerDown")
 	if move_input.length_squared() > 1.0:
 		move_input = move_input.normalized()
-	var current_speed := REPLAY_RELATIVE_FAST_MOVE_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else REPLAY_RELATIVE_MOVE_SPEED
+	var current_speed := replay_manual_camera_speed * REPLAY_MANUAL_CAMERA_FAST_MULTIPLIER \
+		if Input.is_physical_key_pressed(KEY_SHIFT) else replay_manual_camera_speed
 	var desired_velocity := replay_relative_camera_basis * move_input * current_speed
 	var velocity_lerp := clampf(delta * (12.0 if move_input.length_squared() > 0.0 else 8.0), 0.0, 1.0)
 	replay_relative_velocity = replay_relative_velocity.lerp(desired_velocity, velocity_lerp)
