@@ -37,6 +37,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var race_content_acquisition_controller: RaceContentAcquisitionController = $RaceContentAcquisitionController
 @onready var time_attack_session_controller: TimeAttackSessionController = $TimeAttackSessionController
 @onready var grand_prix_session_controller: GrandPrixSessionController = $GrandPrixSessionController
+@onready var replay_catalog_controller: ReplayCatalogController = $ReplayCatalogController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -217,6 +218,8 @@ func _ready() -> void:
 	time_attack_session_controller.leaderboard_requested.connect(_on_time_attack_session_leaderboard_requested)
 	time_attack_session_controller.main_menu_requested.connect(_return_to_menu)
 	grand_prix_session_controller.initialize(network_manager)
+	replay_catalog_controller.initialize()
+	replay_catalog_controller.watch_requested.connect(replay_controller.play_replay_file)
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -357,6 +360,8 @@ func _ready() -> void:
 		bool(options_menu.call("get_render_all_vehicles")))
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
+	replay_launch_requested = replay_catalog_controller.configure_command_line(args, user_args) \
+		or replay_launch_requested
 	if !steam_snapshot_requested and !replay_launch_requested and auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
 	elif !steam_snapshot_requested and !replay_launch_requested and auto_singleplayer_mode:
@@ -859,7 +864,7 @@ func _playtest_probe_should_run() -> bool:
 		return false
 	if singleplayer_options_root != null and singleplayer_options_root.visible:
 		return false
-	if replay_controller != null and replay_controller.replay_catalog_root != null and replay_controller.replay_catalog_root.visible:
+	if replay_catalog_controller != null and replay_catalog_controller.is_open():
 		return false
 	return true
 

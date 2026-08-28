@@ -221,7 +221,7 @@ func _run() -> void:
 		" skipped=", skipped_count,
 		" generated_bytes=", total_bytes,
 		" suite_ms=", snappedf(float(Time.get_ticks_usec() - suite_start_usec) * 0.001, 0.001),
-		" catalog_entries=", game_manager.replay_controller.replay_catalog_entries.size(),
+		" catalog_entries=", game_manager.replay_catalog_controller.entries.size(),
 		" catalog_refresh_ms=", snappedf(float(catalog_usec) * 0.001, 0.001))
 	# The active race has already been explicitly destroyed after each sample. Let
 	# SceneTree own final root teardown; freeing Main here races GDExtension cleanup.

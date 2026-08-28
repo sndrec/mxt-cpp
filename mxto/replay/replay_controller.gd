@@ -12,7 +12,6 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 @onready var race_presentation_controller: RacePresentationControllerClass = get_node("../RacePresentationController") as RacePresentationControllerClass
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
 @onready var race_session_controller: RaceSessionControllerClass = get_node("../RaceSessionController") as RaceSessionControllerClass
-@onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
 const DEBUG_REPLAY_VERSION := 2
@@ -47,7 +46,6 @@ const REPLAY_DEATH_EXPLOSION_TEXTURE: Texture2D = preload("res://asset/tex/ui/re
 const REPLAY_DEATH_ICON_SIZE := Vector2(24.0, 24.0)
 const REPLAY_DEATH_FALLOUT := 2
 
-var auto_replay_catalog_profile_mode: bool = false
 var debug_replay_recording: bool = false
 var debug_replay_playback: bool = false
 var debug_replay_inputs: Array = []
@@ -109,14 +107,6 @@ var replay_manual_camera_fov := 72.0
 var replay_manual_camera_speed := 300.0
 var replay_input_calib: InputCalibration
 var replay_interface_layer: CanvasLayer
-var replay_catalog_root: Control
-var replay_catalog_list: ItemList
-var replay_catalog_metadata_label: RichTextLabel
-var replay_catalog_name_edit: LineEdit
-var replay_catalog_watch_button: Button
-var replay_catalog_rename_button: Button
-var replay_catalog_delete_button: Button
-var replay_catalog_entries: Array = []
 var replay_compatibility_dialog: ConfirmationDialog
 var pending_incompatible_replay_path := ""
 var replay_timeline_root: Control
@@ -160,8 +150,6 @@ var replay_timeline_marker_last_size := Vector2(-1.0, -1.0)
 func initialize() -> void:
 	_build_replay_timeline_controls()
 	reload_input_calibration()
-	if replays_button != null and !replays_button.pressed.is_connected(_open_replay_catalog):
-		replays_button.pressed.connect(_open_replay_catalog)
 	if race_pause_save_replay_button != null and !race_pause_save_replay_button.pressed.is_connected(_on_pause_save_replay_pressed):
 		race_pause_save_replay_button.pressed.connect(_on_pause_save_replay_pressed)
 	if !game_manager.network_manager.input_transport.authoritative_server_frame.is_connected(record_frame):
@@ -178,7 +166,6 @@ func _ensure_replay_interface_layer() -> CanvasLayer:
 	return replay_interface_layer
 
 func configure_command_line(args: Array, user_args: Array) -> bool:
-	auto_replay_catalog_profile_mode = args.has("--profile-replay-catalog") or user_args.has("--profile-replay-catalog")
 	var replay_idx := args.find("--debug-replay")
 	var replay_args := args
 	if replay_idx == -1:
@@ -202,9 +189,6 @@ func configure_command_line(args: Array, user_args: Array) -> bool:
 		return true
 	if debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
-		return true
-	if auto_replay_catalog_profile_mode:
-		call_deferred("_profile_replay_catalog_and_quit")
 		return true
 	return false
 
@@ -475,8 +459,8 @@ func save_staged_replay_locally(path: String) -> String:
 		return ""
 	if DirAccess.copy_absolute(ProjectSettings.globalize_path(path), local_path) != OK:
 		return ""
-	if replay_catalog_root != null and replay_catalog_root.visible:
-		_refresh_replay_catalog()
+	if game_manager.replay_catalog_controller.is_open():
+		game_manager.replay_catalog_controller.refresh()
 	_refresh_replay_timeline_save_local_button()
 	return local_path
 
@@ -1673,8 +1657,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	profile_race_start_us = Time.get_ticks_usec() - profile_race_start_us
 	game_manager.get_node("Control").visible = false
 	game_manager.lobby_control.visible = false
-	if replay_catalog_root != null:
-		replay_catalog_root.visible = false
+	game_manager.replay_catalog_controller.close()
 	_apply_replay_focus_to_local_visual()
 	_refresh_replay_input_display()
 	var profile_timeline_us := Time.get_ticks_usec()
@@ -2171,250 +2154,6 @@ func _update_replay_relative_camera(delta: float) -> void:
 	replay_relative_velocity = replay_relative_velocity.lerp(desired_velocity, velocity_lerp)
 	replay_relative_offset += replay_relative_velocity * delta
 	_apply_replay_relative_camera_transform(car_transform)
-
-func _build_replay_catalog() -> void:
-	if replay_catalog_root != null and is_instance_valid(replay_catalog_root):
-		return
-	replay_catalog_root = Control.new()
-	replay_catalog_root.name = "ReplayCatalog"
-	replay_catalog_root.visible = false
-	replay_catalog_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_ensure_replay_interface_layer().add_child(replay_catalog_root)
-	var shade := ColorRect.new()
-	shade.color = Color(0.0, 0.0, 0.0, 0.72)
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	replay_catalog_root.add_child(shade)
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 48)
-	margin.add_theme_constant_override("margin_top", 42)
-	margin.add_theme_constant_override("margin_right", 48)
-	margin.add_theme_constant_override("margin_bottom", 42)
-	replay_catalog_root.add_child(margin)
-	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 18)
-	margin.add_child(columns)
-	replay_catalog_list = ItemList.new()
-	replay_catalog_list.custom_minimum_size = Vector2(430, 0)
-	replay_catalog_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	replay_catalog_list.item_selected.connect(_on_replay_catalog_selected)
-	columns.add_child(replay_catalog_list)
-	var right := VBoxContainer.new()
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.add_theme_constant_override("separation", 10)
-	columns.add_child(right)
-	var title := Label.new()
-	title.text = "Replays"
-	right.add_child(title)
-	replay_catalog_metadata_label = RichTextLabel.new()
-	replay_catalog_metadata_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	replay_catalog_metadata_label.bbcode_enabled = false
-	right.add_child(replay_catalog_metadata_label)
-	replay_catalog_name_edit = LineEdit.new()
-	replay_catalog_name_edit.placeholder_text = "Replay name"
-	right.add_child(replay_catalog_name_edit)
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 8)
-	right.add_child(buttons)
-	replay_catalog_watch_button = Button.new()
-	replay_catalog_watch_button.text = "Watch"
-	replay_catalog_watch_button.pressed.connect(_on_replay_catalog_watch_pressed)
-	buttons.add_child(replay_catalog_watch_button)
-	replay_catalog_rename_button = Button.new()
-	replay_catalog_rename_button.text = "Rename"
-	replay_catalog_rename_button.pressed.connect(_on_replay_catalog_rename_pressed)
-	buttons.add_child(replay_catalog_rename_button)
-	replay_catalog_delete_button = Button.new()
-	replay_catalog_delete_button.text = "Delete"
-	replay_catalog_delete_button.pressed.connect(_on_replay_catalog_delete_pressed)
-	buttons.add_child(replay_catalog_delete_button)
-	var close_button := Button.new()
-	close_button.text = "Close"
-	close_button.pressed.connect(_close_replay_catalog)
-	buttons.add_child(close_button)
-
-func _open_replay_catalog() -> void:
-	_build_replay_catalog()
-	_refresh_replay_catalog()
-	game_manager.get_node("Control").visible = false
-	game_manager.lobby_control.visible = false
-	replay_catalog_root.visible = true
-	if replay_catalog_list.item_count > 0:
-		replay_catalog_list.select(0)
-		_on_replay_catalog_selected(0)
-
-func _profile_replay_catalog_and_quit() -> void:
-	_build_replay_catalog()
-	var metadata_start := Time.get_ticks_usec()
-	_refresh_replay_catalog()
-	var metadata_us := Time.get_ticks_usec() - metadata_start
-	var full_parse_count := 0
-	var full_parse_start := Time.get_ticks_usec()
-	var replay_dir := _replay_dir()
-	var dir := DirAccess.open(replay_dir)
-	if dir != null:
-		dir.list_dir_begin()
-		var file_name := dir.get_next()
-		while file_name != "":
-			if !dir.current_is_dir() and file_name.ends_with(REPLAY_FILE_SUFFIX):
-				var path := replay_dir.path_join(file_name)
-				var parsed := _load_replay_metadata_file(path)
-				if !parsed.is_empty():
-					full_parse_count += 1
-			file_name = dir.get_next()
-		dir.list_dir_end()
-	var full_parse_us := Time.get_ticks_usec() - full_parse_start
-	print("MXT_REPLAY_CATALOG_PROFILE entries=", replay_catalog_entries.size(),
-		" metadata_us=", metadata_us,
-		" full_parse_entries=", full_parse_count,
-		" full_parse_us=", full_parse_us)
-	get_tree().quit()
-
-func _close_replay_catalog() -> void:
-	if replay_catalog_root != null:
-		replay_catalog_root.visible = false
-	if !game_manager.game_sim.sim_started:
-		game_manager.get_node("Control").visible = true
-
-func _refresh_replay_catalog() -> void:
-	replay_catalog_entries.clear()
-	if replay_catalog_list == null:
-		return
-	replay_catalog_list.clear()
-	var replay_dir := _replay_dir()
-	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
-	if err != OK:
-		return
-	var dir := DirAccess.open(replay_dir)
-	if dir == null:
-		return
-	var replay_profiles: Array = []
-	var invalid_count := 0
-	var total_bytes := 0
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		if !dir.current_is_dir() and file_name.ends_with(REPLAY_FILE_SUFFIX):
-			var path := replay_dir.path_join(file_name)
-			var replay_profile := {"file": file_name}
-			var replay_start_usec := Time.get_ticks_usec()
-			var data := _load_replay_metadata_file(path, replay_profile)
-			replay_profile["duration_usec"] = Time.get_ticks_usec() - replay_start_usec
-			replay_profile["valid"] = !data.is_empty()
-			total_bytes += int(replay_profile.get("bytes", 0))
-			replay_profiles.append(replay_profile)
-			if !data.is_empty():
-				data["_path"] = path
-				replay_catalog_entries.append(data)
-			else:
-				invalid_count += 1
-		file_name = dir.get_next()
-	dir.list_dir_end()
-	replay_profiles.sort_custom(
-		func(a: Dictionary, b: Dictionary): return int(a.get("duration_usec", 0)) > int(b.get("duration_usec", 0)))
-	replay_catalog_entries.sort_custom(func(a, b): return float(a.get("created_unix", 0.0)) > float(b.get("created_unix", 0.0)))
-	for entry in replay_catalog_entries:
-		var title := str(entry.get("name", entry.get("track_name", "Replay")))
-		replay_catalog_list.add_item(title)
-	_update_replay_catalog_buttons()
-
-func _selected_replay_catalog_entry() -> Dictionary:
-	if replay_catalog_list == null:
-		return {}
-	var selected := replay_catalog_list.get_selected_items()
-	if selected.is_empty():
-		return {}
-	var idx := int(selected[0])
-	if idx < 0 or idx >= replay_catalog_entries.size():
-		return {}
-	return replay_catalog_entries[idx]
-
-func _on_replay_catalog_selected(_index: int) -> void:
-	var entry := _selected_replay_catalog_entry()
-	if entry.is_empty():
-		replay_catalog_metadata_label.text = ""
-		replay_catalog_name_edit.text = ""
-		_update_replay_catalog_buttons()
-		return
-	replay_catalog_name_edit.text = str(entry.get("name", entry.get("track_name", "Replay")))
-	var player_lines: Array = []
-	for player in entry.get("players", []):
-		if typeof(player) != TYPE_DICTIONARY:
-			continue
-		var p: Dictionary = player
-		var cpu := " CPU" if bool(p.get("cpu", false)) else ""
-		var livery: Dictionary = p.get("car_livery", {}) if typeof(p.get("car_livery", {})) == TYPE_DICTIONARY else {}
-		var stamp_count := 0
-		if typeof(livery.get("stamps", [])) == TYPE_ARRAY:
-			stamp_count = (livery.get("stamps", []) as Array).size()
-		player_lines.append("%s%s - %s - %d stamps" % [
-			str(p.get("username", "Player")),
-			cpu,
-			str(p.get("vehicle_content_id", "")),
-			stamp_count
-		])
-	var schema_supported := _replay_schema_is_supported(entry)
-	var compatibility_status := "current"
-	if !schema_supported:
-		compatibility_status = "unsupported replay format"
-	elif !_replay_is_compatible(entry):
-		compatibility_status = "older version (may desync)"
-	replay_catalog_metadata_label.text = "\n".join([
-		"Track: %s" % str(entry.get("track_name", "")),
-		"Mode: %s" % str(entry.get("mode", "")),
-		"Game version: %s" % str(entry.get("build", "")),
-		"Godot version: %s" % str(entry.get("engine_version", "")),
-		"Duration: %s" % race_presentation_controller.format_race_time(int(entry.get("duration_ticks", 0)), 0),
-		"Players:",
-		"\n".join(player_lines),
-		"",
-		"Compatibility: %s" % compatibility_status,
-		str(entry.get("_path", "")),
-	])
-	_update_replay_catalog_buttons()
-
-func _update_replay_catalog_buttons() -> void:
-	var entry := _selected_replay_catalog_entry()
-	var has_entry := !entry.is_empty()
-	var schema_supported := has_entry and _replay_schema_is_supported(entry)
-	if replay_catalog_watch_button != null:
-		replay_catalog_watch_button.disabled = !schema_supported
-	if replay_catalog_rename_button != null:
-		replay_catalog_rename_button.disabled = !has_entry
-	if replay_catalog_delete_button != null:
-		replay_catalog_delete_button.disabled = !has_entry
-
-func _on_replay_catalog_watch_pressed() -> void:
-	var entry := _selected_replay_catalog_entry()
-	if entry.is_empty():
-		return
-	_request_replay_playback_from_path(str(entry.get("_path", "")))
-
-func _on_replay_catalog_rename_pressed() -> void:
-	var entry := _selected_replay_catalog_entry()
-	if entry.is_empty():
-		return
-	var path := str(entry.get("_path", ""))
-	var stream := MxtReplayStream.new()
-	if !stream.load_file(path, true):
-		return
-	var data: Dictionary = stream.get_metadata()
-	data["name"] = replay_catalog_name_edit.text.strip_edges()
-	if str(data["name"]) == "":
-		data["name"] = str(data.get("track_name", "Replay"))
-	if !stream.rewrite_metadata(path, data):
-		push_warning("Replay rename failed: %s" % stream.get_last_error())
-		return
-	_refresh_replay_catalog()
-
-func _on_replay_catalog_delete_pressed() -> void:
-	var entry := _selected_replay_catalog_entry()
-	if entry.is_empty():
-		return
-	var path := str(entry.get("_path", ""))
-	DirAccess.remove_absolute(path)
-	_refresh_replay_catalog()
 
 func _debug_replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://debug_replays")
