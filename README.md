@@ -78,17 +78,16 @@ The stable single-process suite and deterministic simulation suite are:
 
 Replay and lobby-load groups require their documented inputs/helpers. Smoke
 logs default to a timestamped system temporary directory rather than the repo.
-The lightweight Python tool tests are:
+The Blender add-on's lightweight Python tests are:
 
 ```powershell
-python -m unittest discover tools/car/tests
 python -m unittest discover track-editor-blender-plugin/tests
 ```
 
 ## Tool and service entry points
 
 - Blender add-on setup: [track-editor-blender-plugin/README.md](track-editor-blender-plugin/README.md)
-- car property authoring: [tools/car/README.md](tools/car/README.md)
+- official vehicle reference repair: [tools/car/README.md](tools/car/README.md)
 - F-Zero track conversion: [tools/track/fzgx/README.md](tools/track/fzgx/README.md)
 - auth-input dictionary training: `scripts/train_auth_input_dict.py --help`
 - playtester export packaging: `scripts/build_playtester_exports.ps1`
