@@ -4,6 +4,7 @@
 [ext_resource type="Script" path="res://ui/vehicle_editor_curve_graph.gd" id="2_curve"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_speed_graph.gd" id="3_speed"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_grade_panel.tscn" id="4_grade_panel"]
+[ext_resource type="Script" path="res://ui/vehicle_editor_preview_controller.gd" id="5_preview_controller"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_normal"]
 content_margin_left = 9.0
@@ -52,6 +53,9 @@ corner_radius_bottom_left = 3
 [node name="Car Creator" type="VBoxContainer"]
 layout_mode = 2
 script = ExtResource("1_editor")
+
+[node name="PreviewController" type="Node" parent="."]
+script = ExtResource("5_preview_controller")
 
 [node name="Toolbar" type="HFlowContainer" parent="."]
 layout_mode = 2

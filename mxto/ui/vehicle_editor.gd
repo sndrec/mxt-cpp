@@ -3,12 +3,7 @@ class_name VehicleEditor extends VBoxContainer
 signal content_changed
 signal test_drive_requested(snapshot: MxtContentLoadResult)
 
-const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
-const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
-const VehicleRuntimeAssetFactoryClass = preload("res://vehicle/vehicle_runtime_asset_factory.gd")
-const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
-const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
@@ -30,14 +25,7 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var title_input: LineEdit = $Metadata/Title
 @onready var author_input: LineEdit = $Metadata/Author
 @onready var description_input: TextEdit = $Metadata/Description
-@onready var preview_container: SubViewportContainer = $Workspace/VisualColumn/Preview
-@onready var preview_viewport: SubViewport = $Workspace/VisualColumn/Preview/Viewport
 @onready var visual_status: Label = $Workspace/VisualColumn/VisualStatus
-@onready var preview_primary: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Primary
-@onready var preview_secondary: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Secondary
-@onready var preview_accent: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Accent
-@onready var preview_preset: OptionButton = $Workspace/VisualColumn/PaintPreview/Preset
-@onready var preview_diagnostic: OptionButton = $Workspace/VisualColumn/PaintPreview/Diagnostic
 @onready var physical_tabs: TabContainer = $Workspace/VisualColumn/PhysicalTabs
 @onready var transform_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Transform/Rows
 @onready var body_surface_list: ItemList = $Workspace/VisualColumn/PhysicalTabs/Materials/BodySurfaces
@@ -94,6 +82,7 @@ const MATERIAL_TEXTURE_FILES := {
 @onready var publish_review_summary: RichTextLabel = $PublishReviewDialog/Review/Summary
 @onready var publish_review_preview: TextureRect = $PublishReviewDialog/Review/Preview
 @onready var publish_changelog: TextEdit = $PublishReviewDialog/Review/Changelog
+@onready var preview_controller: VehicleEditorPreviewController = $PreviewController
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
@@ -112,21 +101,6 @@ var schema_by_name: Dictionary = {}
 var current_layer := "base"
 var current_stat := "weight_kg"
 var curve_clipboard: Array = []
-var preview_root: Node3D
-var preview_camera: Camera3D
-var preview_camera_controller := GaragePreviewCameraControllerClass.new()
-var preview_framed_model_path := ""
-var preview_livery: CarLivery = CarLivery.new()
-var preview_render_manager: CarRenderManager
-var preview_definition: CarDefinition
-var preview_gizmo_root: Node3D
-var preview_gizmo_line: MeshInstance3D
-var preview_gizmo_markers: Array[MeshInstance3D] = []
-var preview_gizmo_entries: Array[Dictionary] = []
-var preview_gizmo_sphere: SphereMesh
-var preview_gizmo_materials: Array[StandardMaterial3D] = []
-var dragged_gizmo := -1
-var dragged_gizmo_plane := Plane()
 var workshop_request_id := 0
 var workshop_operation := ""
 var workshop_published_file_id := 0
@@ -153,7 +127,10 @@ func _ready() -> void:
 		schema_by_name[String(entry["name"])] = entry
 	_setup_options()
 	_setup_vector_controls()
-	_setup_preview()
+	preview_controller.initialize(self, session)
+	preview_controller.authoring_edit_committed.connect(_refresh_history_buttons)
+	preview_controller.preview_livery_changed.connect(_mark_dirty)
+	preview_controller.thruster_position_changed.connect(_on_preview_thruster_position_changed)
 	_connect_controls()
 	_refresh_draft_options()
 	if draft_option.item_count > 0:
@@ -164,10 +141,6 @@ func _ready() -> void:
 
 
 func _setup_options() -> void:
-	for preset in ["Saved / Custom", "Default Blue", "Neutral White", "High Contrast", "Warm"]:
-		preview_preset.add_item(preset)
-	for diagnostic in ["Rendered", "Albedo", "Normal Map", "Paint Mask", "Selected Surfaces"]:
-		preview_diagnostic.add_item(diagnostic)
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		workshop_visibility.add_item(visibility)
 	workshop_visibility.selected = 1
@@ -260,41 +233,6 @@ func _add_vector_row(parent: VBoxContainer, key: String, label_text: String, val
 	vector_controls[key] = controls
 
 
-func _setup_preview() -> void:
-	var world := PREVIEW_WORLD_SCENE.instantiate()
-	preview_viewport.add_child(world)
-	preview_root = Node3D.new()
-	preview_root.name = "VehicleEditorPreviewRoot"
-	world.add_child(preview_root)
-	preview_render_manager = CarRenderManagerClass.new()
-	preview_root.add_child(preview_render_manager)
-	preview_gizmo_root = Node3D.new()
-	preview_gizmo_root.name = "AuthoringGizmos"
-	preview_root.add_child(preview_gizmo_root)
-	preview_gizmo_line = MeshInstance3D.new()
-	preview_gizmo_root.add_child(preview_gizmo_line)
-	preview_gizmo_sphere = SphereMesh.new()
-	preview_gizmo_sphere.radius = 0.11
-	preview_gizmo_sphere.height = 0.22
-	preview_gizmo_sphere.radial_segments = 12
-	preview_gizmo_sphere.rings = 6
-	for colour in [Color(0.1, 0.9, 1.0), Color(1.0, 0.2, 0.75), Color(1.0, 0.75, 0.08)]:
-		var material := StandardMaterial3D.new()
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		material.albedo_color = colour
-		material.no_depth_test = true
-		preview_gizmo_materials.append(material)
-	preview_camera = Camera3D.new()
-	preview_camera.near = 0.05
-	preview_camera.fov = 38.0
-	preview_camera.position = Vector3(7.0, 3.7, 9.0)
-	preview_root.add_child(preview_camera)
-	preview_camera.look_at(Vector3.ZERO, Vector3.UP)
-	preview_camera.current = true
-	preview_camera_controller.configure_frame(Vector3(0.0, 0.5, 0.0), 12.0, true)
-	preview_container.gui_input.connect(_on_preview_gui_input)
-
-
 func _connect_controls() -> void:
 	visibility_changed.connect(_on_visibility_changed)
 	$Toolbar/NewDraft.pressed.connect(_new_draft)
@@ -366,12 +304,6 @@ func _connect_controls() -> void:
 	$Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow/Clear.pressed.connect(func(): _clear_material_texture("normal"))
 	$Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow/Import.pressed.connect(func(): _open_material_texture_dialog("paint_mask"))
 	$Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow/Clear.pressed.connect(func(): _clear_material_texture("paint_mask"))
-	physical_tabs.tab_changed.connect(func(_index): _refresh_gizmos())
-	preview_primary.color_changed.connect(func(_colour): _on_preview_colours_changed())
-	preview_secondary.color_changed.connect(func(_colour): _on_preview_colours_changed())
-	preview_accent.color_changed.connect(func(_colour): _on_preview_colours_changed())
-	preview_preset.item_selected.connect(_apply_preview_preset)
-	preview_diagnostic.item_selected.connect(_apply_preview_diagnostic)
 	for key in vector_controls:
 		var controls_value = vector_controls[key]
 		if controls_value is Array:
@@ -392,7 +324,7 @@ func _new_draft() -> bool:
 	session = MxtCarAuthoringSession.new()
 	draft_initialized = true
 	current_properties_path = ""
-	preview_livery = CarLivery.new()
+	preview_controller.reset_livery()
 	updating_controls = true
 	title_input.text = "New Machine"
 	var steam_name := ""
@@ -571,7 +503,7 @@ func _import_material_texture(source_path: String) -> void:
 		setup["use_mesh_normals"] = false
 		session.set_material_setup(setup)
 	_refresh_material_texture_controls()
-	_refresh_preview()
+	preview_controller.refresh()
 	_refresh_history_buttons()
 	_update_autosave_status("Custom %s texture ready" % layer.replace("_", " "))
 
@@ -582,7 +514,7 @@ func _clear_material_texture(layer: String) -> void:
 		return
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	_refresh_material_texture_controls()
-	_refresh_preview()
+	preview_controller.refresh()
 	_update_autosave_status("Custom %s texture cleared" % layer.replace("_", " "))
 
 
@@ -606,10 +538,7 @@ func _refresh_document_mode_controls() -> void:
 	$Toolbar/SaveDraft.text = "Save Official" if editing_official else "Save Now"
 	$Workshop.visible = !editing_official
 	_refresh_boost_sound_controls()
-	preview_primary.disabled = editing_official
-	preview_secondary.disabled = editing_official
-	preview_accent.disabled = editing_official
-	preview_preset.disabled = editing_official
+	preview_controller.set_editing_official(editing_official)
 	for tab in range(physical_tabs.get_tab_count()):
 		var title := physical_tabs.get_tab_title(tab)
 		physical_tabs.set_tab_disabled(
@@ -663,8 +592,7 @@ func _open_selected_draft() -> void:
 	draft_id = selected_id
 	draft_initialized = true
 	current_properties_path = String(result.get("properties_path", ""))
-	preview_livery = CarLivery.new()
-	preview_livery.from_dict(result.get("preview_livery", {}))
+	preview_controller.load_livery(result.get("preview_livery", {}))
 	updating_controls = true
 	title_input.text = String(result.get("title", selected_id))
 	description_input.text = String(result.get("description", ""))
@@ -812,7 +740,7 @@ func _open_selected_official_vehicle() -> void:
 	draft_initialized = false
 	draft_id = ""
 	current_properties_path = definition.properties_path
-	preview_livery = CarLivery.new()
+	preview_controller.reset_livery()
 	updating_controls = true
 	title_input.text = definition.name
 	author_input.text = "Shipped Asset"
@@ -1234,9 +1162,9 @@ func _import_model(path: String) -> void:
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
 		visual_status.text = "Imported %s" % path.get_file()
-		preview_framed_model_path = ""
+		preview_controller.framed_model_path = ""
 		_refresh_visual_controls()
-		_refresh_preview()
+		preview_controller.refresh()
 	else:
 		_show_model_import_failure(result)
 
@@ -1327,7 +1255,7 @@ func _draft_metadata() -> Dictionary:
 		"description": description_input.text,
 		"workshop_published_file_id": workshop_published_file_id,
 		"authoring_intent": session.get_authoring_intent(),
-		"preview_livery": preview_livery.to_dict(),
+		"preview_livery": preview_controller.livery_dict(),
 	}
 
 
@@ -1444,7 +1372,7 @@ func _capture_workshop_preview() -> void:
 
 
 func _save_preview_png(preview_path: String) -> bool:
-	var preview_image := preview_viewport.get_texture().get_image()
+	var preview_image := preview_controller.preview_viewport.get_texture().get_image()
 	if preview_image == null or preview_image.is_empty():
 		return false
 	while true:
@@ -1511,9 +1439,10 @@ func _refresh_all() -> void:
 	_refresh_stat_options()
 	_refresh_visual_controls()
 	_refresh_boost_volume_controls()
-	_refresh_preview_paint_controls()
+	preview_controller.refresh_paint_controls()
 	_refresh_resource_usage()
-	_refresh_preview()
+	_sync_preview_context()
+	preview_controller.refresh()
 	_refresh_samples()
 	_show_diagnostics(session.validate())
 	_refresh_history_buttons()
@@ -1584,57 +1513,6 @@ func _refresh_resource_usage() -> void:
 		int(usage["texture_pixels"]), int(usage["texture_pixel_limit"]),
 		int(usage["images"]), int(usage["image_limit"]),
 	]
-
-
-func _refresh_preview_paint_controls() -> void:
-	updating_controls = true
-	preview_preset.select(0)
-	preview_primary.color = preview_livery.primary_colour
-	preview_secondary.color = preview_livery.secondary_colour
-	preview_accent.color = preview_livery.accent_colour
-	updating_controls = false
-
-
-func _on_preview_colours_changed() -> void:
-	if updating_controls:
-		return
-	preview_livery.primary_colour = preview_primary.color
-	preview_livery.secondary_colour = preview_secondary.color
-	preview_livery.accent_colour = preview_accent.color
-	preview_preset.select(0)
-	preview_render_manager.update_livery_colours(preview_livery)
-	_mark_dirty()
-
-
-func _apply_preview_preset(index: int) -> void:
-	if updating_controls:
-		return
-	match index:
-		0:
-			return
-		1:
-			preview_livery.primary_colour = Color(0.1, 0.35, 1.0, 1.0)
-			preview_livery.secondary_colour = Color.WHITE
-			preview_livery.accent_colour = Color(0.05, 0.05, 0.06, 1.0)
-		2:
-			preview_livery.primary_colour = Color.WHITE
-			preview_livery.secondary_colour = Color(0.7, 0.7, 0.7, 1.0)
-			preview_livery.accent_colour = Color(0.15, 0.15, 0.15, 1.0)
-		3:
-			preview_livery.primary_colour = Color(1.0, 0.08, 0.05, 1.0)
-			preview_livery.secondary_colour = Color(0.05, 0.9, 0.15, 1.0)
-			preview_livery.accent_colour = Color(0.05, 0.2, 1.0, 1.0)
-		4:
-			preview_livery.primary_colour = Color(1.0, 0.35, 0.04, 1.0)
-			preview_livery.secondary_colour = Color(1.0, 0.85, 0.3, 1.0)
-			preview_livery.accent_colour = Color(0.25, 0.03, 0.02, 1.0)
-	_refresh_preview_paint_controls()
-	preview_render_manager.update_livery_colours(preview_livery)
-	_mark_dirty()
-
-
-func _apply_preview_diagnostic(index: int) -> void:
-	preview_render_manager.set_material_diagnostic(index)
 
 
 func _refresh_stat_options() -> void:
@@ -2006,7 +1884,7 @@ func _apply_material_controls() -> void:
 	})
 	if applied:
 		_refresh_history_buttons()
-		_refresh_preview()
+		preview_controller.refresh()
 
 
 func _selected_texture_surface(option: OptionButton) -> int:
@@ -2038,7 +1916,7 @@ func _apply_visual_controls() -> void:
 		session.set_thrusters(thrusters)
 	session.end_edit_transaction()
 	_refresh_history_buttons()
-	_refresh_preview()
+	preview_controller.refresh()
 
 
 func _refresh_thruster_options() -> void:
@@ -2064,7 +1942,7 @@ func _refresh_thruster_controls() -> void:
 	_set_vector_value("thruster_rotation", value.get("rotation_degrees", Vector3.ZERO))
 	vector_controls["thruster_scale"].set_value_no_signal(float(value.get("scale", 1.0)))
 	updating_controls = false
-	_refresh_gizmos()
+	preview_controller.refresh_gizmos()
 
 
 func _add_thruster() -> void:
@@ -2077,7 +1955,7 @@ func _add_thruster() -> void:
 	_refresh_thruster_options()
 	thruster_selector.select(thrusters.size() - 1)
 	_refresh_thruster_controls()
-	_refresh_preview()
+	preview_controller.refresh()
 
 
 func _remove_thruster() -> void:
@@ -2088,230 +1966,18 @@ func _remove_thruster() -> void:
 	session.set_thrusters(thrusters)
 	_refresh_history_buttons()
 	_refresh_thruster_options()
-	_refresh_preview()
+	preview_controller.refresh()
 
 
-func _refresh_preview() -> void:
-	preview_render_manager.clear_renderer()
-	preview_definition = null
-	if editing_official_definition != null:
-		preview_definition = editing_official_definition
-		preview_render_manager.configure_manual(
-			[preview_definition], [{"car_livery": preview_livery.to_dict()}])
-		preview_render_manager.begin_manual_submit()
-		preview_render_manager.submit_manual_car(
-			0, Transform3D.IDENTITY, Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
-		preview_render_manager.set_material_diagnostic(preview_diagnostic.selected)
-		var preview_key := editing_official_definition.content_id
-		_frame_preview_camera(preview_key != preview_framed_model_path)
-		preview_framed_model_path = preview_key
-		_refresh_gizmos()
-		return
-	var model_path := session.get_model_path()
-	if model_path.is_empty() or !FileAccess.file_exists(model_path):
-		preview_framed_model_path = ""
-		return
-	var record := {
-		"content_id": "mxt:vehicle:draft:%s" % draft_id,
-		"title": title_input.text,
-		"authoritative_path": current_properties_path,
-		"visual_path": model_path,
-		"albedo_texture_path": _material_texture_path("albedo"),
-		"normal_texture_path": _material_texture_path("normal"),
-		"paint_mask_texture_path": _material_texture_path("paint_mask"),
-		"visual_metadata": {
-			"model_transform": session.get_model_transform(),
-			"body_surfaces": session.get_material_setup().get("body_surfaces", []),
-			"material_inputs": session.get_material_setup(),
-			"thrusters": session.get_thrusters(),
-		},
-	}
-	preview_definition = VehicleRuntimeAssetFactoryClass.create_from_draft_record(record)
-	if preview_definition != null:
-		preview_render_manager.configure_manual([preview_definition], [{"car_livery": preview_livery.to_dict()}])
-		preview_render_manager.begin_manual_submit()
-		preview_render_manager.submit_manual_car(0, Transform3D.IDENTITY, Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
-		preview_render_manager.set_material_diagnostic(preview_diagnostic.selected)
-		_frame_preview_camera(model_path != preview_framed_model_path)
-		preview_framed_model_path = model_path
-	_refresh_gizmos()
+func _sync_preview_context() -> void:
+	preview_controller.set_document_context(
+		draft_id,
+		current_properties_path,
+		_draft_root() if !draft_id.is_empty() else "",
+		editing_official_definition)
 
-
-func _frame_preview_camera(reset_view := false) -> void:
-	if preview_camera == null or preview_definition == null:
-		return
-	var bounds := AABB()
-	var model_transform := Transform3D.IDENTITY
-	if preview_definition.runtime_mesh != null:
-		bounds = preview_definition.runtime_mesh.get_aabb()
-		model_transform = preview_definition.runtime_transform
-	elif preview_definition.car_scene != null:
-		var source := preview_definition.car_scene.instantiate() as Node3D
-		var body: MeshInstance3D
-		if source != null:
-			body = source.get_node_or_null("VEHICLE_MAIN") as MeshInstance3D
-		if body != null and body.mesh != null:
-			bounds = body.mesh.get_aabb()
-			model_transform = source.transform * body.transform
-		if source != null:
-			source.free()
-	if bounds.size.is_zero_approx():
-		return
-	var center := model_transform * bounds.get_center()
-	var radius := 0.0
-	for x in range(2):
-		for y in range(2):
-			for z in range(2):
-				var corner := bounds.position + Vector3(bounds.size.x * x, bounds.size.y * y, bounds.size.z * z)
-				radius = maxf(radius, center.distance_to(model_transform * corner))
-	var viewport_aspect := float(preview_viewport.size.x) / maxf(1.0, float(preview_viewport.size.y))
-	var half_vertical_fov := deg_to_rad(preview_camera.fov * 0.5)
-	var half_horizontal_fov := atan(tan(half_vertical_fov) * viewport_aspect)
-	var limiting_fov := minf(half_vertical_fov, half_horizontal_fov)
-	var distance := maxf(4.0, radius * 1.15 / maxf(0.1, sin(limiting_fov)))
-	preview_camera_controller.configure_frame(center, distance, reset_view)
-	preview_camera.far = maxf(1000.0, distance + radius * 4.0)
-	preview_camera_controller.apply(preview_camera)
-
-
-func _refresh_gizmos() -> void:
-	if preview_gizmo_root == null:
-		return
-	preview_gizmo_entries.clear()
-	var tab_name := physical_tabs.get_tab_title(physical_tabs.current_tab)
-	if tab_name == "Corners":
-		var tilt := session.get_tilt_corners()
-		var wall := session.get_wall_corners()
-		for i in range(4):
-			preview_gizmo_entries.append({"kind": "tilt", "index": i, "position": tilt[i], "material": 0})
-		for i in range(4):
-			preview_gizmo_entries.append({"kind": "wall", "index": i, "position": wall[i], "material": 1})
-	elif tab_name == "Thrusters":
-		var thrusters: Array = session.get_thrusters()
-		for i in range(thrusters.size()):
-			preview_gizmo_entries.append({
-				"kind": "thruster",
-				"index": i,
-				"position": Vector3(thrusters[i].get("position", Vector3.ZERO)),
-				"material": 2,
-			})
-	while preview_gizmo_markers.size() < preview_gizmo_entries.size():
-		var marker := MeshInstance3D.new()
-		marker.mesh = preview_gizmo_sphere
-		preview_gizmo_root.add_child(marker)
-		preview_gizmo_markers.append(marker)
-	for i in range(preview_gizmo_markers.size()):
-		var marker := preview_gizmo_markers[i]
-		marker.visible = i < preview_gizmo_entries.size()
-		if marker.visible:
-			var entry: Dictionary = preview_gizmo_entries[i]
-			marker.position = entry["position"]
-			marker.material_override = preview_gizmo_materials[int(entry["material"])]
-	_refresh_gizmo_lines(tab_name)
-
-
-func _refresh_gizmo_lines(tab_name: String) -> void:
-	var lines := ImmediateMesh.new()
-	if tab_name == "Corners":
-		var tilt := session.get_tilt_corners()
-		var wall := session.get_wall_corners()
-		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[0])
-		for i in range(4):
-			lines.surface_add_vertex(tilt[i])
-			lines.surface_add_vertex(tilt[(i + 1) % 4])
-		lines.surface_end()
-		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[1])
-		for i in range(4):
-			lines.surface_add_vertex(wall[i])
-			lines.surface_add_vertex(wall[(i + 1) % 4])
-		lines.surface_end()
-	elif tab_name == "Thrusters":
-		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[2])
-		for value in session.get_thrusters():
-			var thruster: Dictionary = value
-			var position := Vector3(thruster.get("position", Vector3.ZERO))
-			var rotation := Vector3(thruster.get("rotation_degrees", Vector3.ZERO))
-			var direction := Basis.from_euler(rotation * PI / 180.0) * Vector3(0.0, 0.0, -1.0)
-			lines.surface_add_vertex(position)
-			lines.surface_add_vertex(position + direction * maxf(0.25, float(thruster.get("scale", 1.0))))
-		lines.surface_end()
-	preview_gizmo_line.mesh = lines
-
-
-func _on_preview_gui_input(event: InputEvent) -> void:
-	if preview_camera == null:
-		return
-	var button := event as InputEventMouseButton
-	var motion := event as InputEventMouseMotion
-	if button == null and motion == null:
-		return
-	var pointer := (button.position if button != null else motion.position) * Vector2(preview_viewport.size) / preview_container.size
-	if button != null:
-		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed and !button.double_click:
-			dragged_gizmo = _pick_preview_gizmo(pointer)
-			if dragged_gizmo >= 0:
-				session.begin_edit_transaction()
-				var point := Vector3(preview_gizmo_entries[dragged_gizmo]["position"])
-				dragged_gizmo_plane = Plane(preview_camera.global_basis.z.normalized(), point)
-				preview_container.accept_event()
-				return
-		if button.button_index == MOUSE_BUTTON_LEFT and !button.pressed and dragged_gizmo >= 0:
-			session.end_edit_transaction()
-			_refresh_history_buttons()
-			_refresh_preview()
-			preview_container.accept_event()
-			dragged_gizmo = -1
-			return
-		if preview_camera_controller.handle_mouse_button(button):
-			preview_camera_controller.apply(preview_camera)
-			preview_container.accept_event()
-		return
-	if motion == null:
-		return
-	if dragged_gizmo >= 0:
-		var origin := preview_camera.project_ray_origin(pointer)
-		var direction := preview_camera.project_ray_normal(pointer)
-		var intersection = dragged_gizmo_plane.intersects_ray(origin, direction)
-		if intersection != null:
-			_set_dragged_gizmo_position(intersection)
-			preview_container.accept_event()
-		return
-	if preview_camera_controller.handle_mouse_motion(motion):
-		preview_camera_controller.apply(preview_camera)
-		preview_container.accept_event()
-
-
-func _pick_preview_gizmo(pointer: Vector2) -> int:
-	var best := -1
-	var best_distance := 18.0
-	for i in range(preview_gizmo_entries.size()):
-		if String(preview_gizmo_entries[i]["kind"]) != "thruster":
-			continue
-		var position := Vector3(preview_gizmo_entries[i]["position"])
-		if preview_camera.is_position_behind(position):
-			continue
-		var distance := pointer.distance_to(preview_camera.unproject_position(position))
-		if distance < best_distance:
-			best_distance = distance
-			best = i
-	return best
-
-
-func _set_dragged_gizmo_position(position: Vector3) -> void:
-	var entry: Dictionary = preview_gizmo_entries[dragged_gizmo]
-	var index := int(entry["index"])
-	match String(entry["kind"]):
-		"thruster":
-			var thrusters: Array = session.get_thrusters()
-			var thruster: Dictionary = thrusters[index]
-			thruster["position"] = position
-			thrusters[index] = thruster
-			session.set_thrusters(thrusters)
-			if index == thruster_selector.selected:
-				_set_vector_value("thruster_position", position)
-	preview_gizmo_entries[dragged_gizmo]["position"] = position
-	_refresh_gizmos()
-
+func _on_preview_thruster_position_changed(_index: int, position: Vector3) -> void:
+	_set_vector_value("thruster_position", position)
 
 func _show_diagnostics(result: Dictionary) -> void:
 	var lines: Array[String] = []
