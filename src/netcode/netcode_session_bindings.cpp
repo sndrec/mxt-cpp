@@ -16,6 +16,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
 	ClassDB::bind_method(D_METHOD("fill_missing_pending_inputs", "tick", "player_ids", "disconnected_ids", "delayed_ids", "allow_new_delayed"), &NetcodeSession::fill_missing_pending_inputs);
+	ClassDB::bind_method(D_METHOD("get_last_replaced_pending_player_id", "index"), &NetcodeSession::get_last_replaced_pending_player_id);
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count", "race_phase"), &NetcodeSession::build_local_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("build_state_fec_chunks", "payload", "chunk_size", "data_chunks_per_group"), &NetcodeSession::build_state_fec_chunks);
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));

@@ -75,6 +75,8 @@ private:
 	PeerState peer_states[MAX_PEERS];
 	PendingInputPacketResult last_pending_packet_result;
 	AuthoritativeInputPacketResult last_authoritative_packet_result;
+	int32_t last_replaced_pending_player_ids[MAX_RACERS] = {};
+	int32_t last_replaced_pending_player_count = 0;
 	int32_t latest_authoritative_tick = -1;
 	mutable uint64_t stat_auth_packets = 0;
 	mutable uint64_t stat_auth_frames = 0;
@@ -111,7 +113,8 @@ public:
 	void store_local_input(int tick, godot::PackedByteArray input_bytes);
 	void store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	void store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes);
-	godot::Dictionary fill_missing_pending_inputs(int tick, godot::Array player_ids, godot::Array disconnected_ids, godot::Array delayed_ids, bool allow_new_delayed);
+	int fill_missing_pending_inputs(int tick, godot::Array player_ids, godot::Array disconnected_ids, godot::Array delayed_ids, bool allow_new_delayed);
+	int get_last_replaced_pending_player_id(int index) const;
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count, int race_phase = 0) const;
 	godot::Array build_state_fec_chunks(godot::PackedByteArray payload, int chunk_size, int data_chunks_per_group) const;
 	int store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);

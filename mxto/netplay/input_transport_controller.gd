@@ -494,15 +494,15 @@ func _fill_delayed_missing_inputs_for_tick(tick: int) -> void:
 		pending_inputs[tick] = {}
 	var waiting: Dictionary = pending_inputs[tick]
 	var roster_chk := _get_human_roster()
-	var replacement_stats: Dictionary = server_netcode_session.fill_missing_pending_inputs(
+	var replacement_count: int = server_netcode_session.fill_missing_pending_inputs(
 		tick,
 		roster_chk,
 		disconnected_during_race.keys(),
 		delayed_peer_ids.keys(),
 		can_mark_new_delayed
 	)
-	var replaced_ids: Array = replacement_stats.get("replaced_ids", [])
-	for pid in replaced_ids:
+	for replacement_index in range(replacement_count):
+		var pid: int = server_netcode_session.get_last_replaced_pending_player_id(replacement_index)
 		waiting[pid] = NEUTRAL_INPUT_BYTES
 		delayed_peer_ids[pid] = true
 		log_server_replacements += 1

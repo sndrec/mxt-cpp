@@ -2904,13 +2904,9 @@ void NetcodeSession::store_pending_input(int tick, int player_id, godot::PackedB
 	frame.present[index] = 1;
 }
 
-godot::Dictionary NetcodeSession::fill_missing_pending_inputs(int tick, godot::Array p_player_ids, godot::Array p_disconnected_ids, godot::Array p_delayed_ids, bool allow_new_delayed)
+int NetcodeSession::fill_missing_pending_inputs(int tick, godot::Array p_player_ids, godot::Array p_disconnected_ids, godot::Array p_delayed_ids, bool allow_new_delayed)
 {
-	Dictionary out;
-	Array replaced_ids;
-	int skipped_present = 0;
-	int skipped_unseen = 0;
-	int skipped_not_delayed = 0;
+	last_replaced_pending_player_count = 0;
 	const InputFrame* prev = find_frame(authoritative_history, static_cast<int32_t>(tick - 1));
 	InputFrame& frame = frame_for(pending_inputs, static_cast<int32_t>(tick));
 
@@ -2921,7 +2917,6 @@ godot::Dictionary NetcodeSession::fill_missing_pending_inputs(int tick, godot::A
 			continue;
 		}
 		if (frame.present[index]) {
-			++skipped_present;
 			continue;
 		}
 
@@ -2944,25 +2939,26 @@ godot::Dictionary NetcodeSession::fill_missing_pending_inputs(int tick, godot::A
 		}
 
 		if (!disconnected && !peer_has_received(player_id)) {
-			++skipped_unseen;
 			continue;
 		}
 		if (!disconnected && !allow_new_delayed && !already_delayed) {
-			++skipped_not_delayed;
 			continue;
 		}
 
 		frame.inputs[index] = (prev && prev->present[index]) ? prev->inputs[index] : neutral_input;
 		frame.present[index] = 1;
-		replaced_ids.append(player_id);
+		last_replaced_pending_player_ids[last_replaced_pending_player_count++] = player_id;
 	}
 
-	out["replaced_ids"] = replaced_ids;
-	out["replaced_count"] = replaced_ids.size();
-	out["skipped_present"] = skipped_present;
-	out["skipped_unseen"] = skipped_unseen;
-	out["skipped_not_delayed"] = skipped_not_delayed;
-	return out;
+	return last_replaced_pending_player_count;
+}
+
+int NetcodeSession::get_last_replaced_pending_player_id(int index) const
+{
+	if (index < 0 || index >= last_replaced_pending_player_count) {
+		return -1;
+	}
+	return last_replaced_pending_player_ids[index];
 }
 
 godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, int count, int race_phase) const
