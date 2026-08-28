@@ -94,6 +94,14 @@ private:
 	void clear_redo_after_mutation();
 	bool restore_history_snapshot(const HistorySnapshot &snapshot, bool mark_dirty = true);
 	static bool is_safe_draft_root(const String &path, String &out_global_path);
+	static PackedStringArray single_error(const String &message);
+	static Dictionary result_dictionary(bool valid, const PackedStringArray &errors, const PackedStringArray &warnings);
+	static String global_path(const String &path);
+	static bool write_text_file(const String &path, const String &text);
+	static bool is_valid_text_field(const String &value, int64_t maximum_length, bool allow_empty, bool allow_line_breaks = false);
+	static Array vector3_array(const Vector3 &value);
+	static bool dictionary_vector3(const Dictionary &value, const char *key, double minimum, double maximum, Vector3 &out);
+	static bool preflight_gltf_source(const String &path, String &out_error);
 	Curve &curve_at(uint8_t layer, uint16_t stat);
 	const Curve &curve_at(uint8_t layer, uint16_t stat) const;
 	double sample_curve_at(uint8_t layer, uint16_t stat, float machine_setting) const;
