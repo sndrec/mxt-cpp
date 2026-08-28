@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $serviceRoot = $PSScriptRoot
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $serviceRoot '..\..')).Path
 $projectRoot = Join-Path $repositoryRoot 'mxto'
-$manifest = Join-Path $projectRoot 'steam\leaderboards.json'
+$manifest = Join-Path $projectRoot 'leaderboards\leaderboards.json'
 $bundleMarkerName = '.mxt-verifier-bundle'
 
 function Get-Sha256Hex([string]$Path) {

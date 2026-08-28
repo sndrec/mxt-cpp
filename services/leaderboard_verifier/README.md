@@ -10,7 +10,7 @@ The verifier accepts completed ranked Time Attack runs with:
 
 - the exact ranked ruleset;
 - one human racer and no CPUs;
-- an official track from `mxto/steam/leaderboards.json`;
+- an official track from `mxto/leaderboards/leaderboards.json`;
 - an official vehicle with matching gameplay evidence;
 - canonical input frames and a deterministic finish result.
 

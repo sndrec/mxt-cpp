@@ -560,7 +560,7 @@ def load_config() -> ServiceConfig:
     if game_executable is None and godot_executable is None:
         raise RuntimeError("MXT_GAME_EXECUTABLE or MXT_GODOT_EXE must configure the replay verifier")
     manifest_path = Path(
-        os.environ.get("MXT_LEADERBOARD_MANIFEST", str(repository_root / "mxto" / "steam" / "leaderboards.json"))
+        os.environ.get("MXT_LEADERBOARD_MANIFEST", str(repository_root / "mxto" / "leaderboards" / "leaderboards.json"))
     ).resolve()
     steam_base_url = os.environ.get("MXT_STEAM_API_BASE", "https://partner.steam-api.com").strip()
     timeout_seconds = float(os.environ.get("MXT_REPLAY_VERIFY_TIMEOUT_SECONDS", "120"))
