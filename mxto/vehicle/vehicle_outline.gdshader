@@ -6,6 +6,7 @@ stencil_mode read, compare_not_equal, 1;
 uniform float base_outline_width;
 uniform vec3 trail_colour : source_color;
 global uniform float fog_dist;
+const float OUTLINE_REFERENCE_PROJECTION_Y = 1.3763819; // cot(72 degrees / 2)
 
 #include "res://asset/shader/ordered_dither.gdshaderinc"
 varying flat vec2	v_line_o;			// screen-space origin  (0-1)
@@ -20,6 +21,7 @@ vec2 clip_to_uv(vec4 clip){				// clip -> (0-1) UV
 void vertex() {
 	vec3 in_velocity = INSTANCE_CUSTOM.xyz;
 	v_instance_velocity = in_velocity;
+	float fov_width_scale = OUTLINE_REFERENCE_PROJECTION_Y / max(abs(PROJECTION_MATRIX[1][1]), 0.0001);
 	/* ---- screenspace line pre-compute --------------------------- */
 	if (length(in_velocity) > 0.001)
 	{
@@ -39,7 +41,7 @@ void vertex() {
 		BINORMAL = normalize((MODELVIEW_MATRIX * vec4(BINORMAL, 0.0)).xyz);
 		TANGENT = normalize((MODELVIEW_MATRIX * vec4(TANGENT, 0.0)).xyz);
 
-		use_outline_width = length(world_o - CAMERA_POSITION_WORLD) * base_outline_width * 0.1;
+		use_outline_width = length(world_o - CAMERA_POSITION_WORLD) * base_outline_width * 0.1 * fov_width_scale;
 		VERTEX += NORMAL * use_outline_width * 0.1;
 		vec3 use_velocity = (VIEW_MATRIX * vec4(in_velocity, 0.0)).xyz;
 		VERTEX += use_velocity * clamp(dot(NORMAL, use_velocity) * 1000000.0, 0.0, 1.0);
@@ -49,7 +51,7 @@ void vertex() {
 		NORMAL = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 		BINORMAL = normalize((MODELVIEW_MATRIX * vec4(BINORMAL, 0.0)).xyz);
 		TANGENT = normalize((MODELVIEW_MATRIX * vec4(TANGENT, 0.0)).xyz);
-		use_outline_width = length(world_o - CAMERA_POSITION_WORLD) * base_outline_width * 0.1;
+		use_outline_width = length(world_o - CAMERA_POSITION_WORLD) * base_outline_width * 0.1 * fov_width_scale;
 		VERTEX += NORMAL * use_outline_width * 0.1;
 	}
 }
