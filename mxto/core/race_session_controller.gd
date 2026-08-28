@@ -19,6 +19,7 @@ var network_manager: NetworkManager
 var replay_controller
 var race_audio_controller: RaceAudioController
 var track_content_controller: TrackContentController
+var track_presentation_controller: TrackPresentationController
 var lobby_chibi_controller: LobbyChibiController
 var spectator_controller: SpectatorControllerClass
 var race_presentation_controller: RacePresentationControllerClass
@@ -52,6 +53,7 @@ func initialize(
 	in_replay_controller,
 	in_race_audio_controller: RaceAudioController,
 	in_track_content_controller: TrackContentController,
+	in_track_presentation_controller: TrackPresentationController,
 	in_lobby_chibi_controller: LobbyChibiController,
 	in_spectator_controller: SpectatorControllerClass,
 	in_race_presentation_controller: RacePresentationControllerClass,
@@ -72,6 +74,7 @@ func initialize(
 	replay_controller = in_replay_controller
 	race_audio_controller = in_race_audio_controller
 	track_content_controller = in_track_content_controller
+	track_presentation_controller = in_track_presentation_controller
 	lobby_chibi_controller = in_lobby_chibi_controller
 	spectator_controller = in_spectator_controller
 	race_presentation_controller = in_race_presentation_controller
@@ -99,12 +102,12 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 	last_race_settings.clear()
 	race_presentation_controller.reset()
 	spectator_controller.reset()
-	if !track_content_controller.prepare_race(track_index):
+	if !track_presentation_controller.prepare_race(track_info):
 		return false
 	race_audio_controller.reset_for_race()
 	race_audio_controller.configure_track_music(
-		track_content_controller.current_track_dir,
-		track_content_controller.current_metadata)
+		track_presentation_controller.current_track_dir,
+		track_presentation_controller.current_metadata)
 
 	var chosen_definitions: Array = []
 	var racer_settings: Array = []
@@ -201,7 +204,7 @@ func start_race(track_index: int, roster: MxtRaceRoster, singleplayer_mode: bool
 		network_manager.server_game_sim = server_game_sim
 	network_manager.refresh_protocol_contexts()
 	if !headless_mode:
-		track_content_controller.load_runtime_visuals()
+		track_presentation_controller.load_runtime_visuals()
 		_clear_triggers()
 		var parsed_triggers := _parse_level_triggers(level_buffer.data_array)
 		for trigger in parsed_triggers:
@@ -266,7 +269,7 @@ func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -
 		network_manager.game_sim = null
 	network_manager.server_game_sim = null
 	network_manager.refresh_protocol_contexts()
-	track_content_controller.teardown_runtime()
+	track_presentation_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()

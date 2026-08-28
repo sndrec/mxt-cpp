@@ -23,6 +23,7 @@ const RacePauseControllerClass = preload("res://ui/race_pause_controller.gd")
 @onready var replay_controller: ReplayController = $ReplayController
 @onready var race_audio_controller: RaceAudioController = $RaceAudioController
 @onready var track_content_controller: TrackContentController = $TrackContentController
+@onready var track_presentation_controller: TrackPresentationController = $TrackPresentationController
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
 @onready var lobby_controller: LobbyControllerClass = $LobbyController
 @onready var spectator_controller: SpectatorControllerClass = $SpectatorController
@@ -233,6 +234,7 @@ func _ready() -> void:
 		replay_controller,
 		race_audio_controller,
 		track_content_controller,
+		track_presentation_controller,
 		lobby_chibi_controller,
 		spectator_controller,
 		race_presentation_controller,

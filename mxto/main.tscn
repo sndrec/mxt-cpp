@@ -14,6 +14,7 @@
 [ext_resource type="Script" uid="uid://cpt5qenuy0jws" path="res://replay/replay_controller.gd" id="23_replay"]
 [ext_resource type="Script" uid="uid://ci4gxdo86qgxd" path="res://audio/race_audio_controller.gd" id="24_audio"]
 [ext_resource type="Script" uid="uid://berp7plvet1og" path="res://track/track_content_controller.gd" id="25_track"]
+[ext_resource type="Script" path="res://track/track_presentation_controller.gd" id="25_track_presentation"]
 [ext_resource type="Script" uid="uid://bqlqeat5xvksx" path="res://netplay/custom_stamp_network_controller.gd" id="26_stamps"]
 [ext_resource type="Script" uid="uid://cprwg1uhsl2b5" path="res://netplay/playtest_lobby_probe.gd" id="27_playtest_probe"]
 [ext_resource type="Script" uid="uid://cbqy32m7nv7iu" path="res://ui/lobby_chibi_controller.gd" id="28_lobby_chibi"]
@@ -188,6 +189,9 @@ script = ExtResource("24_audio")
 
 [node name="TrackContentController" type="Node" parent="." unique_id=910439580]
 script = ExtResource("25_track")
+
+[node name="TrackPresentationController" type="Node" parent="."]
+script = ExtResource("25_track_presentation")
 
 [node name="LobbyChibiController" type="Node" parent="." unique_id=1177645025]
 script = ExtResource("28_lobby_chibi")
